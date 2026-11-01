@@ -20,6 +20,15 @@ uv run python scripts/build_requirements_seed.py  # regenera os itens do Apêndi
 
 A esteira em `.github/workflows/ci.yml` roda lint, formatação, testes e cfn-lint em todo push e PR.
 
+## Agentes
+
+Os agentes ficam em [.claude/agents/](.claude/agents/):
+
+- **`master`** é a sessão principal, configurada em `.claude/settings.json`. Ele escolhe o passo do roteiro, delega, revisa o diff, roda a verificação e cuida de branch, commit, PR e merge. Pede aprovação antes de cada passo de git.
+- **`backend`** escreve o código em `backend/` e `infra/` e devolve um relatório. Não mexe no git.
+
+Para trabalhar sem o master, remova a chave `agent` do `.claude/settings.json`. No terminal, `claude --agent backend` abre uma sessão direto com o agente de backend.
+
 ## Regras de trabalho
 
 - **Todo erro apontado vira teste de regressão.** Antes de corrigir, escreva em `backend/tests/regression/` um teste que reproduza o erro e confirme que ele falha. Só então corrija. Use a branch `fix/*`; a esteira barra PRs `fix/*` sem teste nessa pasta. Formato em [backend/tests/regression/README.md](backend/tests/regression/README.md).
