@@ -1,0 +1,26 @@
+name: Erro
+description: Algo não funciona como deveria
+title: "[Erro] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: observado
+    attributes:
+      label: O que aconteceu
+      description: Mensagem de erro, tela ou resposta da API.
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que deveria acontecer
+      description: Se houver, cite a regra (ex.: RN002) ou a seção dos requisitos.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      description: Dados usados (sem dados reais de alunos), passos e perfil do usuário (responsável, examinador, sensei).
+    validations:
+      required: true
