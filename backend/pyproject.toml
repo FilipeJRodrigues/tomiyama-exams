@@ -1,0 +1,21 @@
+[project]
+name = "judo-exams-backend"
+version = "0.1.0"
+description = "Backend (AWS Lambda) do sistema de exames de graduação de Judô"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "boto3>=1.35",
+    "moto[dynamodb,cognitoidp]>=5.0",
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

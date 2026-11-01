@@ -1,0 +1,378 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Academia de Judô — exames de graduação (backend serverless)
+
+Parameters:
+  AdminEmail:
+    Type: String
+    Description: E-mail do primeiro examinador. O Cognito envia a ele uma senha temporária.
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: Origem do front-end liberada no CORS (troque pela URL do Amplify).
+  BudgetLimitUsd:
+    Type: Number
+    Default: 5
+    Description: Limite mensal (US$) do alerta do AWS Budgets.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    CodeUri: ../backend/src
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        BELTS_TABLE: !Ref BeltsTable
+        STUDENTS_TABLE: !Ref StudentsTable
+        EXAMS_TABLE: !Ref ExamsTable
+
+Resources:
+  # ---------------------------------------------------------------- DynamoDB
+  BeltsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  StudentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: owner_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: by_owner
+          KeySchema:
+            - AttributeName: owner_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  ExamsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: student_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+        - AttributeName: student_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: by_student
+          KeySchema:
+            - AttributeName: student_id
+              KeyType: HASH
+            - AttributeName: event_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ----------------------------------------------------------------- Cognito
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-users
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+      LambdaConfig:
+        PostConfirmation: !GetAtt PostConfirmationFunction.Arn
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: admin
+      Description: Examinadores
+
+  GuardianGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: responsavel
+      Description: Responsáveis e alunos (cadastro aberto)
+
+  FirstAdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref AdminEmail
+      DesiredDeliveryMediums: [EMAIL]
+      UserAttributes:
+        - Name: email
+          Value: !Ref AdminEmail
+        - Name: email_verified
+          Value: "true"
+
+  FirstAdminInGroup:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: !Ref AdminGroup
+      Username: !Ref FirstAdminUser
+
+  PostConfirmationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.cognito_triggers.post_confirmation
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: cognito-idp:AdminAddUserToGroup
+              # Pool ARN by wildcard: referencing UserPool here would create a circular dependency.
+              Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+
+  PostConfirmationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref PostConfirmationFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+  # --------------------------------------------------------------------- API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience:
+                - !Ref UserPoolClient
+
+  # Belts
+  ListBeltsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.belts.list_belts
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /belts
+            Method: GET
+
+  UpdateBeltFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.belts.update_belt
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BeltsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /belts/{id}
+            Method: PUT
+
+  # Students
+  ListStudentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.list_students
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref StudentsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students
+            Method: GET
+
+  CreateStudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.create_student
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StudentsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students
+            Method: POST
+
+  GetStudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.get_student
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref StudentsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students/{id}
+            Method: GET
+
+  UpdateStudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.update_student
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StudentsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ExamsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students/{id}
+            Method: PUT
+
+  DeleteStudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.delete_student
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StudentsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ExamsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students/{id}
+            Method: DELETE
+
+  # ------------------------------------------------------------ Initial data
+  SeedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.seed.handler
+      Timeout: 120
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BeltsTable
+
+  InitialData:
+    Type: Custom::InitialData
+    Properties:
+      ServiceToken: !GetAtt SeedFunction.Arn
+      # Bump to re-run the (idempotent) seed on the next deploy.
+      SeedVersion: "1"
+
+  # ------------------------------------------------------------------ Custos
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub ${AWS::StackName}-mensal
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AdminEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AdminEmail
+
+Outputs:
+  ApiUrl:
+    Description: URL base da API
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient

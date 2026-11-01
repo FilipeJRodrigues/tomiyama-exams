@@ -1,0 +1,2 @@
+# Dependências de runtime das Lambdas (empacotadas pelo `sam build`).
+# boto3 já vem no runtime python3.12 da AWS Lambda.
