@@ -17,6 +17,8 @@ os.environ["AWS_SESSION_TOKEN"] = "testing"
 os.environ["BELTS_TABLE"] = "test-belts"
 os.environ["STUDENTS_TABLE"] = "test-students"
 os.environ["EXAMS_TABLE"] = "test-exams"
+os.environ["REQUIREMENTS_TABLE"] = "test-requirements"
+os.environ["SETTINGS_TABLE"] = "test-settings"
 
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
 from domain.students import Student  # noqa: E402
@@ -74,6 +76,33 @@ def _create_tables() -> None:
                 "Projection": {"ProjectionType": "ALL"},
             }
         ],
+    )
+
+    client.create_table(
+        TableName=os.environ["REQUIREMENTS_TABLE"],
+        BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[
+            {"AttributeName": "id", "AttributeType": "S"},
+            {"AttributeName": "belt_id", "AttributeType": "S"},
+            {"AttributeName": "sort_order", "AttributeType": "N"},
+        ],
+        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "by_belt",
+                "KeySchema": [
+                    {"AttributeName": "belt_id", "KeyType": "HASH"},
+                    {"AttributeName": "sort_order", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
+    )
+    client.create_table(
+        TableName=os.environ["SETTINGS_TABLE"],
+        BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
     )
 
 

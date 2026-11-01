@@ -28,6 +28,8 @@ Globals:
         BELTS_TABLE: !Ref BeltsTable
         STUDENTS_TABLE: !Ref StudentsTable
         EXAMS_TABLE: !Ref ExamsTable
+        REQUIREMENTS_TABLE: !Ref RequirementsTable
+        SETTINGS_TABLE: !Ref SettingsTable
 
 Resources:
   # ---------------------------------------------------------------- DynamoDB
@@ -95,6 +97,50 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  RequirementsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: belt_id
+          AttributeType: S
+        - AttributeName: sort_order
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: by_belt
+          KeySchema:
+            - AttributeName: belt_id
+              KeyType: HASH
+            - AttributeName: sort_order
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # Academy settings (single record) and markers such as the initial-data load.
+  SettingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
@@ -322,6 +368,73 @@ Resources:
             Path: /students/{id}
             Method: DELETE
 
+  # Requirements (examiners only)
+  ListRequirementsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirements.list_requirements
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref RequirementsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirements
+            Method: GET
+
+  CreateRequirementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirements.create_requirement
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequirementsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirements
+            Method: POST
+
+  UpdateRequirementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirements.update_requirement
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequirementsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirements/{id}
+            Method: PUT
+
+  DeleteRequirementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirements.delete_requirement
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequirementsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirements/{id}
+            Method: DELETE
+
   # ------------------------------------------------------------ Initial data
   SeedFunction:
     Type: AWS::Serverless::Function
@@ -331,13 +444,17 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref BeltsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequirementsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SettingsTable
 
   InitialData:
     Type: Custom::InitialData
     Properties:
       ServiceToken: !GetAtt SeedFunction.Arn
       # Bump to re-run the (idempotent) seed on the next deploy.
-      SeedVersion: "1"
+      SeedVersion: "2"
 
   # ------------------------------------------------------------------ Custos
   MonthlyBudget:

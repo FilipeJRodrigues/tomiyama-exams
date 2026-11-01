@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint e testes)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Instalar dependências
+        run: uv sync --locked --python 3.12
+      - name: Lint
+        run: uv run ruff check src tests scripts
+      - name: Formatação
+        run: uv run ruff format --check src tests scripts
+      - name: Testes (inclui regressões)
+        run: uv run pytest -q
+
+  infra:
+    name: Template SAM (cfn-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Validar infra/template.yaml
+        run: uv run --project backend --locked --python 3.12 cfn-lint infra/template.yaml
+
+  regression:
+    name: Correção traz teste de regressão
+    # Branches de correção (fix/*) precisam adicionar ou alterar um teste de regressão.
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Exigir teste em backend/tests/regression/
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- backend/tests/regression/ \
+            | grep -E '/test_[^/]+\.py$' || true)
+          if [ -z "$changed" ]; then
+            echo "::error::Branches fix/* precisam de um teste em backend/tests/regression/ que reproduza o erro."
+            exit 1
+          fi
+          echo "Testes de regressão neste PR:"
+          echo "$changed"
