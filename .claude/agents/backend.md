@@ -28,7 +28,9 @@ Você é o desenvolvedor do backend do Tomiyama Exams, o sistema de exames de gr
 
 ## Correção de erro
 
-Quando a tarefa for corrigir um erro:
+Normalmente o agente `qa` já escreveu o teste de regressão que falha, e o master passa o arquivo para você. Nesse caso, corrija o código até o teste passar **sem alterar o teste**. Se achar que o teste está errado, devolva ao master com o motivo.
+
+Se ainda não houver teste para o erro:
 
 1. Escreva primeiro o teste em `backend/tests/regression/`, seguindo o formato do `README.md` dessa pasta.
 2. Rode o teste e **confirme que ele falha** pelo motivo certo.
