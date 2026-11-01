@@ -10,7 +10,9 @@ import urllib.request
 from typing import Any
 
 from domain.belts import SEED_BELTS
+from domain.requirements import seed_requirements
 from repository import belts as belt_repo
+from repository import requirements as requirement_repo
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -24,7 +26,10 @@ def seed_all() -> dict[str, int]:
     Returns:
         Number of items inserted per entity.
     """
-    return {"belts": belt_repo.seed_belts(SEED_BELTS)}
+    return {
+        "belts": belt_repo.seed_belts(SEED_BELTS),
+        "requirements": requirement_repo.seed_requirements(seed_requirements()),
+    }
 
 
 def _send_response(event: dict[str, Any], context: Any, status: str, reason: str) -> None:

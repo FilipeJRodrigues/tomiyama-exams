@@ -33,7 +33,17 @@ sam deploy --guided   # pede AdminEmail, AllowedOrigin e BudgetLimitUsd
 No primeiro deploy:
 
 - o examinador inicial (`AdminEmail`) recebe uma senha temporária por e-mail;
-- as faixas (§ 4 dos requisitos) são carregadas pelo recurso `InitialData`. A carga é idempotente e não sobrescreve edições.
+- as faixas (§ 4 dos requisitos) e os 692 itens do Apêndice A são carregados pelo recurso `InitialData`. A carga é idempotente e não sobrescreve edições. Os itens só entram uma vez: um item apagado na tela não volta no próximo deploy.
+
+## Itens de exame (Apêndice A)
+
+`src/seed_data/requirements.json` é gerado a partir de `requirements/requisitos-exame-graduacao.md`:
+
+```bash
+uv run python scripts/build_requirements_seed.py
+```
+
+O script confere as contagens de cada faixa com o cabeçalho do documento. Um teste falha se o JSON commitado ficar diferente do documento.
 
 ## Autenticação
 
@@ -53,5 +63,10 @@ O sensei é escolhido entre os examinadores, nas configurações da academia.
 | GET | /students | examinador: todos; responsável: os próprios |
 | POST | /students | qualquer usuário logado (dono = usuário do token) |
 | GET/PUT/DELETE | /students/{id} | dono ou examinador |
+| GET | /requirements | examinador |
+| POST | /requirements | examinador |
+| PUT/DELETE | /requirements/{id} | examinador |
 
 `GET /students` aceita os filtros `active=true|false`, `belt_id` e `reference_date=AAAA-MM-DD`. O último é a data da elegibilidade; sem ele, vale a data de hoje.
+
+`GET /requirements` aceita os filtros `belt_id` e `kind=THEORY|PRACTICE`. Sem filtro, devolve todos os itens na ordem das faixas e da folha. No `POST`, sem `sort_order`, o item vai para o fim da faixa.

@@ -68,11 +68,11 @@ def test_rn015_rejects_invalid_fields(overrides: dict[str, Any]) -> None:
 
 
 def test_seed_is_idempotent_and_keeps_edits(aws: None) -> None:
-    assert seed.seed_all() == {"belts": 12}
+    assert seed.seed_all() == {"belts": 12, "requirements": 692}
     edited = apply_belt_update(belt("Cinza"), _payload(min_age_years=6), SEED_BELTS)
     belt_repo.save_belt(edited)
 
-    assert seed.seed_all() == {"belts": 0}
+    assert seed.seed_all() == {"belts": 0, "requirements": 0}
     belts = belt_repo.list_belts()
     assert len(belts) == 12
     assert next(b for b in belts if b.name == "Cinza").min_age_years == 6

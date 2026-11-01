@@ -1,0 +1,5538 @@
+[
+ {
+  "belt": "Branca/Cinza",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Branca/Cinza",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Amortecimento de quedas (deitado)",
+  "expected_answer": "Ushirokemi e Yokoukemi",
+  "sort_order": 2
+ },
+ {
+  "belt": "Branca/Cinza",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 3
+ },
+ {
+  "belt": "Branca/Cinza",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 4
+ },
+ {
+  "belt": "Branca/Cinza",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 5
+ },
+ {
+  "belt": "Branca/Cinza",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 6
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Amortecimento de quedas lateral (Yokoukemi)",
+  "expected_answer": "A partir da posição agachada, em pé e para frente com rolamento",
+  "sort_order": 3
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 4
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 5
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 6
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 7
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 8
+ },
+ {
+  "belt": "Cinza",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 9
+ },
+ {
+  "belt": "Cinza",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 10
+ },
+ {
+  "belt": "Cinza",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 11
+ },
+ {
+  "belt": "Cinza",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 12
+ },
+ {
+  "belt": "Cinza",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 13
+ },
+ {
+  "belt": "Cinza",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 14
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 3 tipos de ukemi (em movimento)",
+  "expected_answer": null,
+  "sort_order": 4
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 5
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 6
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 7
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 8
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 9
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 14
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 15
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 16
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 17
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 18
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 19
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 20
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 21
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 22
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 23
+ },
+ {
+  "belt": "Cinza/Azul",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 24
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 3 tipos de ukemi (em movimento)",
+  "expected_answer": null,
+  "sort_order": 5
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 6
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 7
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 8
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 9
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Azul",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 17
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 18
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 19
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 20
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 21
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 22
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 23
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 24
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 25
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 26
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 27
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 28
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 29
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 30
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 31
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 32
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 33
+ },
+ {
+  "belt": "Azul",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 34
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 6
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 7
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 8
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 9
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 20
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 21
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 22
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 23
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 24
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 25
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 26
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 27
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 28
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 29
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 30
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 31
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 32
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 33
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 34
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 35
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 36
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 37
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 38
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 39
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 40
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 41
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 42
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 43
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 44
+ },
+ {
+  "belt": "Azul/Amarela",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 45
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 2 tipos de deslocamento sobre o tatame (Shintai)",
+  "expected_answer": "Passadas naturais (Ayumiashi) e passadas sucessivas (Tsuguiashi)",
+  "sort_order": 6
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Executar defesa (Fussegui)",
+  "expected_answer": "Com as pernas em katamewaza e de técnicas em pé em tatiwaza",
+  "sort_order": 7
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 8
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 9
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gari",
+  "expected_answer": null,
+  "sort_order": 20
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai goshi",
+  "expected_answer": null,
+  "sort_order": 21
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 22
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 23
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 24
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 25
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kata gatame",
+  "expected_answer": null,
+  "sort_order": 26
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Deashi barai / Osoto gari",
+  "expected_answer": null,
+  "sort_order": 27
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Koshi guruma / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 28
+ },
+ {
+  "belt": "Amarela",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 29
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 30
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 31
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 32
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 33
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 34
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 35
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 36
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 37
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 38
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 39
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 40
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 41
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 42
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 43
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 44
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 45
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 46
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 47
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Judoca ativo e judoca passivo",
+  "expected_answer": "Tori e Uke",
+  "sort_order": 48
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 49
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 50
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 51
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 52
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 53
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A morte do Shihan Jigoro Kano",
+  "expected_answer": "04 de maio de 1938, a bordo de um navio que o levava de volta ao Japão, vindo do Cairo (Egito), onde participou da assembleia geral do Comitê Olímpico Internacional",
+  "sort_order": 54
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 55
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 56
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “O judoca não se aperfeiçoa…”",
+  "expected_answer": "O judoca não se aperfeiçoa para lutar, luta para se aperfeiçoar",
+  "sort_order": 57
+ },
+ {
+  "belt": "Amarela",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 58
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 2 tipos de deslocamento sobre o tatame (Shintai)",
+  "expected_answer": "Passadas naturais (Ayumiashi) e passadas sucessivas (Tsuguiashi)",
+  "sort_order": 6
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Executar defesa (Fussegui)",
+  "expected_answer": "Com as pernas em katamewaza e de técnicas em pé em tatiwaza",
+  "sort_order": 7
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de movimentos rotatórios do corpo (esquiva)",
+  "expected_answer": "Taissabaki",
+  "sort_order": 8
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 9
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari",
+  "expected_answer": null,
+  "sort_order": 20
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gari",
+  "expected_answer": null,
+  "sort_order": 21
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai goshi",
+  "expected_answer": null,
+  "sort_order": 22
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari (repetido na folha: conferir)",
+  "expected_answer": null,
+  "sort_order": 23
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri komi goshi",
+  "expected_answer": null,
+  "sort_order": 24
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Okuri ashi barai",
+  "expected_answer": null,
+  "sort_order": 25
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uti mata",
+  "expected_answer": null,
+  "sort_order": 26
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri goshi",
+  "expected_answer": null,
+  "sort_order": 27
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane goshi",
+  "expected_answer": null,
+  "sort_order": 28
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 29
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 30
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 31
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 32
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kata gatame",
+  "expected_answer": null,
+  "sort_order": 33
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Makura kessa gatame",
+  "expected_answer": null,
+  "sort_order": 34
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Deashi barai / Osoto gari",
+  "expected_answer": null,
+  "sort_order": 35
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Koshi guruma / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 36
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 37
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ouchi gari / Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 38
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 39
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Deashi barai / Tsubame gaeshi",
+  "expected_answer": null,
+  "sort_order": 40
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Koshi guruma / Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 41
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 42
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 43
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 44
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 45
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 46
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 47
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 48
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 49
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 50
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 51
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 52
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 53
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 54
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 55
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 56
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 57
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 58
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 59
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Judoca ativo e judoca passivo",
+  "expected_answer": "Tori e Uke",
+  "sort_order": 60
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Significado da palavra Judô",
+  "expected_answer": "Caminho da suavidade: Ju significa suavidade, não resistência; Dô significa meio, caminho, doutrina",
+  "sort_order": 61
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 62
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 63
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 64
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 65
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 66
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A morte do Shihan Jigoro Kano",
+  "expected_answer": "04 de maio de 1938, a bordo de um navio que o levava de volta ao Japão, vindo do Cairo (Egito), onde participou da assembleia geral do Comitê Olímpico Internacional",
+  "sort_order": 67
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Brasileiro de Judô",
+  "expected_answer": "1954",
+  "sort_order": 68
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 69
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 70
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “O judoca não se aperfeiçoa…”",
+  "expected_answer": "O judoca não se aperfeiçoa para lutar, luta para se aperfeiçoar",
+  "sort_order": 71
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Seiryokuzenjô",
+  "expected_answer": "Melhor uso da energia vital (princípio da máxima eficiência com o mínimo de esforço)",
+  "sort_order": 72
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Jitakyôei",
+  "expected_answer": "Amizade e prosperidade mútua (princípio da prosperidade e benefícios mútuos)",
+  "sort_order": 73
+ },
+ {
+  "belt": "Amarela/Laranja",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 74
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 2 tipos de deslocamento sobre o tatame (Shintai)",
+  "expected_answer": "Passadas naturais (Ayumiashi) e passadas sucessivas (Tsuguiashi)",
+  "sort_order": 6
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Executar defesa (Fussegui)",
+  "expected_answer": "Com as pernas em katamewaza e de técnicas em pé em tatiwaza",
+  "sort_order": 7
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de movimentos rotatórios do corpo (esquiva)",
+  "expected_answer": "Taissabaki",
+  "sort_order": 8
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar as fases necessárias para a aplicação de uma técnica",
+  "expected_answer": "Desequilíbrio (Kuzushi, oito tipos), preparação (Tsukuri) e execução (Kake)",
+  "sort_order": 9
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 20
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari",
+  "expected_answer": null,
+  "sort_order": 21
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gari",
+  "expected_answer": null,
+  "sort_order": 22
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai goshi",
+  "expected_answer": null,
+  "sort_order": 23
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari (repetido na folha: conferir)",
+  "expected_answer": null,
+  "sort_order": 24
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri komi goshi",
+  "expected_answer": null,
+  "sort_order": 25
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Okuri ashi barai",
+  "expected_answer": null,
+  "sort_order": 26
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uti mata",
+  "expected_answer": null,
+  "sort_order": 27
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri goshi",
+  "expected_answer": null,
+  "sort_order": 28
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane goshi",
+  "expected_answer": null,
+  "sort_order": 29
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ashi guruma",
+  "expected_answer": null,
+  "sort_order": 30
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tomoe nague",
+  "expected_answer": null,
+  "sort_order": 31
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gake",
+  "expected_answer": null,
+  "sort_order": 32
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 33
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 34
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 35
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 36
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kata gatame",
+  "expected_answer": null,
+  "sort_order": 37
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Makura kessa gatame",
+  "expected_answer": null,
+  "sort_order": 38
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Ushiro kessa gatame",
+  "expected_answer": null,
+  "sort_order": 39
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Deashi barai / Osoto gari",
+  "expected_answer": null,
+  "sort_order": 40
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Koshi guruma / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 41
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 42
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ouchi gari / Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 43
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ippon seoi nague / Kouti makikomi",
+  "expected_answer": null,
+  "sort_order": 44
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 45
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Deashi barai / Tsubame gaeshi",
+  "expected_answer": null,
+  "sort_order": 46
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Koshi guruma / Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 47
+ },
+ {
+  "belt": "Laranja",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Ippon seoi nague / Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 48
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 49
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 50
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 51
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 52
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 53
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 54
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 55
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 56
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 57
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 58
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 59
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 60
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 61
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 62
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 63
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 64
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 65
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 66
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Judoca ativo e judoca passivo",
+  "expected_answer": "Tori e Uke",
+  "sort_order": 67
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Significado da palavra Judô",
+  "expected_answer": "Caminho da suavidade: Ju significa suavidade, não resistência; Dô significa meio, caminho, doutrina",
+  "sort_order": 68
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 69
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 70
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 71
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 72
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 73
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A morte do Shihan Jigoro Kano",
+  "expected_answer": "04 de maio de 1938, a bordo de um navio que o levava de volta ao Japão, vindo do Cairo (Egito), onde participou da assembleia geral do Comitê Olímpico Internacional",
+  "sort_order": 74
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Brasileiro de Judô",
+  "expected_answer": "1954",
+  "sort_order": 75
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Inclusão do Judô nos Jogos Olímpicos",
+  "expected_answer": "Tóquio 1964, em caráter não oficial; oficialmente em Munique 1972",
+  "sort_order": 76
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 77
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 78
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “O judoca não se aperfeiçoa…”",
+  "expected_answer": "O judoca não se aperfeiçoa para lutar, luta para se aperfeiçoar",
+  "sort_order": 79
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Seiryokuzenjô",
+  "expected_answer": "Melhor uso da energia vital (princípio da máxima eficiência com o mínimo de esforço)",
+  "sort_order": 80
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Jitakyôei",
+  "expected_answer": "Amizade e prosperidade mútua (princípio da prosperidade e benefícios mútuos)",
+  "sort_order": 81
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Somente se aproxima da perfeição…”",
+  "expected_answer": "Somente se aproxima da perfeição quem a procura com constância, sabedoria e, sobretudo, humildade",
+  "sort_order": 82
+ },
+ {
+  "belt": "Laranja",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 83
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 2 tipos de deslocamento sobre o tatame (Shintai)",
+  "expected_answer": "Passadas naturais (Ayumiashi) e passadas sucessivas (Tsuguiashi)",
+  "sort_order": 6
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Executar defesa (Fussegui)",
+  "expected_answer": "Com as pernas em katamewaza e de técnicas em pé em tatiwaza",
+  "sort_order": 7
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de movimentos rotatórios do corpo (esquiva)",
+  "expected_answer": "Taissabaki",
+  "sort_order": 8
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar as fases necessárias para a aplicação de uma técnica",
+  "expected_answer": "Desequilíbrio (Kuzushi, oito tipos), preparação (Tsukuri) e execução (Kake)",
+  "sort_order": 9
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 20
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari",
+  "expected_answer": null,
+  "sort_order": 21
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gari",
+  "expected_answer": null,
+  "sort_order": 22
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai goshi",
+  "expected_answer": null,
+  "sort_order": 23
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari (repetido na folha: conferir)",
+  "expected_answer": null,
+  "sort_order": 24
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri komi goshi",
+  "expected_answer": null,
+  "sort_order": 25
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Okuri ashi barai",
+  "expected_answer": null,
+  "sort_order": 26
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uti mata",
+  "expected_answer": null,
+  "sort_order": 27
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri goshi",
+  "expected_answer": null,
+  "sort_order": 28
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane goshi",
+  "expected_answer": null,
+  "sort_order": 29
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ashi guruma",
+  "expected_answer": null,
+  "sort_order": 30
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tomoe nague",
+  "expected_answer": null,
+  "sort_order": 31
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gake",
+  "expected_answer": null,
+  "sort_order": 32
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 33
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kata guruma",
+  "expected_answer": null,
+  "sort_order": 34
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko otoshi",
+  "expected_answer": null,
+  "sort_order": 35
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 36
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sukui nague",
+  "expected_answer": null,
+  "sort_order": 37
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "O guruma",
+  "expected_answer": null,
+  "sort_order": 38
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sumi gaeshi",
+  "expected_answer": null,
+  "sort_order": 39
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 40
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 41
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 42
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 43
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kata gatame",
+  "expected_answer": null,
+  "sort_order": 44
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Makura kessa gatame",
+  "expected_answer": null,
+  "sort_order": 45
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Ushiro kessa gatame",
+  "expected_answer": null,
+  "sort_order": 46
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kuzure kessa gatame",
+  "expected_answer": null,
+  "sort_order": 47
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Deashi barai / Osoto gari",
+  "expected_answer": null,
+  "sort_order": 48
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Koshi guruma / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 49
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 50
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ouchi gari / Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 51
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ippon seoi nague / Kouti makikomi",
+  "expected_answer": null,
+  "sort_order": 52
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Kouti gari / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 53
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 54
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Deashi barai / Tsubame gaeshi",
+  "expected_answer": null,
+  "sort_order": 55
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Koshi guruma / Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 56
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Ippon seoi nague / Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 57
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Uti mata / Sukashi nague",
+  "expected_answer": null,
+  "sort_order": 58
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Nague no Kata",
+  "description": "Demonstrar o grupo de Tewaza do Nague no Kata",
+  "expected_answer": null,
+  "sort_order": 59
+ },
+ {
+  "belt": "Verde",
+  "kind": "PRACTICE",
+  "category": "Katamewaza",
+  "description": "Demonstrar uma passagem de guarda de pernas em Katamewaza",
+  "expected_answer": null,
+  "sort_order": 60
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 61
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 62
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 63
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 64
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 65
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 66
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 67
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 68
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 69
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 70
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 71
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 72
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 73
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 74
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 75
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 76
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 77
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 78
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Judoca ativo e judoca passivo",
+  "expected_answer": "Tori e Uke",
+  "sort_order": 79
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Significado da palavra Judô",
+  "expected_answer": "Caminho da suavidade: Ju significa suavidade, não resistência; Dô significa meio, caminho, doutrina",
+  "sort_order": 80
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 81
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 82
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 83
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 84
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 85
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A morte do Shihan Jigoro Kano",
+  "expected_answer": "04 de maio de 1938, a bordo de um navio que o levava de volta ao Japão, vindo do Cairo (Egito), onde participou da assembleia geral do Comitê Olímpico Internacional",
+  "sort_order": 86
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Brasileiro de Judô",
+  "expected_answer": "1954",
+  "sort_order": 87
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Inclusão do Judô nos Jogos Olímpicos",
+  "expected_answer": "Tóquio 1964, em caráter não oficial; oficialmente em Munique 1972",
+  "sort_order": 88
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Mundial",
+  "expected_answer": "1956, no Japão",
+  "sort_order": 89
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Campeonatos Mundiais realizados no Brasil",
+  "expected_answer": "1965 e 2007, ambos no Rio de Janeiro",
+  "sort_order": 90
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 91
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 92
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “O judoca não se aperfeiçoa…”",
+  "expected_answer": "O judoca não se aperfeiçoa para lutar, luta para se aperfeiçoar",
+  "sort_order": 93
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Seiryokuzenjô",
+  "expected_answer": "Melhor uso da energia vital (princípio da máxima eficiência com o mínimo de esforço)",
+  "sort_order": 94
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Jitakyôei",
+  "expected_answer": "Amizade e prosperidade mútua (princípio da prosperidade e benefícios mútuos)",
+  "sort_order": 95
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Somente se aproxima da perfeição…”",
+  "expected_answer": "Somente se aproxima da perfeição quem a procura com constância, sabedoria e, sobretudo, humildade",
+  "sort_order": 96
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “A única vitória que perdura…”",
+  "expected_answer": "A única vitória que perdura é a conquista sobre a própria ignorância",
+  "sort_order": 97
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Formas da prática do Judô",
+  "expected_answer": "São 3 formas fundamentais: Randori (treino livre), Kata (forma) e Shiai (competição)",
+  "sort_order": 98
+ },
+ {
+  "belt": "Verde",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 99
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 2 tipos de deslocamento sobre o tatame (Shintai)",
+  "expected_answer": "Passadas naturais (Ayumiashi) e passadas sucessivas (Tsuguiashi)",
+  "sort_order": 6
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Executar defesa (Fussegui)",
+  "expected_answer": "Com as pernas em katamewaza e de técnicas em pé em tatiwaza",
+  "sort_order": 7
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de movimentos rotatórios do corpo (esquiva)",
+  "expected_answer": "Taissabaki",
+  "sort_order": 8
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar as fases necessárias para a aplicação de uma técnica",
+  "expected_answer": "Desequilíbrio (Kuzushi, oito tipos), preparação (Tsukuri) e execução (Kake)",
+  "sort_order": 9
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 20
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari",
+  "expected_answer": null,
+  "sort_order": 21
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gari",
+  "expected_answer": null,
+  "sort_order": 22
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai goshi",
+  "expected_answer": null,
+  "sort_order": 23
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari (repetido na folha: conferir)",
+  "expected_answer": null,
+  "sort_order": 24
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri komi goshi",
+  "expected_answer": null,
+  "sort_order": 25
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Okuri ashi barai",
+  "expected_answer": null,
+  "sort_order": 26
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uti mata",
+  "expected_answer": null,
+  "sort_order": 27
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri goshi",
+  "expected_answer": null,
+  "sort_order": 28
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane goshi",
+  "expected_answer": null,
+  "sort_order": 29
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ashi guruma",
+  "expected_answer": null,
+  "sort_order": 30
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tomoe nague",
+  "expected_answer": null,
+  "sort_order": 31
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gake",
+  "expected_answer": null,
+  "sort_order": 32
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 33
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kata guruma",
+  "expected_answer": null,
+  "sort_order": 34
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko otoshi",
+  "expected_answer": null,
+  "sort_order": 35
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 36
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sukui nague",
+  "expected_answer": null,
+  "sort_order": 37
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "O guruma",
+  "expected_answer": null,
+  "sort_order": 38
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sumi gaeshi",
+  "expected_answer": null,
+  "sort_order": 39
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane makikomi",
+  "expected_answer": null,
+  "sort_order": 40
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 41
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Soto makikomi",
+  "expected_answer": null,
+  "sort_order": 42
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki otoshi",
+  "expected_answer": null,
+  "sort_order": 43
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto guruma",
+  "expected_answer": null,
+  "sort_order": 44
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko wakare",
+  "expected_answer": null,
+  "sort_order": 45
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sumi otoshi",
+  "expected_answer": null,
+  "sort_order": 46
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko gake",
+  "expected_answer": null,
+  "sort_order": 47
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 48
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 49
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 50
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 51
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kata gatame",
+  "expected_answer": null,
+  "sort_order": 52
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Makura kessa gatame",
+  "expected_answer": null,
+  "sort_order": 53
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Ushiro kessa gatame",
+  "expected_answer": null,
+  "sort_order": 54
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kuzure kessa gatame",
+  "expected_answer": null,
+  "sort_order": 55
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kuzure yoko shiho gatame",
+  "expected_answer": null,
+  "sort_order": 56
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Deashi barai / Osoto gari",
+  "expected_answer": null,
+  "sort_order": 57
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Koshi guruma / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 58
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 59
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ouchi gari / Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 60
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ippon seoi nague / Kouti makikomi",
+  "expected_answer": null,
+  "sort_order": 61
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Kouti gari / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 62
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Uti mata / Kouti gari",
+  "expected_answer": null,
+  "sort_order": 63
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 64
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Deashi barai / Tsubame gaeshi",
+  "expected_answer": null,
+  "sort_order": 65
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Koshi guruma / Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 66
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Ippon seoi nague / Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 67
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Uti mata / Sukashi nague",
+  "expected_answer": null,
+  "sort_order": 68
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Ouchi gari / Ouchi gaeshi",
+  "expected_answer": null,
+  "sort_order": 69
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Nami juji jime",
+  "expected_answer": null,
+  "sort_order": 70
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Okuri eri jime",
+  "expected_answer": null,
+  "sort_order": 71
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Ude garami",
+  "expected_answer": null,
+  "sort_order": 72
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Ude gatame",
+  "expected_answer": null,
+  "sort_order": 73
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Nague no Kata",
+  "description": "Demonstrar os grupos de Tewaza e Koshiwaza do Nague no Kata",
+  "expected_answer": null,
+  "sort_order": 74
+ },
+ {
+  "belt": "Roxa",
+  "kind": "PRACTICE",
+  "category": "Katamewaza",
+  "description": "Demonstrar duas passagens de guarda de pernas em Katamewaza",
+  "expected_answer": null,
+  "sort_order": 75
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 76
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 77
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 78
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 79
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 80
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 81
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 82
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 83
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 84
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 85
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 86
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 87
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 88
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 89
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 90
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 91
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 92
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 93
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Judoca ativo e judoca passivo",
+  "expected_answer": "Tori e Uke",
+  "sort_order": 94
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Significado da palavra Judô",
+  "expected_answer": "Caminho da suavidade: Ju significa suavidade, não resistência; Dô significa meio, caminho, doutrina",
+  "sort_order": 95
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 96
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 97
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 98
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 99
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 100
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A morte do Shihan Jigoro Kano",
+  "expected_answer": "04 de maio de 1938, a bordo de um navio que o levava de volta ao Japão, vindo do Cairo (Egito), onde participou da assembleia geral do Comitê Olímpico Internacional",
+  "sort_order": 101
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Brasileiro de Judô",
+  "expected_answer": "1954",
+  "sort_order": 102
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Inclusão do Judô nos Jogos Olímpicos",
+  "expected_answer": "Tóquio 1964, em caráter não oficial; oficialmente em Munique 1972",
+  "sort_order": 103
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Mundial",
+  "expected_answer": "1956, no Japão",
+  "sort_order": 104
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Campeonatos Mundiais realizados no Brasil",
+  "expected_answer": "1965 e 2007, ambos no Rio de Janeiro",
+  "sort_order": 105
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 106
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 107
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “O judoca não se aperfeiçoa…”",
+  "expected_answer": "O judoca não se aperfeiçoa para lutar, luta para se aperfeiçoar",
+  "sort_order": 108
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Seiryokuzenjô",
+  "expected_answer": "Melhor uso da energia vital (princípio da máxima eficiência com o mínimo de esforço)",
+  "sort_order": 109
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Jitakyôei",
+  "expected_answer": "Amizade e prosperidade mútua (princípio da prosperidade e benefícios mútuos)",
+  "sort_order": 110
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Somente se aproxima da perfeição…”",
+  "expected_answer": "Somente se aproxima da perfeição quem a procura com constância, sabedoria e, sobretudo, humildade",
+  "sort_order": 111
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “A única vitória que perdura…”",
+  "expected_answer": "A única vitória que perdura é a conquista sobre a própria ignorância",
+  "sort_order": 112
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Nunca te orgulhes…”",
+  "expected_answer": "Nunca te orgulhes de haver vencido um adversário; ao que venceste hoje, poderá vencer-te amanhã",
+  "sort_order": 113
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Formas da prática do Judô",
+  "expected_answer": "São 3 formas fundamentais: Randori (treino livre), Kata (forma) e Shiai (competição)",
+  "sort_order": 114
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Classificação das técnicas de Judô",
+  "expected_answer": "1) Projeção (Naguewaza): em pé (Tatiwaza) — braço (Tewaza), quadril (Koshiwaza), pé ou perna (Ashiwaza); de pé para deitado (Sutemiwaza) — na linha do corpo (Masutemiwaza), lateral (Yokosutemiwaza). 2) Controle e domínio no solo (Katamewaza): imobilização (Ossaewaza), estrangulamento (Shimewaza), chave de braço (Kansetsuwaza), ataque aos pontos vitais (Atemiwaza)",
+  "sort_order": 115
+ },
+ {
+  "belt": "Roxa",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 116
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação em pé",
+  "expected_answer": "Ritsurei",
+  "sort_order": 1
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar saudação ajoelhado",
+  "expected_answer": "Zarei",
+  "sort_order": 2
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de pegar no kimono",
+  "expected_answer": "Kumikata",
+  "sort_order": 3
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de desequilíbrio",
+  "expected_answer": "Kuzushi",
+  "sort_order": 4
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar tipos de postura (Shissei)",
+  "expected_answer": "Shizen-hontai, Miguishizentai, Hidarishizentai, Jigohontai, Miguijigotai, Hidarijigotai",
+  "sort_order": 5
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar 2 tipos de deslocamento sobre o tatame (Shintai)",
+  "expected_answer": "Passadas naturais (Ayumiashi) e passadas sucessivas (Tsuguiashi)",
+  "sort_order": 6
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Executar defesa (Fussegui)",
+  "expected_answer": "Com as pernas em katamewaza e de técnicas em pé em tatiwaza",
+  "sort_order": 7
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar formas de movimentos rotatórios do corpo (esquiva)",
+  "expected_answer": "Taissabaki",
+  "sort_order": 8
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Fundamentos",
+  "description": "Demonstrar as fases necessárias para a aplicação de uma técnica",
+  "expected_answer": "Desequilíbrio (Kuzushi, oito tipos), preparação (Tsukuri) e execução (Kake)",
+  "sort_order": 9
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Deashi barai",
+  "expected_answer": null,
+  "sort_order": 10
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto gari",
+  "expected_answer": null,
+  "sort_order": 11
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ogoshi",
+  "expected_answer": null,
+  "sort_order": 12
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ippon seoi nague",
+  "expected_answer": null,
+  "sort_order": 13
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Koshi guruma",
+  "expected_answer": null,
+  "sort_order": 14
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 15
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sassae tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 16
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki goshi",
+  "expected_answer": null,
+  "sort_order": 17
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hiza guruma",
+  "expected_answer": null,
+  "sort_order": 18
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Seoi nague",
+  "expected_answer": null,
+  "sort_order": 19
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 20
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari",
+  "expected_answer": null,
+  "sort_order": 21
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gari",
+  "expected_answer": null,
+  "sort_order": 22
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai goshi",
+  "expected_answer": null,
+  "sort_order": 23
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kouti gari (repetido na folha: conferir)",
+  "expected_answer": null,
+  "sort_order": 24
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri komi goshi",
+  "expected_answer": null,
+  "sort_order": 25
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Okuri ashi barai",
+  "expected_answer": null,
+  "sort_order": 26
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uti mata",
+  "expected_answer": null,
+  "sort_order": 27
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tsuri goshi",
+  "expected_answer": null,
+  "sort_order": 28
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane goshi",
+  "expected_answer": null,
+  "sort_order": 29
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ashi guruma",
+  "expected_answer": null,
+  "sort_order": 30
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tomoe nague",
+  "expected_answer": null,
+  "sort_order": 31
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ko soto gake",
+  "expected_answer": null,
+  "sort_order": 32
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Harai tsuri komi ashi",
+  "expected_answer": null,
+  "sort_order": 33
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Kata guruma",
+  "expected_answer": null,
+  "sort_order": 34
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko otoshi",
+  "expected_answer": null,
+  "sort_order": 35
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 36
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sukui nague",
+  "expected_answer": null,
+  "sort_order": 37
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "O guruma",
+  "expected_answer": null,
+  "sort_order": 38
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sumi gaeshi",
+  "expected_answer": null,
+  "sort_order": 39
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Hane makikomi",
+  "expected_answer": null,
+  "sort_order": 40
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 41
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Soto makikomi",
+  "expected_answer": null,
+  "sort_order": 42
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki otoshi",
+  "expected_answer": null,
+  "sort_order": 43
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Osoto guruma",
+  "expected_answer": null,
+  "sort_order": 44
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko wakare",
+  "expected_answer": null,
+  "sort_order": 45
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Sumi otoshi",
+  "expected_answer": null,
+  "sort_order": 46
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko gake",
+  "expected_answer": null,
+  "sort_order": 47
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Uki waza",
+  "expected_answer": null,
+  "sort_order": 48
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Yoko guruma",
+  "expected_answer": null,
+  "sort_order": 49
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ushiro goshi",
+  "expected_answer": null,
+  "sort_order": 50
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Naguewaza",
+  "description": "Ura nague",
+  "expected_answer": null,
+  "sort_order": 51
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Hon kessa gatame",
+  "expected_answer": null,
+  "sort_order": 52
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Yoko kessa gatame",
+  "expected_answer": null,
+  "sort_order": 53
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Tate shiho gatame",
+  "expected_answer": null,
+  "sort_order": 54
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 55
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kata gatame",
+  "expected_answer": null,
+  "sort_order": 56
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Makura kessa gatame",
+  "expected_answer": null,
+  "sort_order": 57
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Ushiro kessa gatame",
+  "expected_answer": null,
+  "sort_order": 58
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kuzure kessa gatame",
+  "expected_answer": null,
+  "sort_order": 59
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kuzure yoko shiho gatame",
+  "expected_answer": null,
+  "sort_order": 60
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Ossaewaza",
+  "description": "Kuzure kami shiho gatame",
+  "expected_answer": null,
+  "sort_order": 61
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Deashi barai / Osoto gari",
+  "expected_answer": null,
+  "sort_order": 62
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Koshi guruma / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 63
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 64
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ouchi gari / Tai otoshi",
+  "expected_answer": null,
+  "sort_order": 65
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Ippon seoi nague / Kouti makikomi",
+  "expected_answer": null,
+  "sort_order": 66
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Kouti gari / Ouchi gari",
+  "expected_answer": null,
+  "sort_order": 67
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Uti mata / Kouti gari",
+  "expected_answer": null,
+  "sort_order": 68
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Renrakuwaza",
+  "description": "Harai goshi / Harai makikomi",
+  "expected_answer": null,
+  "sort_order": 69
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Osoto gari / Osoto otoshi",
+  "expected_answer": null,
+  "sort_order": 70
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Deashi barai / Tsubame gaeshi",
+  "expected_answer": null,
+  "sort_order": 71
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Koshi guruma / Utsuri goshi",
+  "expected_answer": null,
+  "sort_order": 72
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Ippon seoi nague / Tani otoshi",
+  "expected_answer": null,
+  "sort_order": 73
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Uti mata / Sukashi nague",
+  "expected_answer": null,
+  "sort_order": 74
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Ouchi gari / Ouchi gaeshi",
+  "expected_answer": null,
+  "sort_order": 75
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kaeshiwaza",
+  "description": "Sassae tsuri komi ashi / Ko soto gake",
+  "expected_answer": null,
+  "sort_order": 76
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Nami juji jime",
+  "expected_answer": null,
+  "sort_order": 77
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Okuri eri jime",
+  "expected_answer": null,
+  "sort_order": 78
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Kata juji jime",
+  "expected_answer": null,
+  "sort_order": 79
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Guiaku juji jime",
+  "expected_answer": null,
+  "sort_order": 80
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Kataha jime",
+  "expected_answer": null,
+  "sort_order": 81
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Jigoku jime",
+  "expected_answer": null,
+  "sort_order": 82
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Hadaka jime",
+  "expected_answer": null,
+  "sort_order": 83
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Sode guruma jime",
+  "expected_answer": null,
+  "sort_order": 84
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Niguiri jime",
+  "expected_answer": null,
+  "sort_order": 85
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Shimewaza",
+  "description": "Sankaku jime",
+  "expected_answer": null,
+  "sort_order": 86
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Ude garami",
+  "expected_answer": null,
+  "sort_order": 87
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Ude gatame",
+  "expected_answer": null,
+  "sort_order": 88
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Waki gatame",
+  "expected_answer": null,
+  "sort_order": 89
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Juji gatame",
+  "expected_answer": null,
+  "sort_order": 90
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Hiza gatame",
+  "expected_answer": null,
+  "sort_order": 91
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Hara gatame",
+  "expected_answer": null,
+  "sort_order": 92
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Ashi gatame",
+  "expected_answer": null,
+  "sort_order": 93
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Kansetsuwaza",
+  "description": "Sankaku gatame",
+  "expected_answer": null,
+  "sort_order": 94
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Nague no Kata",
+  "description": "Demonstrar os grupos de Tewaza, Koshiwaza e Ashiwaza do Nague no Kata",
+  "expected_answer": null,
+  "sort_order": 95
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Katamewaza",
+  "description": "Demonstrar duas passagens de guarda de pernas em Katamewaza e defesa com finalização",
+  "expected_answer": null,
+  "sort_order": 96
+ },
+ {
+  "belt": "Marrom",
+  "kind": "PRACTICE",
+  "category": "Arbitragem",
+  "description": "Demonstrar noções básicas de arbitragem",
+  "expected_answer": "Voz de comando, gestos e avaliação",
+  "sort_order": 97
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Professor",
+  "expected_answer": "Sensei",
+  "sort_order": 98
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Contar até 10 em japonês",
+  "expected_answer": "iti, ni, san, shi, go, roku, shiti, rati, kyu, jú",
+  "sort_order": 99
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Peças que compõem o local de treino ou competição",
+  "expected_answer": "Tatame",
+  "sort_order": 100
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Uniforme do praticante do Judô",
+  "expected_answer": "Judogui",
+  "sort_order": 101
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Parar",
+  "expected_answer": "Mate",
+  "sort_order": 102
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Começar",
+  "expected_answer": "Hajime",
+  "sort_order": 103
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Terminar",
+  "expected_answer": "Soremade",
+  "sort_order": 104
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Não se mova",
+  "expected_answer": "Sonomama",
+  "sort_order": 105
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Atenção ou posição de sentido",
+  "expected_answer": "Kiotsuke",
+  "sort_order": 106
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Calça",
+  "expected_answer": "Shitabaki",
+  "sort_order": 107
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Casaco",
+  "expected_answer": "Uwagui",
+  "sort_order": 108
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Faixa",
+  "expected_answer": "Obi",
+  "sort_order": 109
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Chinelo",
+  "expected_answer": "Surippa",
+  "sort_order": 110
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treinamento de entradas de técnicas",
+  "expected_answer": "Utikomi",
+  "sort_order": 111
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Treino livre",
+  "expected_answer": "Randori",
+  "sort_order": 112
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Competição",
+  "expected_answer": "Shiai",
+  "sort_order": 113
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Academia",
+  "expected_answer": "Dojô",
+  "sort_order": 114
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Local de competição",
+  "expected_answer": "Shiaijô",
+  "sort_order": 115
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Judoca ativo e judoca passivo",
+  "expected_answer": "Tori e Uke",
+  "sort_order": 116
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Vocabulário",
+  "description": "Significado da palavra Judô",
+  "expected_answer": "Caminho da suavidade: Ju significa suavidade, não resistência; Dô significa meio, caminho, doutrina",
+  "sort_order": 117
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome do fundador do Judô",
+  "expected_answer": "Jigoro Kano",
+  "sort_order": 118
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nome da primeira escola de Judô",
+  "expected_answer": "Kodokan",
+  "sort_order": 119
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Data da fundação do Kodokan",
+  "expected_answer": "Maio de 1882",
+  "sort_order": 120
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A arte que deu origem ao Judô",
+  "expected_answer": "Jujutsu, a arte da maleabilidade espiritual",
+  "sort_order": 121
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Nascimento do Shihan Jigoro Kano",
+  "expected_answer": "28 de outubro de 1860, província de Hiyogo, Japão",
+  "sort_order": 122
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "A morte do Shihan Jigoro Kano",
+  "expected_answer": "04 de maio de 1938, a bordo de um navio que o levava de volta ao Japão, vindo do Cairo (Egito), onde participou da assembleia geral do Comitê Olímpico Internacional",
+  "sort_order": 123
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Brasileiro de Judô",
+  "expected_answer": "1954",
+  "sort_order": 124
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Inclusão do Judô nos Jogos Olímpicos",
+  "expected_answer": "Tóquio 1964, em caráter não oficial; oficialmente em Munique 1972",
+  "sort_order": 125
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Realização do 1º Campeonato Mundial",
+  "expected_answer": "1956, no Japão",
+  "sort_order": 126
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Histórico",
+  "description": "Campeonatos Mundiais realizados no Brasil",
+  "expected_answer": "1965 e 2007, ambos no Rio de Janeiro",
+  "sort_order": 127
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Quem teme perder…”",
+  "expected_answer": "Quem teme perder já está vencido",
+  "sort_order": 128
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Conhecer-se…”",
+  "expected_answer": "Conhecer-se é dominar-se, dominar-se é triunfar",
+  "sort_order": 129
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “O judoca não se aperfeiçoa…”",
+  "expected_answer": "O judoca não se aperfeiçoa para lutar, luta para se aperfeiçoar",
+  "sort_order": 130
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Seiryokuzenjô",
+  "expected_answer": "Melhor uso da energia vital (princípio da máxima eficiência com o mínimo de esforço)",
+  "sort_order": 131
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Significado de Jitakyôei",
+  "expected_answer": "Amizade e prosperidade mútua (princípio da prosperidade e benefícios mútuos)",
+  "sort_order": 132
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Somente se aproxima da perfeição…”",
+  "expected_answer": "Somente se aproxima da perfeição quem a procura com constância, sabedoria e, sobretudo, humildade",
+  "sort_order": 133
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “A única vitória que perdura…”",
+  "expected_answer": "A única vitória que perdura é a conquista sobre a própria ignorância",
+  "sort_order": 134
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Princípios do Judô",
+  "description": "Princípio: “Nunca te orgulhes…”",
+  "expected_answer": "Nunca te orgulhes de haver vencido um adversário; ao que venceste hoje, poderá vencer-te amanhã",
+  "sort_order": 135
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Formas da prática do Judô",
+  "expected_answer": "São 3 formas fundamentais: Randori (treino livre), Kata (forma) e Shiai (competição)",
+  "sort_order": 136
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Classificação das técnicas de Judô",
+  "expected_answer": "1) Projeção (Naguewaza): em pé (Tatiwaza) — braço (Tewaza), quadril (Koshiwaza), pé ou perna (Ashiwaza); de pé para deitado (Sutemiwaza) — na linha do corpo (Masutemiwaza), lateral (Yokosutemiwaza). 2) Controle e domínio no solo (Katamewaza): imobilização (Ossaewaza), estrangulamento (Shimewaza), chave de braço (Kansetsuwaza), ataque aos pontos vitais (Atemiwaza)",
+  "sort_order": 137
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Saber a ordem das faixas no Judô",
+  "expected_answer": "Kyus (graus inferiores) — básicos: Branca, Branca/Cinza, Cinza, Cinza/Azul, Azul, Azul/Amarela, Amarela, Amarela/Laranja; intermediários: Laranja, Verde, Roxa e Marrom. Yudansha: faixas pretas do 1º ao 5º Dan. Kodansha: faixas vermelha e branca do 6º ao 8º Dan e faixas vermelhas do 9º ao 10º Dan",
+  "sort_order": 138
+ },
+ {
+  "belt": "Marrom",
+  "kind": "THEORY",
+  "category": "Conhecimentos gerais",
+  "description": "Conceito da palavra Kodansha",
+  "expected_answer": "Título de alta graduação, específico do Judô, criado pelo Instituto Kodokan, outorgado a quem se empenhou no aprendizado, na prática contínua, na eficiência técnica em competição e na dedicação ao ensino, ao estudo e à pesquisa; é depositário e responsável pela difusão dos princípios do Judô preconizados pelo Shihan Jigoro Kano",
+  "sort_order": 139
+ }
+]
