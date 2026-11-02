@@ -302,7 +302,8 @@ Resources:
     Properties:
       UserPoolName: !Sub ${AWS::StackName}-users
       UsernameAttributes: [email]
-      # Set only at creation: changing it replaces the pool (new pool and client IDs).
+      # Set only at creation. CloudFormation does not replace the pool when it changes,
+      # so changing it requires deleting and recreating the pool (or the stack).
       UsernameConfiguration:
         CaseSensitive: false
       AutoVerifiedAttributes: [email]

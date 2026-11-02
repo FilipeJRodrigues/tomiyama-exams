@@ -252,7 +252,8 @@ def test_user_pool_ignores_case_in_the_email_username(template: dict[str, Any]) 
 
 
 def test_user_pool_is_only_referenced_through_the_resource(template: dict[str, Any]) -> None:
-    # CaseSensitive replaces the pool when it changes: every reference must follow the new IDs.
+    # Recreating the pool (the only way to change CaseSensitive) gives new IDs:
+    # every reference must follow them.
     resources = template["Resources"]
     referencing = [
         name
