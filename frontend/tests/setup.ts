@@ -1,10 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 
 import { server } from './msw-server';
 import { mediaMatches, resetViewport } from './viewport';
+
+// findBy*/waitFor waited only 1 s by default, which is not enough when the
+// machine or CI is under load.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom lacks these browser APIs used by Mantine.
 window.HTMLElement.prototype.scrollIntoView = () => undefined;

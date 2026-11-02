@@ -38,7 +38,8 @@ export async function renderApp({
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false, refetchOnWindowFocus: true } });
   const router = createMemoryRouter(createRoutes({ useMocks: true }), { initialEntries: [route] });
-  const user = userEvent.setup();
+  // No delay between keystrokes: same event order, much faster under load.
+  const user = userEvent.setup({ delay: null });
   const result = render(
     <AppProviders auth={auth} apiUrl={TEST_API_URL} queryClient={queryClient}>
       <RouterProvider router={router} />

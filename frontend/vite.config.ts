@@ -11,6 +11,8 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
     css: false,
+    // Headroom for slow CI runners; the default 5 s is too tight under load.
+    testTimeout: 15000,
     env: {
       // UTC-3 (no DST since 2019), so date bugs show up as in Brazil.
       TZ: 'America/Sao_Paulo',

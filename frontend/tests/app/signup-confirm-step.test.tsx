@@ -73,12 +73,10 @@ describe('cadastro (§ 6.1): conta que já foi confirmada', () => {
 describe('cadastro (§ 6.1): "Trocar e-mail" durante um envio', () => {
   it('fica desabilitado enquanto "Confirmar" está em andamento', async () => {
     let finish: (result: ConfirmSignUpResult) => void = () => undefined;
-    const confirmSignUp = vi.fn<AuthService['confirmSignUp']>(
-      () =>
-        new Promise<ConfirmSignUpResult>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    const finishGate = new Promise<ConfirmSignUpResult>((resolve) => {
+      finish = resolve;
+    });
+    const confirmSignUp = vi.fn<AuthService['confirmSignUp']>(() => finishGate);
     const app = await renderApp({
       route: '/cadastro',
       auth: { ...createMockAuth(null), confirmSignUp },
@@ -99,12 +97,10 @@ describe('cadastro (§ 6.1): "Trocar e-mail" durante um envio', () => {
 
   it('fica desabilitado enquanto "Reenviar código" está em andamento', async () => {
     let finish: () => void = () => undefined;
-    const resendSignUpCode = vi.fn<AuthService['resendSignUpCode']>(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    const finishGate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const resendSignUpCode = vi.fn<AuthService['resendSignUpCode']>(() => finishGate);
     const app = await renderApp({
       route: '/cadastro',
       auth: { ...createMockAuth(null), resendSignUpCode },
