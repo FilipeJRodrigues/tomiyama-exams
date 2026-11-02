@@ -14,12 +14,20 @@ export const paths = {
   login: '/entrar',
   signUp: '/cadastro',
   students: '/alunos',
+  studentNew: '/alunos/novo',
+  /** Route pattern of the student form in edit mode; build links with `studentPath`. */
+  studentEdit: '/alunos/:id',
   examDay: '/dia-do-exame',
   belts: '/faixas',
   requirements: '/requisitos',
   events: '/eventos',
   academy: '/academia',
 } as const;
+
+/** `/alunos/{id}`: the student form in edit mode (the id is the API's opaque UUID). */
+export function studentPath(id: string): string {
+  return `${paths.students}/${encodeURIComponent(id)}`;
+}
 
 export interface NavItem {
   path: string;

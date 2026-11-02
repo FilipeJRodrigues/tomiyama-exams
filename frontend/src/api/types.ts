@@ -55,6 +55,20 @@ export interface StudentView extends Student {
   eligibility: Eligibility;
 }
 
+/**
+ * Body of `POST /students` and `PUT /students/{id}`. The form always sends every field:
+ * resending the same belt, belt date and stripes is accepted after the first exam (RN013).
+ */
+export interface StudentInput {
+  full_name: string;
+  birth_date: IsoDate;
+  current_belt_id: string;
+  current_belt_since: IsoDate;
+  stripes: number;
+  federation_id: string | null;
+  active: boolean;
+}
+
 export interface StudentFilters {
   active?: boolean;
   belt_id?: string;

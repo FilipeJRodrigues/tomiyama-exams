@@ -153,6 +153,16 @@ function beltId(name: string): string {
 export interface MockStudent {
   student: Student;
   eligibility: Eligibility;
+  /**
+   * Exams already registered (the backend `exam_count`). With at least one, guardians no
+   * longer change the graduation (RN013) and nobody deletes the student (RN018).
+   */
+  examCount: number;
+}
+
+/** Same student with `count` registered exams. */
+function withExams(item: MockStudent, count: number): MockStudent {
+  return { ...item, examCount: count };
 }
 
 const CREATED_AT = '2026-10-01T12:00:00+00:00';
@@ -183,6 +193,7 @@ function student(
       updated_at: null,
     },
     eligibility,
+    examCount: 0,
   };
 }
 
@@ -251,16 +262,20 @@ export const initialMockStudents: readonly MockStudent[] = [
     0,
     blocked('BELT', 'Branca/Cinza', ['Carência mínima de 3 meses na faixa atual (faltam 1)']),
   ),
-  student(
-    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e05',
-    examiner,
-    'Élida Ramos',
-    '2010-07-03',
-    'Verde',
-    '2024-05-20',
-    1,
-    eligible('BELT', 'Roxa'),
-    false,
+  // Earned her stripe in an exam: she can be deactivated, never deleted (RN018).
+  withExams(
+    student(
+      '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e05',
+      examiner,
+      'Élida Ramos',
+      '2010-07-03',
+      'Verde',
+      '2024-05-20',
+      1,
+      eligible('BELT', 'Roxa'),
+      false,
+    ),
+    2,
   ),
 ];
 
@@ -286,18 +301,22 @@ export const showcaseMockStudents: readonly MockStudent[] = [
       reasons: ['Faixa preta é exame da federação'],
     },
   ),
-  student(
-    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e07',
-    guardian,
-    'Gabriel Costa',
-    '2017-12-05',
-    'Amarela/Laranja',
-    '2026-03-01',
-    2,
-    blocked('BELT', 'Laranja', [
-      'Idade mínima para a faixa Laranja: 11 anos',
-      'Carência mínima de 12 meses na faixa atual (faltam 4)',
-    ]),
+  // A guardian's student with exams: only examiners change his graduation (RN013).
+  withExams(
+    student(
+      '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e07',
+      guardian,
+      'Gabriel Costa',
+      '2017-12-05',
+      'Amarela/Laranja',
+      '2026-03-01',
+      2,
+      blocked('BELT', 'Laranja', [
+        'Idade mínima para a faixa Laranja: 11 anos',
+        'Carência mínima de 12 meses na faixa atual (faltam 4)',
+      ]),
+    ),
+    1,
   ),
   student(
     '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e08',
@@ -325,6 +344,7 @@ function copy(item: MockStudent): MockStudent {
   return {
     student: { ...item.student },
     eligibility: { ...item.eligibility, reasons: [...item.eligibility.reasons] },
+    examCount: item.examCount,
   };
 }
 
