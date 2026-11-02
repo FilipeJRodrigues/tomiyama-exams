@@ -22,18 +22,14 @@ describe('cadastro de responsável (§ 6.1): casos de borda', () => {
     const base = createMockAuth(null);
     let finishResend: () => void = () => undefined;
     let finishConfirm: (result: ConfirmSignUpResult) => void = () => undefined;
-    const resendSignUpCode = vi.fn<AuthService['resendSignUpCode']>(
-      () =>
-        new Promise<void>((resolve) => {
-          finishResend = resolve;
-        }),
-    );
-    const confirmSignUp = vi.fn<AuthService['confirmSignUp']>(
-      () =>
-        new Promise<ConfirmSignUpResult>((resolve) => {
-          finishConfirm = resolve;
-        }),
-    );
+    const finishResendGate = new Promise<void>((resolve) => {
+      finishResend = resolve;
+    });
+    const finishConfirmGate = new Promise<ConfirmSignUpResult>((resolve) => {
+      finishConfirm = resolve;
+    });
+    const resendSignUpCode = vi.fn<AuthService['resendSignUpCode']>(() => finishResendGate);
+    const confirmSignUp = vi.fn<AuthService['confirmSignUp']>(() => finishConfirmGate);
     const app = await renderApp({
       route: '/cadastro',
       auth: { ...base, resendSignUpCode, confirmSignUp },

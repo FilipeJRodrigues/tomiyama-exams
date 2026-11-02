@@ -89,11 +89,12 @@ describe('edit student form (§ 6.2)', () => {
 
   it('shows a labelled loading state while the student loads', async () => {
     let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     server.use(
       http.get(studentUrl(ANA), async () => {
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        await gate;
         return undefined;
       }),
     );

@@ -261,13 +261,14 @@ describe('new student form (§ 6.2)', () => {
 
   it('sends only once on a double click and shows the button loading', async () => {
     let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const bodies: unknown[] = [];
     server.use(
       http.post(STUDENTS_URL, async ({ request }) => {
         bodies.push(await request.clone().json());
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        await gate;
         return undefined;
       }),
     );
@@ -314,11 +315,12 @@ describe('new student form (§ 6.2)', () => {
 
   it('shows a labelled loading state while the belts load', async () => {
     let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     server.use(
       http.get(`${TEST_API_URL}/belts`, async () => {
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        await gate;
         return HttpResponse.json(mockBelts);
       }),
     );

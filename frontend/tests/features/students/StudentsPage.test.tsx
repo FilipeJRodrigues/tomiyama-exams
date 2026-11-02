@@ -95,11 +95,12 @@ describe('students list (§ 6.2)', () => {
 
   it('shows a labelled loading state while the API answers', async () => {
     let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     server.use(
       http.get(STUDENTS_URL, async () => {
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        await gate;
         return HttpResponse.json([]);
       }),
     );

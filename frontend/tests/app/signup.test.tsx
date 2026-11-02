@@ -146,12 +146,10 @@ describe('cadastro de responsável (§ 6.1): passo do código', () => {
   it('reenvia o código com aviso e uma vez só com clique duplo', async () => {
     const base = createMockAuth(null);
     let finish: () => void = () => undefined;
-    const resendSignUpCode = vi.fn<AuthService['resendSignUpCode']>(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    const finishGate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const resendSignUpCode = vi.fn<AuthService['resendSignUpCode']>(() => finishGate);
     const app = await renderApp({ route: '/cadastro', auth: { ...base, resendSignUpCode } });
     await reachConfirmStep(app);
 
