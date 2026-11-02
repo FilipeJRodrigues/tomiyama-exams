@@ -1,4 +1,5 @@
 import {
+  Badge,
   PasswordInput,
   createTheme,
   darken,
@@ -18,6 +19,11 @@ export const theme = createTheme({
   focusRing: 'auto',
   defaultRadius: 'md',
   components: {
+    // § 6: sentence case everywhere. Mantine draws Badge in uppercase by default; turn it
+    // off for every Badge (inline style, so it also wins over the class in the CSS).
+    Badge: Badge.extend({
+      styles: { root: { textTransform: 'none' } },
+    }),
     // § 6.7: every control reachable by Tab, with a pt-BR name. The toggle announces its
     // state through `aria-pressed`, so the name stays the same when the password shows.
     PasswordInput: PasswordInput.extend({
