@@ -107,6 +107,7 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 | POST | /events/{id}/exams | examinador |
 | GET | /events/{id}/exams/{student_id} | examinador |
 | PUT/DELETE | /events/{id}/exams/{student_id}/answers/{requirement_id} | examinador |
+| POST | /events/{id}/exams/{student_id}/decision | examinador (só o sensei decide) |
 | GET/PUT | /settings | examinador |
 | GET | /examiners | examinador |
 
@@ -117,6 +118,8 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 `GET /events` devolve os eventos do mais recente para o mais antigo (`exam_date`; empate pelo mais novo cadastro). No `POST`, `status` é opcional (padrão `OPEN`). O `PUT` altera `name` e `status`; um evento `CLOSED` pode ser reaberto. A `exam_date` não muda depois da criação: reenviar a mesma data é aceito, outra data é recusada. O `DELETE` é recusado (409) se o evento tiver exames.
 
 `POST /events/{id}/exams` confirma a presença (RN005) com o corpo `{"student_id": "..."}` e devolve 201 com o exame criado: faixa-alvo (`target_belt_id`) e tipo (`kind`: `STRIPE` ou `BELT`) calculados na **data do evento**, `status` `IN_PROGRESS` e quem confirmou (`created_by`). Recusa com 400 se o evento estiver encerrado ("Evento encerrado"), se o aluno estiver inativo ("Aluno inativo não pode fazer exame") ou inelegível (os motivos da elegibilidade, separados por `; `); 404 para evento ou aluno inexistente; 409 se a presença já foi confirmada ("Presença já confirmada neste evento"). A gravação é uma única transação (`TransactWriteItems`): o exame só entra se ainda não existir e se, no mesmo instante, o evento existir e estiver aberto e o aluno existir e estiver ativo. Por isso confirmações simultâneas do mesmo aluno resultam em um 201 e um 409, e um evento apagado ou encerrado no meio do caminho nunca recebe exame. Conflitos de transação são repetidos algumas vezes; se persistirem, a resposta é 409 "Outra confirmação está em andamento. Tente de novo.". A transação também exige que a faixa atual, a data da faixa e os graus do aluno ainda sejam os lidos ao calcular a faixa-alvo; se mudaram no meio do caminho, a resposta é 409 "Os dados do aluno mudaram. Tente de novo." e nada é gravado.
+
+O exame também guarda a **graduação de origem**, a do aluno no momento da presença: `source_belt_id`, `source_belt_since` e `source_stripes`. A decisão (RN008) usa esses campos para saber se a graduação mudou desde a presença. Exames confirmados antes desta versão não têm os campos (vêm `null`); veja a decisão abaixo.
 
 **Contador de exames.** A mesma transação soma 1 ao atributo `exam_count` do evento e do aluno (itens sem o atributo contam como zero). O `DELETE /events/{id}` e o `DELETE /students/{id}` são gravações condicionais a `exam_count` zero ou ausente, então uma presença confirmada no meio da exclusão ainda resulta em 409 ("Evento possui exames registrados" / "Aluno possui exames registrados") e nada é apagado. Pelo mesmo contador, quando um responsável altera faixa, data da faixa ou graus, a gravação só acontece se o aluno ainda não tiver exame (403 "Somente examinadores alteram a graduação após o primeiro exame"). As edições de evento e aluno usam `UpdateItem` só nos campos do modelo e nunca perdem o contador. O mesmo aluno pode ter exames em andamento em dois eventos abertos.
 
@@ -172,7 +175,8 @@ As três rotas leem o Cognito com `ListUsersInGroup` (paginado, 60 por página),
   "exam": {"id": "…", "event_id": "…", "student_id": "…", "student_name": "Ana",
            "target_belt_id": "…", "kind": "BELT", "status": "IN_PROGRESS",
            "decided_by_id": null, "decided_at": null, "notes": null,
-           "created_by": "…", "created_at": "…"},
+           "created_by": "…", "created_at": "…",
+           "source_belt_id": "…", "source_belt_since": "2026-03-14", "source_stripes": 0},
   "event": {"id": "…", "name": "Exame março/2027", "exam_date": "2027-03-20", "status": "OPEN"},
   "student": {"id": "…", "full_name": "Ana", "birth_date": "2018-05-10"},
   "target_belt": {"id": "…", "name": "Cinza/Azul", "sort_order": 2},
@@ -213,7 +217,7 @@ Regras e erros (iguais no `PUT` e no `DELETE`):
 | responsável / sem login | 403 "Esta área é dos examinadores" / 401 "Faça login para continuar" |
 | evento, exame ou requisito inexistente | 404 "Evento não encontrado" / "Exame não encontrado" / "Requisito não encontrado" |
 | `correct` ausente ou não booleano (só no `PUT`) | 400 "Marcação inválida: envie correct como true (certo) ou false (errado)" |
-| exame decidido (`status` ≠ `IN_PROGRESS`, RN010) | 400 "Exame já decidido" |
+| exame decidido (`status` ≠ `IN_PROGRESS`, RN010) | 409 "Exame já decidido" |
 | evento encerrado (RN016) | 400 "Evento encerrado" |
 | item de outra faixa | 400 "Item não pertence à faixa do exame" |
 | conflito de transação que persistiu | 409 "Outra marcação está em andamento. Tente de novo." |
@@ -226,3 +230,51 @@ Regras e erros (iguais no `PUT` e no `DELETE`):
 **Modelagem.** As respostas ficam na tabela `Answers` (PK `exam_id`, o UUID do exame; SK `requirement_id`), uma por (exame, requisito), com `correct`, `marked_by`, `marked_at`, `event_id` e `student_id`. A chave é o UUID do exame, e não `event_id#student_id`, para que respostas de um exame apagado nunca apareçam num exame novo do mesmo aluno no mesmo evento.
 
 **Contador de respostas.** A transação da primeira resposta de um item num exame soma 1 ao atributo `answer_count` do requisito; desmarcar subtrai 1, e substituir não mexe no contador. O `DELETE /requirements/{id}` é condicional a `answer_count` zero ou ausente. Assim, uma resposta gravada durante a exclusão ainda resulta em 409, e uma marcação que chega depois da exclusão recebe 404 sem recriar o item. O `PUT /requirements/{id}` usa `UpdateItem` só nos campos do modelo e nunca perde o contador; a condição da mesma gravação só aceita trocar `belt_id` ou `kind` com `answer_count` zero ou ausente (409 caso contrário). Assim, uma primeira marcação que chega entre a leitura e a gravação do `PUT` ainda bloqueia a troca, e uma resposta nunca fica órfã fora da folha e do percentual do exame.
+
+### Decisão do sensei (RN008, RN008a, RN009, RN010)
+
+`POST /events/{id}/exams/{student_id}/decision` aprova ou reprova o exame:
+
+```json
+{"result": "APPROVED", "notes": "Ótimo ukemi"}
+```
+
+- `result`: `APPROVED` (aprovado) ou `FAILED` (reprovado), obrigatório.
+- `notes`: observação opcional, até 500 caracteres; gravada sem espaços nas pontas. Ausente, `null` ou só espaços → sem observação.
+
+A resposta (200) traz o exame decidido e, na aprovação, o aluno já com a nova graduação (`null` na reprovação):
+
+```json
+{
+  "exam": {"id": "…", "status": "APPROVED", "decided_by_id": "<sub do sensei>",
+           "decided_at": "2027-03-20T15:00:00+00:00", "notes": "Ótimo ukemi",
+           "student_name": "Ana", "…": "…"},
+  "student": {"id": "…", "current_belt_id": "<faixa-alvo>", "current_belt_since": "2027-03-20",
+              "stripes": 0, "…": "…"}
+}
+```
+
+- **Quem decide (RN008):** só o usuário gravado em `sensei_user_id` nas configurações, lido a cada decisão, e independentemente do percentual. O master só decide se for ele o sensei. A rota é de examinadores: o sensei precisa estar no grupo `admin` **no token** (claim `cognito:groups`; a rota não consulta o Cognito). Quem saiu do grupo deixa de decidir quando o token é renovado (no máximo 1 h).
+- **Efeito da aprovação (RN009):** exame de faixa (`BELT`) → o aluno passa para `target_belt_id`, `current_belt_since` = data do evento e `stripes` = 0. Exame de grau (`STRIPE`) → `stripes` + 1, faixa e data mantidas. Reprovado: nada muda no aluno. Também muda o `updated_at` do aluno; `exam_count` e os demais campos ficam como estão.
+- **Evento encerrado (RN008a):** a decisão continua permitida.
+- **Aluno inativado depois da presença:** a decisão continua permitida (o aluno segue inativo, com a nova graduação se aprovado).
+- **Graduação mudou desde a presença:** se a faixa, a data da faixa ou os graus do aluno não forem mais os da graduação de origem, a decisão (aprovação **ou** reprovação) é recusada e nada é gravado. Em exames antigos, sem a graduação de origem, a conferência possível é feita: a faixa-alvo precisa ser a faixa imediatamente seguinte à atual do aluno e o tipo do exame precisa corresponder aos graus atuais (RN004); se não, a mesma recusa.
+
+| Situação | Resposta |
+| --- | --- |
+| responsável, ou conta fora do grupo `admin` no token / sem login | 403 "Esta área é dos examinadores" / 401 "Faça login para continuar" |
+| evento ou exame inexistente | 404 "Evento não encontrado" / "Exame não encontrado" |
+| nenhum sensei definido | 409 "Defina o sensei nas configurações da academia" |
+| examinador que não é o sensei (inclusive o master) | 403 "Somente o sensei pode decidir o exame" |
+| exame já decidido (RN010), inclusive numa decisão simultânea | 409 "Exame já decidido" |
+| `result` ausente ou diferente de `APPROVED`/`FAILED` | 400 "Resultado inválido: envie result como APPROVED (aprovado) ou FAILED (reprovado)" |
+| `notes` que não é texto / longo demais | 400 "Observação: valor inválido" / "Observação: máximo de 500 caracteres" |
+| corpo que não é um objeto JSON | 400 "Corpo da requisição inválido: envie um objeto JSON" |
+| aluno do exame inexistente | 404 "Aluno não encontrado" |
+| graduação do aluno mudou desde a presença | 409 "A graduação do aluno mudou desde a presença. Confira antes de decidir." |
+| conflito de transação que persistiu | 409 "Outra alteração deste exame está em andamento. Tente de novo." |
+| limite de capacidade do DynamoDB que persistiu | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+
+Sem sensei a resposta é 409, e não 400, porque o corpo está certo: o que falta é configurar a academia. As verificações seguem a ordem da tabela. A troca de sensei entre a leitura e a gravação também é barrada: quem deixou de ser o sensei recebe 403 "Somente o sensei pode decidir o exame" e, se o sensei foi removido, 409 "Defina o sensei nas configurações da academia"; nada é gravado.
+
+**Gravação atômica.** A decisão é uma transação (`TransactWriteItems`) com três itens: o `UpdateItem` do exame, condicionado a ainda ser o mesmo exame (`id`) e estar `IN_PROGRESS`; no aluno, a condição de que a faixa, a data da faixa e os graus ainda sejam os esperados: um `UpdateItem` só nos campos da graduação na aprovação, ou um `ConditionCheck` na reprovação; e um `ConditionCheck` em `Settings` de que `sensei_user_id` ainda é quem decide (RN008). Se essa condição falhar, as configurações são relidas para separar a troca de sensei (403) da remoção (409). Por isso duas decisões simultâneas resultam em um 200 e um 409 "Exame já decidido", e a aprovação nunca é aplicada duas vezes. As marcações (RN006) conferem o mesmo `status` na própria transação: uma marcação que leu o exame antes da decisão e grava depois recebe 409 "Exame já decidido" e não entra. Uma marcação gravada antes da decisão fica como está. O evento não entra na transação: um evento com exames não pode ser apagado (`exam_count`), e o encerrado aceita a decisão. Conflitos de transação e limite de capacidade dentro da transação são repetidos algumas vezes com espera crescente; se persistirem, 409 ou 503 (a mesma requisição pode ser reenviada). Cada decisão custa 2 WCU em `Exams`, 2 em `Students` e 2 em `Settings` (o `ConditionCheck`, que numa transação também conta em dobro).

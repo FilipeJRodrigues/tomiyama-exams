@@ -843,6 +843,50 @@ Resources:
             Path: /events/{id}/exams/{student_id}/answers/{requirement_id}
             Method: DELETE
 
+  # Sensei's decision (examiners only; the handler allows only the sensei, RN008-RN010)
+  DecideExamFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.exams.decide_exam
+      Policies:
+        # GetItem: event, exam, student and the settings (the sensei) before
+        # the write. TransactWriteItems: conditional Update in Exams (status
+        # IN_PROGRESS) + conditional Update (approved) or ConditionCheck
+        # (failed) in Students on the graduation of the attendance +
+        # ConditionCheck in Settings that the decider is still the sensei
+        # (RN008); GetItem there again to translate a failed check. Scan in
+        # Belts only for exams confirmed before that graduation was stored.
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt SettingsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ExamsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt StudentsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt BeltsTable.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}/exams/{student_id}/decision
+            Method: POST
+
   # Academy settings and the sensei selector (examiners only, § 3.7/§ 6.6).
   # USER_POOL_ID and the pool ARN are set per function, never in Globals: the
   # pool references PostConfirmationFunction (LambdaConfig), so giving that
