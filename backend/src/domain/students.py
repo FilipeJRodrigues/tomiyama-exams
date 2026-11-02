@@ -12,6 +12,10 @@ from domain.users import User
 
 MAX_STRIPES = 4
 
+MSG_GRADUATION_LOCKED = "Somente examinadores alteram a graduação após o primeiro exame"
+MSG_STUDENT_HAS_EXAMS = "Aluno possui exames registrados"
+MSG_STUDENT_NOT_FOUND = "Aluno não encontrado"
+
 
 @dataclass(frozen=True)
 class Student:
@@ -160,14 +164,28 @@ def update_student(
         ForbiddenError: If a guardian changes the graduation after the first exam.
     """
     fields = _parse_fields(payload, belts_by_id, today)
-    graduation_changed = (
-        fields.current_belt_id != existing.current_belt_id
-        or fields.current_belt_since != existing.current_belt_since
-        or fields.stripes != existing.stripes
+    updated = replace(existing, updated_at=now_iso, **vars(fields))
+    if has_exams and needs_graduation_lock(existing, updated, user):
+        raise ForbiddenError(MSG_GRADUATION_LOCKED)
+    return updated
+
+
+def graduation_changed(existing: Student, updated: Student) -> bool:
+    """Whether the belt, the belt date or the stripes differ (RN013)."""
+    return (
+        updated.current_belt_id != existing.current_belt_id
+        or updated.current_belt_since != existing.current_belt_since
+        or updated.stripes != existing.stripes
     )
-    if graduation_changed and has_exams and not user.is_examiner:
-        raise ForbiddenError("Somente examinadores alteram a graduação após o primeiro exame")
-    return replace(existing, updated_at=now_iso, **vars(fields))
+
+
+def needs_graduation_lock(existing: Student, updated: Student, user: User) -> bool:
+    """Whether the edit is only allowed while the student has no exam (RN013).
+
+    True when a non-examiner changes the graduation; the repository then makes
+    the write conditional on the student still having no exam.
+    """
+    return not user.is_examiner and graduation_changed(existing, updated)
 
 
 def ensure_can_access(student: Student | None, user: User) -> Student:
@@ -181,7 +199,7 @@ def ensure_can_access(student: Student | None, user: User) -> Student:
         NotFoundError: If the student is missing or not visible to the user.
     """
     if student is None or (not user.is_examiner and student.owner_id != user.sub):
-        raise NotFoundError("Aluno não encontrado")
+        raise NotFoundError(MSG_STUDENT_NOT_FOUND)
     return student
 
 
@@ -192,4 +210,4 @@ def ensure_can_delete(has_exams: bool) -> None:
         ConflictError: If the student has exams.
     """
     if has_exams:
-        raise ConflictError("Aluno possui exames registrados")
+        raise ConflictError(MSG_STUDENT_HAS_EXAMS)
