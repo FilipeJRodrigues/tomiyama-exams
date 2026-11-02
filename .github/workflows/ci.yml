@@ -55,14 +55,14 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Exigir teste em backend/tests/regression/
+      - name: Exigir teste em backend/ ou frontend/tests/regression/
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- backend/tests/regression/ \
-            | grep -E '/test_[^/]+\.py$' || true)
+          changed=$(git diff --name-only --diff-filter=AM "origin/${BASE_REF}...HEAD" -- backend/tests/regression/ frontend/tests/regression/ \
+            | grep -E '^backend/tests/regression/test_[^/]+\.py$|^frontend/tests/regression/[^/]+\.test\.tsx?$' || true)
           if [ -z "$changed" ]; then
-            echo "::error::Branches fix/* precisam de um teste em backend/tests/regression/ que reproduza o erro."
+            echo "::error::Branches fix/* precisam de um teste em backend/tests/regression/ ou frontend/tests/regression/ que reproduza o erro."
             exit 1
           fi
           echo "Testes de regressão neste PR:"
