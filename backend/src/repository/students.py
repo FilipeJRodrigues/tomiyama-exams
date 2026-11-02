@@ -14,6 +14,7 @@ from domain.errors import ConflictError, ForbiddenError, NotFoundError
 from domain.students import (
     MSG_GRADUATION_IN_PROGRESS,
     MSG_GRADUATION_LOCKED,
+    MSG_STUDENT_CHANGED,
     MSG_STUDENT_HAS_EXAMS,
     MSG_STUDENT_NOT_FOUND,
     Student,
@@ -57,6 +58,12 @@ def _from_item(item: dict[str, Any]) -> Student:
 
 # Graduation attributes (RN013): left out of the write when an edit keeps them.
 GRADUATION_ATTRIBUTES = ("current_belt_id", "current_belt_since", "stripes")
+
+
+def _graduation_of(student: Student) -> dict[str, Any]:
+    """Return the graduation attributes as stored (same serialization as ``_to_item``)."""
+    item = student.to_dict()
+    return {attribute: item[attribute] for attribute in GRADUATION_ATTRIBUTES}
 
 
 def get_student(student_id: str) -> Student | None:
@@ -137,6 +144,7 @@ def save_student(
     require_no_exams: bool = False,
     require_no_exam_in_progress: bool = False,
     write_graduation: bool = True,
+    expected_graduation: Student | None = None,
 ) -> Student:
     """Rewrite an existing student's attributes, keeping ``exam_count`` and the marker.
 
@@ -152,6 +160,11 @@ def save_student(
             False when the edit keeps them: the stored graduation then stays
             as it is, so an approval written after the caller's read is never
             reverted by an edit of the other fields (RN009).
+        expected_graduation: Student as the caller read it. With
+            ``write_graduation``, write only while the stored belt, belt date
+            and stripes are still the ones read (optimistic lock), so an
+            approval written after the read is never reverted by an edit that
+            changes the graduation (RN009).
 
     Returns:
         The student as stored after the write.
@@ -161,7 +174,8 @@ def save_student(
         ForbiddenError: If ``require_no_exams`` and the student has an exam
             (wins over the exam in progress, as in ``domain.students``).
         ConflictError: If ``require_no_exam_in_progress`` and the student has
-            an exam in progress.
+            an exam in progress, or if the stored graduation is no longer
+            ``expected_graduation``'s.
         ServiceUnavailableError: If the write, or the re-read after a failed
             condition, kept throttling (503).
     """
@@ -176,6 +190,16 @@ def save_student(
         arguments["ExpressionAttributeValues"][":zero"] = 0
     if require_no_exam_in_progress:
         condition += f" AND attribute_not_exists({EXAM_IN_PROGRESS})"
+    expected = (
+        _graduation_of(expected_graduation)
+        if write_graduation and expected_graduation is not None
+        else None
+    )
+    if expected is not None:
+        for index, (attribute, value) in enumerate(expected.items()):
+            arguments["ExpressionAttributeNames"][f"#g{index}"] = attribute
+            arguments["ExpressionAttributeValues"][f":g{index}"] = value
+            condition += f" AND #g{index} = :g{index}"
     students_table = table(STUDENTS_TABLE_ENV)
     try:
         response = students_table.update_item(
@@ -192,6 +216,10 @@ def save_student(
             raise ForbiddenError(MSG_GRADUATION_LOCKED) from exc
         if require_no_exam_in_progress and item.get(EXAM_IN_PROGRESS):
             raise ConflictError(MSG_GRADUATION_IN_PROGRESS) from exc
+        if expected is not None and any(
+            item.get(attribute) != value for attribute, value in expected.items()
+        ):
+            raise ConflictError(MSG_STUDENT_CHANGED) from exc
         # The blocking state is gone by the re-read (e.g. the exam was decided
         # in between); report the lock the write actually checked.
         if require_no_exams:

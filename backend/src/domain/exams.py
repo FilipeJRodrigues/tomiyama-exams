@@ -19,6 +19,7 @@ from domain.eligibility import ExamKind, evaluate
 from domain.errors import ValidationError
 from domain.events import MSG_EVENT_NOT_FOUND as MSG_EVENT_NOT_FOUND
 from domain.events import ExamEvent
+from domain.students import MSG_STUDENT_CHANGED as MSG_STUDENT_CHANGED
 from domain.students import MSG_STUDENT_NOT_FOUND as MSG_STUDENT_NOT_FOUND
 from domain.students import Student
 
@@ -27,7 +28,6 @@ MSG_IN_PROGRESS_ELSEWHERE = "O aluno já tem um exame em andamento em outro even
 MSG_EXAM_NOT_FOUND = "Exame não encontrado"
 MSG_EVENT_CLOSED = "Evento encerrado"
 MSG_STUDENT_INACTIVE = "Aluno inativo não pode fazer exame"
-MSG_STUDENT_CHANGED = "Os dados do aluno mudaram. Tente de novo."
 MSG_TRY_AGAIN = "Outra confirmação está em andamento. Tente de novo."
 MSG_EXAM_DECIDED = "Exame já decidido"
 

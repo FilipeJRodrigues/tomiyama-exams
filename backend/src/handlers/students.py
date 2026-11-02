@@ -135,13 +135,16 @@ def update_student(event: Event, context: Any) -> Response:
     # The checks above answer the common case; under concurrency the
     # conditional write is what keeps the locks (RN005, RN013). An edit that
     # keeps the graduation does not write it, so an approval between the read
-    # and the write stays (RN009); the answer is the student as stored.
+    # and the write stays (RN009); the answer is the student as stored. An
+    # edit that changes it is written only over the graduation read
+    # (optimistic lock), so it never reverts an approval either.
     graduation_changed = student_rules.graduation_changed(existing, updated)
     stored = student_repo.save_student(
         updated,
         require_no_exams=student_rules.needs_graduation_lock(existing, updated, user),
         require_no_exam_in_progress=graduation_changed,
         write_graduation=graduation_changed,
+        expected_graduation=existing,
     )
     logger.info("Student %s updated by %s", stored.id, user.sub)
     return json_response(200, _student_view(stored, belts, dates.today()))

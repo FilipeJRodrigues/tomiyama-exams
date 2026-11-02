@@ -18,6 +18,7 @@ MSG_GRADUATION_IN_PROGRESS = (
 )
 MSG_STUDENT_HAS_EXAMS = "Aluno possui exames registrados"
 MSG_STUDENT_NOT_FOUND = "Aluno não encontrado"
+MSG_STUDENT_CHANGED = "Os dados do aluno mudaram. Tente de novo."
 
 
 @dataclass(frozen=True)
