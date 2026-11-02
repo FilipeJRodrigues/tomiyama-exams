@@ -5,6 +5,7 @@ stay within the permanent free tier (25 RCU and 25 WCU per account and Region).
 In prod they go back to PAY_PER_REQUEST with PITR, as the architecture asks.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -226,3 +227,53 @@ def test_rn017_mark_answer_may_check_the_requirement_in_the_transaction(
 
     assert "dynamodb:ConditionCheckItem" in requirement_actions
     assert "dynamodb:DeleteItem" not in requirement_actions
+
+
+# A literal pool ID looks like "us-east-2_AbC123xyz"; a client ID is 26 lowercase alphanumerics.
+POOL_ID_LITERAL = re.compile(r"[a-z]{2}(-[a-z]+)+-\d_[A-Za-z0-9]+")
+CLIENT_ID_LITERAL = re.compile(r"\b[a-z0-9]{26}\b")
+
+
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _strings(item)]
+    if isinstance(value, list):
+        return [text for item in value for text in _strings(item)]
+    return []
+
+
+def test_user_pool_ignores_case_in_the_email_username(template: dict[str, Any]) -> None:
+    pool = template["Resources"]["UserPool"]["Properties"]
+
+    assert pool["UsernameAttributes"] == ["email"]
+    assert pool["UsernameConfiguration"] == {"CaseSensitive": False}
+
+
+def test_user_pool_is_only_referenced_through_the_resource(template: dict[str, Any]) -> None:
+    # CaseSensitive replaces the pool when it changes: every reference must follow the new IDs.
+    resources = template["Resources"]
+    referencing = [
+        name
+        for name, resource in resources.items()
+        if "UserPoolId" in resource.get("Properties", {})
+    ]
+    assert len(referencing) == 5  # client, 2 groups, first examiner and its group attachment
+    for name in referencing:
+        assert resources[name]["Properties"]["UserPoolId"] == {"Ref": "UserPool"}, name
+
+    jwt = resources["HttpApi"]["Properties"]["Auth"]["Authorizers"]["CognitoJwt"]
+    assert jwt["JwtConfiguration"] == {
+        "issuer": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"},
+        "audience": [{"Ref": "UserPoolClient"}],
+    }
+    assert resources["PostConfirmationPermission"]["Properties"]["SourceArn"] == {
+        "Fn::GetAtt": ["UserPool", "Arn"]
+    }
+    assert template["Outputs"]["UserPoolId"]["Value"] == {"Ref": "UserPool"}
+    assert template["Outputs"]["UserPoolClientId"]["Value"] == {"Ref": "UserPoolClient"}
+
+    for text in _strings(template):
+        assert not POOL_ID_LITERAL.search(text), text
+        assert not CLIENT_ID_LITERAL.search(text), text
