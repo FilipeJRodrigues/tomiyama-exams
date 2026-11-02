@@ -19,6 +19,7 @@ os.environ["STUDENTS_TABLE"] = "test-students"
 os.environ["EXAMS_TABLE"] = "test-exams"
 os.environ["REQUIREMENTS_TABLE"] = "test-requirements"
 os.environ["SETTINGS_TABLE"] = "test-settings"
+os.environ["EVENTS_TABLE"] = "test-events"
 
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
 from domain.students import Student  # noqa: E402
@@ -100,6 +101,12 @@ def _create_tables() -> None:
     )
     client.create_table(
         TableName=os.environ["SETTINGS_TABLE"],
+        BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+    )
+    client.create_table(
+        TableName=os.environ["EVENTS_TABLE"],
         BillingMode="PAY_PER_REQUEST",
         AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
         KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],

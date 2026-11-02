@@ -18,6 +18,7 @@ from domain import dates, eligibility
 from domain import students as student_rules
 from domain.belts import Belt
 from domain.errors import ValidationError
+from domain.names import name_sort_key
 from domain.students import Student
 from domain.validation import parse_date
 from handlers.http import (
@@ -76,7 +77,7 @@ def list_students(event: Event, context: Any) -> Response:
         students = [student for student in students if student.active == active]
     if belt_id:
         students = [student for student in students if student.current_belt_id == belt_id]
-    students.sort(key=lambda student: student.full_name.casefold())
+    students.sort(key=lambda student: name_sort_key(student.full_name, student.id))
 
     belts = belt_repo.list_belts()
     return json_response(200, [_student_view(student, belts, reference) for student in students])
@@ -129,7 +130,11 @@ def update_student(event: Event, context: Any) -> Response:
         today=dates.today(),
         now_iso=dates.utc_now_iso(),
     )
-    student_repo.save_student(updated)
+    # The check above answers the common case; under concurrency the
+    # conditional write is what keeps the lock (RN013).
+    student_repo.save_student(
+        updated, require_no_exams=student_rules.needs_graduation_lock(existing, updated, user)
+    )
     logger.info("Student %s updated by %s", updated.id, user.sub)
     return json_response(200, _student_view(updated, belts, dates.today()))
 
@@ -141,6 +146,8 @@ def delete_student(event: Event, context: Any) -> Response:
     student = student_rules.ensure_can_access(
         student_repo.get_student(path_param(event, "id")), user
     )
+    # Quick answer for exams already visible; the conditional delete on
+    # ``exam_count`` is what guarantees RN018 under concurrency.
     student_rules.ensure_can_delete(exam_repo.student_has_exams(student.id))
     student_repo.delete_student(student.id)
     logger.info("Student %s deleted by %s", student.id, user.sub)

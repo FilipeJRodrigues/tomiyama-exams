@@ -30,6 +30,7 @@ Globals:
         EXAMS_TABLE: !Ref ExamsTable
         REQUIREMENTS_TABLE: !Ref RequirementsTable
         SETTINGS_TABLE: !Ref SettingsTable
+        EVENTS_TABLE: !Ref EventsTable
 
 Resources:
   # ---------------------------------------------------------------- DynamoDB
@@ -125,6 +126,21 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
@@ -434,6 +450,138 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /requirements/{id}
             Method: DELETE
+
+  # Exam events (examiners only, RN016)
+  ListEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.events.list_events
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events
+            Method: GET
+
+  CreateEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.events.create_event
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events
+            Method: POST
+
+  GetEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.events.get_event
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}
+            Method: GET
+
+  UpdateEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.events.update_event
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}
+            Method: PUT
+
+  DeleteEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.events.delete_event
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ExamsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}
+            Method: DELETE
+
+  # Attendance and exams of an event (examiners only, RN005)
+  ConfirmAttendanceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.exams.confirm_attendance
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BeltsTable
+        # TransactWriteItems: Put in Exams + conditional Update (ADD exam_count)
+        # in Events and Students.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt ExamsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource:
+                - !GetAtt EventsTable.Arn
+                - !GetAtt StudentsTable.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}/exams
+            Method: POST
+
+  ListEventExamsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.exams.list_event_exams
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !GetAtt ExamsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:BatchGetItem
+              Resource: !GetAtt StudentsTable.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}/exams
+            Method: GET
 
   # ------------------------------------------------------------ Initial data
   SeedFunction:
