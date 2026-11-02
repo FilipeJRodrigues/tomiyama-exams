@@ -398,3 +398,34 @@ def test_no_function_can_change_group_membership_but_the_trigger(template: dict[
                         name,
                         action,
                     )
+
+
+def test_rn008_decision_route_with_least_privilege(template: dict[str, Any]) -> None:
+    function = template["Resources"]["DecideExamFunction"]
+    granted: set[tuple[str, str]] = set()
+    for statement in _statements(function):
+        assert statement["Effect"] == "Allow"
+        resources = statement["Resource"]
+        for resource in resources if isinstance(resources, list) else [resources]:
+            # Whole tables by reference only: no wildcard, no index.
+            table_name = resource["Fn::GetAtt"][0]
+            actions = statement["Action"]
+            for action in [actions] if isinstance(actions, str) else actions:
+                granted.add((action, table_name))
+
+    assert function["Properties"]["Handler"] == "handlers.exams.decide_exam"
+    assert _route(function) == ("POST", "/events/{id}/exams/{student_id}/decision")
+    assert granted == {
+        ("dynamodb:GetItem", "EventsTable"),
+        ("dynamodb:GetItem", "SettingsTable"),
+        ("dynamodb:ConditionCheckItem", "SettingsTable"),
+        ("dynamodb:GetItem", "ExamsTable"),
+        ("dynamodb:UpdateItem", "ExamsTable"),
+        ("dynamodb:GetItem", "StudentsTable"),
+        ("dynamodb:UpdateItem", "StudentsTable"),
+        ("dynamodb:ConditionCheckItem", "StudentsTable"),
+        ("dynamodb:Scan", "BeltsTable"),
+    }
+    # No Cognito call: the sensei's group membership comes from the token.
+    variables = function["Properties"].get("Environment", {}).get("Variables", {})
+    assert "USER_POOL_ID" not in variables

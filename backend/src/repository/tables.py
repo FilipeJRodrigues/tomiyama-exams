@@ -11,6 +11,8 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from domain.errors import MSG_SERVICE_BUSY, ServiceUnavailableError
+
 logger = logging.getLogger(__name__)
 
 BELTS_TABLE_ENV = "BELTS_TABLE"
@@ -107,6 +109,38 @@ NO_ANSWERS_CONDITION = f"attribute_not_exists({ANSWER_COUNT}) OR {ANSWER_COUNT} 
 THROTTLING_ERRORS = frozenset(
     {"ProvisionedThroughputExceededException", "ThrottlingException", "RequestLimitExceeded"}
 )
+
+
+def raise_if_throttled(exc: ClientError, source: str) -> None:
+    """Turn throttling that outlasted botocore's retries into a 503; ignore other errors.
+
+    Args:
+        exc: Error raised by a DynamoDB call.
+        source: What was being accessed, for the log.
+
+    Raises:
+        ServiceUnavailableError: If ``exc`` is a throttling error.
+    """
+    code = exc.response["Error"]["Code"]
+    if code in THROTTLING_ERRORS:
+        logger.warning("%s throttled after botocore retries: %s", source, code)
+        raise ServiceUnavailableError(MSG_SERVICE_BUSY) from exc
+
+
+def get_item_or_busy(target: Any, key: dict[str, Any]) -> dict[str, Any] | None:
+    """Read one item by key from the ``target`` table, turning persistent throttling into a 503.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling.
+        ClientError: Any other DynamoDB error, unchanged.
+    """
+    try:
+        return target.get_item(Key=key).get("Item")
+    except ClientError as exc:
+        raise_if_throttled(exc, f"GetItem on {getattr(target, 'name', 'table')}")
+        raise
+
+
 BACKOFF_BASE_SECONDS = 0.1
 BACKOFF_CAP_SECONDS = 5.0
 

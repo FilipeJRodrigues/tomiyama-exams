@@ -16,9 +16,9 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from domain.errors import MSG_SERVICE_BUSY, ForbiddenError, ServiceUnavailableError
+from domain.errors import ForbiddenError
 from domain.settings import MSG_ONLY_MASTER_CHOOSES_SENSEI, SETTINGS_ID, AcademySettings
-from repository.tables import SETTINGS_TABLE_ENV, THROTTLING_ERRORS, replace_fields, table
+from repository.tables import SETTINGS_TABLE_ENV, raise_if_throttled, replace_fields, table
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +38,7 @@ def _from_item(item: dict[str, Any]) -> AcademySettings:
 
 def _raise_busy(exc: ClientError) -> None:
     """Turn throttling that outlasted botocore's retries into a 503; ignore other errors."""
-    code = exc.response["Error"]["Code"]
-    if code in THROTTLING_ERRORS:
-        logger.warning("Settings table throttled after botocore retries: %s", code)
-        raise ServiceUnavailableError(MSG_SERVICE_BUSY) from exc
+    raise_if_throttled(exc, "Settings table")
 
 
 def get_settings() -> AcademySettings | None:

@@ -11,6 +11,9 @@
 - ``PUT /events/{id}/exams/{student_id}/answers/{requirement_id}``: mark an
   item (body ``{"correct": true|false}``), replacing any previous mark (RN006).
 - ``DELETE`` on the same path: unmark the item (back to "not marked").
+- ``POST /events/{id}/exams/{student_id}/decision``: the sensei approves or
+  fails the exam (body ``{"result": "APPROVED"|"FAILED", "notes": ...}``),
+  updating the student's graduation on approval (RN008–RN010).
 """
 
 import logging
@@ -18,6 +21,7 @@ from typing import Any
 
 from domain import answers as answer_rules
 from domain import dates, scoring, validation
+from domain import decisions as decision_rules
 from domain import exams as exam_rules
 from domain.answers import ExamAnswer
 from domain.errors import ConflictError, NotFoundError
@@ -28,6 +32,7 @@ from domain.exams import (
     MSG_EXAM_NOT_FOUND,
     MSG_STUDENT_NOT_FOUND,
     Exam,
+    ExamStatus,
 )
 from domain.names import name_sort_key
 from domain.requirements import MSG_REQUIREMENT_NOT_FOUND, Requirement
@@ -46,6 +51,7 @@ from repository import belts as belt_repo
 from repository import events as event_repo
 from repository import exams as exam_repo
 from repository import requirements as requirement_repo
+from repository import settings as settings_repo
 from repository import students as student_repo
 
 logger = logging.getLogger(__name__)
@@ -213,4 +219,48 @@ def unmark_answer(event: Event, context: Any) -> Response:
     if answer_repo.delete_answer(exam, requirement.id):
         logger.info("Item %s of exam %s unmarked by %s", requirement.id, exam.id, user.sub)
     body = {"answer": None, "summary": _summary_after(exam, requirement.id, None)}
+    return json_response(200, body)
+
+
+@api_handler
+def decide_exam(event: Event, context: Any) -> Response:
+    """Approve or fail an exam; only the sensei decides (RN008–RN010).
+
+    The sensei is read from the settings at each request. A closed event still
+    accepts the decision (RN008a). On approval the student's graduation is
+    updated in the same transaction (RN009); the decision is refused if the
+    graduation changed since the attendance.
+    """
+    user = current_user(event)
+    require_examiner(user)
+    exam_event = _event_or_404(path_param(event, "id"))
+    exam = _exam_or_404(exam_event.id, path_param(event, "student_id"))
+    settings = settings_repo.get_settings()
+    decision_rules.ensure_is_sensei(user, settings.sensei_user_id if settings else None)
+    decision_rules.ensure_in_progress(exam)
+    decision = decision_rules.parse_decision(json_body(event))
+    student = student_repo.get_student(exam.student_id)
+    if student is None:
+        raise NotFoundError(MSG_STUDENT_NOT_FOUND)
+    # The belts are only needed for exams confirmed before the source graduation was stored.
+    belts = belt_repo.list_belts() if exam.source is None else []
+    expected = decision_rules.expected_graduation(exam, student, belts)
+    now_iso = dates.utc_now_iso()
+    decided = decision_rules.decide(exam, decision, decided_by=user.sub, now_iso=now_iso)
+    approved = None
+    if decided.status == ExamStatus.APPROVED:
+        approved = decision_rules.approved_student(exam, student, exam_event, now_iso)
+    exam_repo.decide_exam(decided, expected, approved)
+    logger.info(
+        "Exam %s (%s) of student %s decided %s by %s",
+        exam.id,
+        exam.kind,
+        student.id,
+        decided.status,
+        user.sub,
+    )
+    body = {
+        "exam": _exam_view(decided, student.full_name),
+        "student": approved.to_dict() if approved else None,
+    }
     return json_response(200, body)
