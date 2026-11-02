@@ -8,7 +8,7 @@ an answer is "not marked" and counts as not correct (RN007).
 from dataclasses import dataclass
 from typing import Any
 
-from domain.errors import ValidationError
+from domain.errors import MSG_SERVICE_BUSY, ValidationError
 from domain.events import ExamEvent
 from domain.exams import MSG_EVENT_CLOSED, Exam, ExamStatus
 from domain.requirements import Requirement
@@ -17,7 +17,7 @@ MSG_EXAM_DECIDED = "Exame já decidido"
 MSG_ITEM_NOT_IN_BELT = "Item não pertence à faixa do exame"
 MSG_INVALID_CORRECT = "Marcação inválida: envie correct como true (certo) ou false (errado)"
 MSG_MARK_TRY_AGAIN = "Outra marcação está em andamento. Tente de novo."
-MSG_BUSY_TRY_AGAIN = "Sistema ocupado no momento. Tente de novo em instantes."
+MSG_BUSY_TRY_AGAIN = MSG_SERVICE_BUSY
 
 
 @dataclass(frozen=True)

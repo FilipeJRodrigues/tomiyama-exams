@@ -81,7 +81,9 @@ def _parse_groups(raw: Any) -> frozenset[str]:
 def current_user(event: Event) -> User:
     """Return the caller from the JWT claims validated by API Gateway.
 
-    The user id always comes from the token, never from the request body.
+    The user id always comes from the token, never from the request body. The
+    groups come from ``cognito:groups``: ``user.is_examiner`` (group ``admin``)
+    and ``user.is_master`` (groups ``master`` and ``admin``).
 
     Raises:
         UnauthorizedError: If the request carries no valid claims.
@@ -103,6 +105,23 @@ def require_examiner(user: User) -> None:
     """
     if not user.is_examiner:
         raise ForbiddenError("Esta área é dos examinadores")
+
+
+MSG_MASTER_ONLY = "Esta ação é do administrador master"
+
+
+def require_master(user: User, message: str = MSG_MASTER_ONLY) -> None:
+    """Allow only the admin master (Cognito groups ``master`` and ``admin``).
+
+    Args:
+        user: The caller.
+        message: 403 message, so each route can explain what is reserved.
+
+    Raises:
+        ForbiddenError: If the user is not the master.
+    """
+    if not user.is_master:
+        raise ForbiddenError(message)
 
 
 def json_body(event: Event) -> dict[str, Any]:
