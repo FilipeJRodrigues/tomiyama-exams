@@ -20,11 +20,14 @@ from conftest import (
 
 from domain import dates
 from domain.events import EventStatus, ExamEvent
+from domain.settings import AcademySettings
+from domain.users import ADMIN_GROUP, User
 from handlers import events as event_handlers
 from handlers import exams as exam_handlers
 from handlers import students as student_handlers
 from repository import events as event_repo
 from repository import exams as exam_repo
+from repository import settings as settings_repo
 from repository import students as student_repo
 from repository.tables import EVENTS_TABLE_ENV, STUDENTS_TABLE_ENV, table
 
@@ -76,10 +79,30 @@ def _raw(env, key):
     return table(env).get_item(Key={"id": key})["Item"]
 
 
+def _decide_failed(event_id: str, student_id: str) -> None:
+    """Have the sensei fail the exam, so it is no longer in progress (RN005)."""
+    sensei = User(sub="sensei-1", email="sensei@example.com", groups=frozenset({ADMIN_GROUP}))
+    settings_repo.save_settings(
+        AcademySettings(
+            academy_name="Associação Tomiyama de Judô",
+            sensei_user_id=sensei.sub,
+            certificate_city="Araraquara",
+            updated_at=NOW,
+        )
+    )
+    path = {"id": event_id, "student_id": student_id}
+    response = exam_handlers.decide_exam(
+        api_event(sensei, path=path, body={"result": "FAILED"}), None
+    )
+    assert response["statusCode"] == 200, response["body"]
+
+
 def test_rn013_examiner_changes_graduation_after_exam(seeded: None) -> None:
     _event()
     s = _student()
     assert _confirm("ev-1", s.id)["statusCode"] == 201
+    # While the exam is in progress nobody changes the graduation (RN005).
+    _decide_failed("ev-1", s.id)
     r = _put_student(EXAMINER, s.id, _payload(s, stripes=2))
     assert r["statusCode"] == 200, r["body"]
     item = _raw(STUDENTS_TABLE_ENV, s.id)

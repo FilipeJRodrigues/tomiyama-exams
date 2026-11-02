@@ -216,6 +216,17 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   e **elegível** (RN001–RN003) num evento **aberto**. Cria o exame com faixa-alvo e tipo
   calculados (RN003/RN004) e status "Em andamento". Inelegível → erro com o motivo.
   Repetido → *"Presença já confirmada neste evento"* (409, inclusive em corrida simultânea).
+  **Um exame em andamento por vez** (decisão do responsável, 2026-11-02): se o aluno já
+  tem um exame "Em andamento" em outro evento, a presença é recusada com *"O aluno já tem
+  um exame em andamento em outro evento."* (409) e nada é gravado, inclusive em corrida
+  simultânea. A decisão do sensei (aprovado ou reprovado) libera o aluno para outro evento.
+  Enquanto o exame estiver em andamento, ninguém altera `current_belt_id`,
+  `current_belt_since` ou `stripes` do aluno, nem examinador: *"Não é possível alterar a
+  graduação com exame em andamento. Decida o exame primeiro."* (409), nada é gravado,
+  inclusive se a presença for confirmada no meio da edição. Os outros campos continuam
+  editáveis e reenviar a mesma graduação é aceito. Para o responsável a trava do RN013
+  (403) tem precedência, porque vale também depois da decisão *(decisão do responsável,
+  2026-11-02)*.
 - **RN006 — Marcação.** Examinador marca cada item como certo/errado; marcar de novo
   **substitui** (correção antes da decisão); registra quem marcou. O item precisa ser da
   faixa-alvo (*"Item não pertence à faixa do exame"*). Bloqueado com exame decidido ou

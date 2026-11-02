@@ -695,7 +695,9 @@ Resources:
         - DynamoDBReadPolicy:
             TableName: !Ref BeltsTable
         # TransactWriteItems: Put in Exams + conditional Update (ADD exam_count)
-        # in Events and Students.
+        # in Events + conditional Update in Students (ADD exam_count and SET
+        # the exam-in-progress marker exam_in_progress_id only while absent,
+        # RN005). GetItem afterwards to translate a failed condition.
         - Statement:
             - Effect: Allow
               Action:
@@ -851,11 +853,12 @@ Resources:
       Policies:
         # GetItem: event, exam, student and the settings (the sensei) before
         # the write. TransactWriteItems: conditional Update in Exams (status
-        # IN_PROGRESS) + conditional Update (approved) or ConditionCheck
-        # (failed) in Students on the graduation of the attendance +
-        # ConditionCheck in Settings that the decider is still the sensei
-        # (RN008); GetItem there again to translate a failed check. Scan in
-        # Belts only for exams confirmed before that graduation was stored.
+        # IN_PROGRESS) + conditional Update in Students on the graduation of
+        # the attendance (removes the exam-in-progress marker, RN005; on
+        # approval also writes the new graduation) + ConditionCheck in
+        # Settings that the decider is still the sensei (RN008); GetItem
+        # there again to translate a failed check. Scan in Belts only for
+        # exams confirmed before that graduation was stored.
         - Statement:
             - Effect: Allow
               Action: dynamodb:GetItem
@@ -874,7 +877,6 @@ Resources:
               Action:
                 - dynamodb:GetItem
                 - dynamodb:UpdateItem
-                - dynamodb:ConditionCheckItem
               Resource: !GetAtt StudentsTable.Arn
             - Effect: Allow
               Action: dynamodb:Scan

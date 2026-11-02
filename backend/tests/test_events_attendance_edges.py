@@ -293,9 +293,11 @@ def test_rn005_exam_keeps_target_after_belt_change(seeded: None) -> None:
     s = _student()
     assert _confirm(ev1.id, {"student_id": s.id})["statusCode"] == 201
     student_repo.save_student(replace(s, current_belt_id=belt_id("Cinza/Azul")))
+    # One exam in progress per student (RN005, decision of 2026-11-02): the
+    # second event is refused while the first exam is undecided.
     r = _confirm(ev2.id, {"student_id": s.id})
-    assert r["statusCode"] == 201, r["body"]
-    assert response_json(r)["target_belt_id"] == belt_id("Azul")
+    assert r["statusCode"] == 409, r["body"]
+    assert response_json(r)["message"] == "O aluno já tem um exame em andamento em outro evento."
     assert exam_repo.get_exam(ev1.id, s.id).target_belt_id == belt_id("Cinza/Azul")
 
 

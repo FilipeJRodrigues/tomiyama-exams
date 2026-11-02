@@ -12,15 +12,20 @@ from botocore.exceptions import ClientError
 
 from domain.errors import ConflictError, ForbiddenError, NotFoundError
 from domain.students import (
+    MSG_GRADUATION_IN_PROGRESS,
     MSG_GRADUATION_LOCKED,
     MSG_STUDENT_HAS_EXAMS,
     MSG_STUDENT_NOT_FOUND,
     Student,
 )
 from repository.tables import (
+    EXAM_COUNT,
+    EXAM_IN_PROGRESS,
     NO_EXAMS_CONDITION,
     STUDENTS_TABLE_ENV,
+    get_item_or_busy,
     paginate,
+    raise_if_throttled,
     replace_fields,
     table,
 )
@@ -50,9 +55,17 @@ def _from_item(item: dict[str, Any]) -> Student:
     )
 
 
+# Graduation attributes (RN013): left out of the write when an edit keeps them.
+GRADUATION_ATTRIBUTES = ("current_belt_id", "current_belt_since", "stripes")
+
+
 def get_student(student_id: str) -> Student | None:
-    """Return a student by id, or None."""
-    item = table(STUDENTS_TABLE_ENV).get_item(Key={"id": student_id}).get("Item")
+    """Return a student by id, or None.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling (503).
+    """
+    item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": student_id})
     return _from_item(item) if item else None
 
 
@@ -106,33 +119,85 @@ def create_student(student: Student) -> None:
     )
 
 
-def save_student(student: Student, *, require_no_exams: bool = False) -> None:
-    """Rewrite an existing student's attributes, keeping its ``exam_count``.
+def has_exam_in_progress(student_id: str) -> bool:
+    """Return whether the student carries the ``exam_in_progress_id`` marker (RN005).
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling (503).
+    """
+    item = get_item_or_busy(
+        table(STUDENTS_TABLE_ENV), {"id": student_id}, ProjectionExpression=EXAM_IN_PROGRESS
+    )
+    return bool(item and item.get(EXAM_IN_PROGRESS))
+
+
+def save_student(
+    student: Student,
+    *,
+    require_no_exams: bool = False,
+    require_no_exam_in_progress: bool = False,
+    write_graduation: bool = True,
+) -> Student:
+    """Rewrite an existing student's attributes, keeping ``exam_count`` and the marker.
 
     Args:
         student: Student with the new values.
         require_no_exams: Write only while the student has no exam. Used when a
             guardian changes the graduation (RN013), so an attendance confirmed
             after the handler's check still blocks the change.
+        require_no_exam_in_progress: Write only while the student has no exam
+            in progress (no ``exam_in_progress_id``). Used whenever the
+            graduation changes (RN005), for the same race.
+        write_graduation: Also write the belt, the belt date and the stripes.
+            False when the edit keeps them: the stored graduation then stays
+            as it is, so an approval written after the caller's read is never
+            reverted by an edit of the other fields (RN009).
+
+    Returns:
+        The student as stored after the write.
 
     Raises:
         NotFoundError: If the student was deleted meanwhile.
-        ForbiddenError: If ``require_no_exams`` and the student has an exam.
+        ForbiddenError: If ``require_no_exams`` and the student has an exam
+            (wins over the exam in progress, as in ``domain.students``).
+        ConflictError: If ``require_no_exam_in_progress`` and the student has
+            an exam in progress.
+        ServiceUnavailableError: If the write, or the re-read after a failed
+            condition, kept throttling (503).
     """
-    arguments = replace_fields(student.to_dict())
+    fields = student.to_dict()
+    if not write_graduation:
+        for attribute in GRADUATION_ATTRIBUTES:
+            del fields[attribute]
+    arguments = replace_fields(fields)
     condition = "attribute_exists(id)"
     if require_no_exams:
         condition += f" AND ({NO_EXAMS_CONDITION})"
         arguments["ExpressionAttributeValues"][":zero"] = 0
+    if require_no_exam_in_progress:
+        condition += f" AND attribute_not_exists({EXAM_IN_PROGRESS})"
     students_table = table(STUDENTS_TABLE_ENV)
     try:
-        students_table.update_item(**arguments, ConditionExpression=condition)
+        response = students_table.update_item(
+            **arguments, ConditionExpression=condition, ReturnValues="ALL_NEW"
+        )
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise_if_throttled(exc, "UpdateItem on Students")
             raise
-        if students_table.get_item(Key={"id": student.id}).get("Item") is None:
+        item = get_item_or_busy(students_table, {"id": student.id})
+        if item is None:
             raise NotFoundError(MSG_STUDENT_NOT_FOUND) from exc
-        raise ForbiddenError(MSG_GRADUATION_LOCKED) from exc
+        if require_no_exams and int(item.get(EXAM_COUNT, 0)) > 0:
+            raise ForbiddenError(MSG_GRADUATION_LOCKED) from exc
+        if require_no_exam_in_progress and item.get(EXAM_IN_PROGRESS):
+            raise ConflictError(MSG_GRADUATION_IN_PROGRESS) from exc
+        # The blocking state is gone by the re-read (e.g. the exam was decided
+        # in between); report the lock the write actually checked.
+        if require_no_exams:
+            raise ForbiddenError(MSG_GRADUATION_LOCKED) from exc
+        raise ConflictError(MSG_GRADUATION_IN_PROGRESS) from exc
+    return _from_item(response["Attributes"])
 
 
 def delete_student(student_id: str) -> None:

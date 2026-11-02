@@ -13,6 +13,9 @@ from domain.users import User
 MAX_STRIPES = 4
 
 MSG_GRADUATION_LOCKED = "Somente examinadores alteram a graduação após o primeiro exame"
+MSG_GRADUATION_IN_PROGRESS = (
+    "Não é possível alterar a graduação com exame em andamento. Decida o exame primeiro."
+)
 MSG_STUDENT_HAS_EXAMS = "Aluno possui exames registrados"
 MSG_STUDENT_NOT_FOUND = "Aluno não encontrado"
 
@@ -140,12 +143,18 @@ def update_student(
     has_exams: bool,
     today: date,
     now_iso: str,
+    *,
+    exam_in_progress: bool = False,
 ) -> Student:
-    """Apply an edit to a student, enforcing the graduation lock (RN013).
+    """Apply an edit to a student, enforcing the graduation locks (RN005, RN013).
 
     After the first exam only examiners (or the exam itself) change the belt,
-    the belt date and the stripes. The lock compares with the current values, so
-    resending unchanged values does not block editing other fields.
+    the belt date and the stripes (RN013). While an exam is in progress nobody
+    changes them, examiners included: the decision is what writes the new
+    graduation (RN005, decision of 2026-11-02). Both locks compare with the
+    current values, so resending unchanged values does not block editing the
+    other fields. For a guardian the 403 wins over the 409: the permission
+    holds even after the decision, so "decide the exam first" would mislead.
 
     Args:
         existing: Student as stored.
@@ -155,6 +164,7 @@ def update_student(
         has_exams: Whether the student has at least one exam.
         today: Current calendar date.
         now_iso: Current UTC timestamp.
+        exam_in_progress: Whether the student has an exam in progress.
 
     Returns:
         The updated student.
@@ -162,11 +172,16 @@ def update_student(
     Raises:
         ValidationError: If a field is invalid.
         ForbiddenError: If a guardian changes the graduation after the first exam.
+        ConflictError: If the graduation changes while an exam is in progress.
     """
     fields = _parse_fields(payload, belts_by_id, today)
     updated = replace(existing, updated_at=now_iso, **vars(fields))
-    if has_exams and needs_graduation_lock(existing, updated, user):
+    # An exam in progress is an exam: the RN013 lock also holds when the two
+    # reads disagree (an attendance confirmed between them).
+    if (has_exams or exam_in_progress) and needs_graduation_lock(existing, updated, user):
         raise ForbiddenError(MSG_GRADUATION_LOCKED)
+    if exam_in_progress and graduation_changed(existing, updated):
+        raise ConflictError(MSG_GRADUATION_IN_PROGRESS)
     return updated
 
 

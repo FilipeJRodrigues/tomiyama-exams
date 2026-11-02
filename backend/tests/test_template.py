@@ -422,8 +422,8 @@ def test_rn008_decision_route_with_least_privilege(template: dict[str, Any]) -> 
         ("dynamodb:GetItem", "ExamsTable"),
         ("dynamodb:UpdateItem", "ExamsTable"),
         ("dynamodb:GetItem", "StudentsTable"),
+        # Approval and failure both update the student (the marker of RN005).
         ("dynamodb:UpdateItem", "StudentsTable"),
-        ("dynamodb:ConditionCheckItem", "StudentsTable"),
         ("dynamodb:Scan", "BeltsTable"),
     }
     # No Cognito call: the sensei's group membership comes from the token.

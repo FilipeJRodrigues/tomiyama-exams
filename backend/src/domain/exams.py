@@ -23,6 +23,7 @@ from domain.students import MSG_STUDENT_NOT_FOUND as MSG_STUDENT_NOT_FOUND
 from domain.students import Student
 
 MSG_ALREADY_CONFIRMED = "Presença já confirmada neste evento"
+MSG_IN_PROGRESS_ELSEWHERE = "O aluno já tem um exame em andamento em outro evento."
 MSG_EXAM_NOT_FOUND = "Exame não encontrado"
 MSG_EVENT_CLOSED = "Evento encerrado"
 MSG_STUDENT_INACTIVE = "Aluno inativo não pode fazer exame"
