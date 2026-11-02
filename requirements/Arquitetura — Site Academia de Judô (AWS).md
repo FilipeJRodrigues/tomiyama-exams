@@ -11,7 +11,7 @@ Este documento é a especificação do projeto. Siga as regras abaixo; em caso d
 - Back-end: Python 3.12 em AWS Lambda, com boto3.
 - Front-end: TypeScript + React + Vite, hospedado no AWS Amplify Hosting.
 - API: Amazon API Gateway (HTTP API) com autorizador JWT do Cognito.
-- Autenticação: Amazon Cognito, com os grupos `admin` e `responsavel`.
+- Autenticação: Amazon Cognito, com os grupos `admin`, `responsavel` e `master`. *(decisão do responsável, 2026-11-02)* `master`: examinador com poder extra (fica também em `admin`); único que escolhe/troca o sensei; gere as assinaturas do certificado; não decide exames; o primeiro examinador já nasce master, outros só pelo console do Cognito.
 - Banco: Amazon DynamoDB em modo on-demand.
 - Infraestrutura como código: AWS SAM (`infra/template.yaml`).
 - Testes: pytest + moto no back-end.
@@ -55,7 +55,7 @@ Fluxo: Navegador → Amplify Hosting (site estático) → Cognito (login) → AP
 | Camada | Serviço AWS | Papel |
 | --- | --- | --- |
 | Front-end | AWS Amplify Hosting | Hospeda o site estático com CDN e HTTPS, além de deploy automático a partir do Git |
-| Autenticação | Amazon Cognito (User Pool) | Login de administradores e pais, com grupos de permissão admin e responsavel |
+| Autenticação | Amazon Cognito (User Pool) | Login de administradores e pais, com grupos de permissão admin, responsavel e master *(decisão do responsável, 2026-11-02)* |
 | API | Amazon API Gateway (HTTP API) | Endpoints REST protegidos por JWT do Cognito |
 | Lógica | AWS Lambda (Python 3.12) | Regras de negócio: cadastro, exames e promoção de faixa |
 | Dados | Amazon DynamoDB (on-demand) | Alunos e histórico de exames |
