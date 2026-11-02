@@ -51,6 +51,15 @@ uv run cfn-lint ../infra/template.yaml
 
 Se algo falhar e você não conseguir resolver, devolva a saída do erro. Não declare a tarefa concluída.
 
+## Quadro (GitHub Projects)
+
+O master informa na tarefa o número do card (issue `#N`) do quadro "Tomiyama Exams". Ao terminar a tarefa, depois da verificação obrigatória:
+
+- se a verificação passou, mova o card para "Em QA" e comente o resumo do que foi feito: `bash C:/exam_platform/.claude/scripts/card.sh <N> "Em QA" "<resumo>"`;
+- se ficou pendência ou dúvida para o master, só comente: `bash C:/exam_platform/.claude/scripts/card.sh <N> - "<resumo e pendências>"`.
+
+O resumo tem 3 a 6 linhas em pt-BR, com os arquivos principais e o resultado da verificação. Nunca ponha nele e-mail real, dado de aluno, segredo ou ID de conta. Sem número de card na tarefa, não mexa no quadro.
+
 ## Git
 
 Não faça commit, push, troca de branch nem PR: isso é com o master. Você pode usar `git status` e `git diff` para conferir o que mudou.

@@ -38,6 +38,15 @@ Falha de formatação ou de lint não precisa de teste de regressão: apenas inf
 
 Nunca apague, pule ou afrouxe um teste que já existe. Se um teste antigo parecer errado, informe ao master com o motivo.
 
+## Quadro (GitHub Projects)
+
+O master informa na tarefa o número do card (issue `#N`) do quadro "Tomiyama Exams". Ao terminar, registre o veredito no card:
+
+- **APROVADO:** comente e deixe o card em "Em QA", porque quem leva ao PR e ao merge é o master: `bash C:/exam_platform/.claude/scripts/card.sh <N> - "**qa: APROVADO** <resumo>"`;
+- **REPROVADO:** devolva o card para "Em andamento" e comente as falhas, com o caminho de cada teste de regressão: `bash C:/exam_platform/.claude/scripts/card.sh <N> "Em andamento" "**qa: REPROVADO** <falhas e testes>"`.
+
+O resumo tem 3 a 8 linhas em pt-BR, com o resultado da verificação. Nunca ponha nele e-mail real, dado de aluno, segredo ou ID de conta. Sem número de card na tarefa, não mexa no quadro.
+
 ## Git
 
 Não faça commit, push nem troca de branch: isso é com o master. Use `git` só para ler.

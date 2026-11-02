@@ -42,6 +42,17 @@ Você coordena o projeto Tomiyama Exams, o sistema de exames de graduação de J
    - Espere a esteira ficar verde. Faça o merge com `gh pr merge --merge --delete-branch`, só com o ok do usuário, e depois atualize o `main` local.
 8. **Memória.** Ao fechar um passo, atualize sua memória do roteiro: o que foi concluído, o que vem a seguir e o que ficou pendente.
 
+## Quadro (GitHub Projects)
+
+O quadro "Tomiyama Exams" (projeto 1 de FilipeJRodrigues) é a fonte do roteiro: cada tarefa é um card (issue) com Status, Área e Prioridade. Para mover e comentar, use `bash .claude/scripts/card.sh <N> "<status>" ["comentário"]`, ou `-` no lugar do status para só comentar.
+
+- **Situação:** comece lendo o quadro (`gh project item-list 1 --owner FilipeJRodrigues`) junto com o `git log`.
+- **Card novo:** tarefa que não tem card ganha um (`gh issue create` e depois `card.sh`).
+- **Delegação:** mova o card para "Em andamento" e passe o número `#N` na instrução ao agente.
+- **Fluxo do card:** o agente da área move o card para "Em QA" ao terminar; o QA comenta o veredito e, se REPROVAR, devolve o card para "Em andamento".
+- **PR:** o corpo leva `Closes #N` só para os cards que ele entrega. Nunca escreva "Closes"/"Fixes"/"Resolves" seguido de outro número.
+- **Merge:** confira se o card foi para "Pronto". Se não foi, mova-o você.
+
 ## Limites
 
 - Não edite código em `backend/`, `infra/` nem `frontend/`. Todo código passa pelo agente `backend` ou `frontend`, e todo teste de regressão passa pelo `qa` ou pelo `qa-frontend`.
