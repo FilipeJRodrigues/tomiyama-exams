@@ -1,8 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { ApiClient } from './client';
+import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
-import type { Belt, StudentFilters, StudentInput, StudentView } from './types';
+import type {
+  Belt,
+  ConfirmAttendanceInput,
+  ExamEvent,
+  ExamView,
+  StudentFilters,
+  StudentInput,
+  StudentView,
+} from './types';
 
 export const queryKeys = {
   belts: ['belts'] as const,
@@ -10,6 +18,8 @@ export const queryKeys = {
   allStudents: ['students'] as const,
   students: (filters: StudentFilters = {}) => ['students', filters] as const,
   student: (id: string) => ['student', id] as const,
+  events: ['events'] as const,
+  eventExams: (eventId: string) => ['events', eventId, 'exams'] as const,
 };
 
 export function listBelts(api: ApiClient): Promise<Belt[]> {
@@ -46,6 +56,37 @@ export function updateStudent(
 
 export function deleteStudent(api: ApiClient, id: string): Promise<void> {
   return api.delete(studentPath(id));
+}
+
+export function listEvents(api: ApiClient): Promise<ExamEvent[]> {
+  return api.get<ExamEvent[]>('/events');
+}
+
+function eventExamsPath(eventId: string): string {
+  return `/events/${encodeURIComponent(eventId)}/exams`;
+}
+
+export function listEventExams(api: ApiClient, eventId: string): Promise<ExamView[]> {
+  return api.get<ExamView[]>(eventExamsPath(eventId));
+}
+
+export function confirmAttendance(
+  api: ApiClient,
+  eventId: string,
+  studentId: string,
+): Promise<ExamView> {
+  const body: ConfirmAttendanceInput = { student_id: studentId };
+  return api.post<ExamView>(eventExamsPath(eventId), body);
+}
+
+/** 409 message of a repeated confirmation (RN005), also when another examiner was first. */
+export const MSG_ALREADY_CONFIRMED = 'Presença já confirmada neste evento';
+
+/** The attendance was already confirmed: the screen only has to reload the exams. */
+export function isAlreadyConfirmed(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 409 && error.message === MSG_ALREADY_CONFIRMED
+  );
 }
 
 /** `GET /belts`, in graduation order. */
@@ -117,4 +158,47 @@ export function useForgetStudent() {
   return (id: string) => {
     queryClient.removeQueries({ queryKey: queryKeys.student(id) });
   };
+}
+
+/** `GET /events`, from the most recent to the oldest (examiners only). */
+export function useEvents() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.events, queryFn: () => listEvents(api) });
+}
+
+/** `GET /events/{id}/exams`: the event's exams, by student name. */
+export function useEventExams(eventId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.eventExams(eventId),
+    queryFn: () => listEventExams(api, eventId),
+  });
+}
+
+/**
+ * `POST /events/{id}/exams` (RN005). The new exam goes straight into the cached list, so
+ * the row turns into "Abrir exame" at once. A refusal (closed event, student changed,
+ * already confirmed by someone else) reloads the event, its exams and the students, so
+ * the screen catches up with the API.
+ */
+export function useConfirmAttendance(eventId: string) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (studentId: string) => confirmAttendance(api, eventId, studentId),
+    onSuccess: (exam) => {
+      queryClient.setQueryData<ExamView[]>(queryKeys.eventExams(eventId), (current) =>
+        current && !current.some((item) => item.student_id === exam.student_id)
+          ? [...current, exam]
+          : current,
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.eventExams(eventId) });
+    },
+    onError: (error) => {
+      if (!(error instanceof ApiError) || ![400, 404, 409].includes(error.status)) return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.eventExams(eventId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allStudents });
+    },
+  });
 }

@@ -2,15 +2,18 @@
  * MSW handlers that follow the contract in `backend/README.md`. They check the
  * simulated token like the JWT authorizer, filter students by owner like the API and
  * answer the student form with the backend messages (`domain/students.py`,
- * `domain/validation.py`): RN013, RN014 and RN018.
+ * `domain/validation.py`): RN013, RN014 and RN018. The exam day (§ 6.3) gets the event
+ * list and the attendance confirmation (`handlers/events.py`, `handlers/exams.py`,
+ * `domain/exams.py`): RN005 and RN016.
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
 import { buildApiUrl } from '../api/client';
-import type { Eligibility, Student, StudentView } from '../api/types';
+import type { Eligibility, Exam, ExamEvent, ExamView, Student, StudentView } from '../api/types';
 import { decodeMockToken, type MockClaims } from '../auth/mockToken';
 import { EXAMINER_GROUP } from '../auth/types';
 import { ageInYears, parseIsoDate, todayIso } from '../lib/dates';
+import { foldText } from '../lib/text';
 import { createMockDb, type MockDb, type MockStudent } from './data';
 
 function claimsFrom(request: Request): MockClaims | null {
@@ -38,6 +41,11 @@ const MSG_STUDENT_HAS_EXAMS = 'Aluno possui exames registrados';
 const MSG_INVALID_DATES = 'Datas inválidas: verifique nascimento e data da faixa atual';
 const MSG_INVALID_BODY = 'Corpo da requisição inválido: envie um objeto JSON';
 const MAX_STRIPES = 4;
+const MSG_EXAMINERS_ONLY = 'Esta área é dos examinadores';
+const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
+const MSG_ALREADY_CONFIRMED = 'Presença já confirmada neste evento';
+const MSG_EVENT_CLOSED = 'Evento encerrado';
+const MSG_STUDENT_INACTIVE = 'Aluno inativo não pode fazer exame';
 
 /**
  * The mock does not compute eligibility (RN001–RN004 live in the backend). A student
@@ -202,6 +210,31 @@ function toView(db: MockDb, item: MockStudent, reference: string): StudentView {
   };
 }
 
+/** Like `sort_events`: most recent `exam_date` first, then the newest created, then id. */
+function sortEvents(events: ExamEvent[]): ExamEvent[] {
+  const key = (event: ExamEvent) => `${event.exam_date}|${event.created_at}|${event.id}`;
+  return [...events].sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
+}
+
+/** Like `name_sort_key`: folded name, then the original name, then the student id. */
+function compareExamViews(a: ExamView, b: ExamView): number {
+  const keys = (view: ExamView) => {
+    const name = view.student_name ?? '';
+    return [foldText(name), name, view.student_id];
+  };
+  const [ka, kb] = [keys(a), keys(b)];
+  for (let i = 0; i < ka.length; i++) {
+    const [x = '', y = ''] = [ka[i], kb[i]];
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+function examView(db: MockDb, exam: Exam): ExamView {
+  const item = db.students.find((candidate) => candidate.student.id === exam.student_id);
+  return { ...exam, student_name: item?.student.full_name ?? null };
+}
+
 export interface MockHandlersOptions {
   baseUrl: string;
   db?: MockDb;
@@ -311,6 +344,64 @@ export function createHandlers({
       if (item.examCount > 0) return errorResponse(409, MSG_STUDENT_HAS_EXAMS);
       db.students = db.students.filter((candidate) => candidate !== item);
       return new HttpResponse(null, { status: 204 });
+    }),
+
+    http.get(url('/events'), ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      return HttpResponse.json(sortEvents(db.events));
+    }),
+
+    http.get(url('/events/:id/exams'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const event = db.events.find((candidate) => candidate.id === params.id);
+      if (!event) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      const views = db.exams
+        .filter((exam) => exam.event_id === event.id)
+        .map((exam) => examView(db, exam))
+        .sort(compareExamViews);
+      return HttpResponse.json(views);
+    }),
+
+    // RN005, in the order of `confirm_attendance` in `handlers/exams.py`.
+    http.post(url('/events/:id/exams'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const event = db.events.find((candidate) => candidate.id === params.id);
+      if (!event) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      return withValidation(async () => {
+        const studentId = requiredStr(await readPayload(request), 'student_id', 'Aluno', 64);
+        const item = db.students.find((candidate) => candidate.student.id === studentId);
+        if (!item) return errorResponse(404, MSG_STUDENT_NOT_FOUND);
+        if (db.exams.some((exam) => exam.event_id === event.id && exam.student_id === studentId)) {
+          return errorResponse(409, MSG_ALREADY_CONFIRMED);
+        }
+        // RN016, then RN005: active and eligible (the mock's fixed eligibility).
+        if (event.status !== 'OPEN') return badRequest(MSG_EVENT_CLOSED);
+        if (!item.student.active) return badRequest(MSG_STUDENT_INACTIVE);
+        const { eligible, kind, target_belt_id: target, reasons } = item.eligibility;
+        if (!eligible || !kind || !target) return badRequest(reasons.join('; '));
+        const exam: Exam = {
+          id: crypto.randomUUID(),
+          event_id: event.id,
+          student_id: studentId,
+          target_belt_id: target,
+          kind,
+          status: 'IN_PROGRESS',
+          decided_by_id: null,
+          decided_at: null,
+          notes: null,
+          created_by: claims.sub,
+          created_at: new Date().toISOString(),
+        };
+        db.exams.push(exam);
+        item.examCount += 1;
+        return HttpResponse.json(examView(db, exam), { status: 201 });
+      });
     }),
   ];
 }

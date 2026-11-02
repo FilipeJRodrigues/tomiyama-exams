@@ -2,7 +2,7 @@
  * Fictional data for the simulated mode. Belts are the seed of the backend (same ids);
  * students follow the acceptance flow (§ 9). No real person here.
  */
-import type { Belt, Eligibility, Student } from '../api/types';
+import type { Belt, Eligibility, Exam, ExamEvent, Student } from '../api/types';
 import { MOCK_USER_IDS } from '../auth/mockConstants';
 
 export const mockBelts: Belt[] = [
@@ -318,25 +318,107 @@ export const showcaseMockStudents: readonly MockStudent[] = [
     ),
     1,
   ),
-  student(
+  // Already present at the open event (showcase exam below).
+  withExams(
+    student(
+      '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e08',
+      examiner,
+      'Helena Prado',
+      '2011-06-18',
+      'Roxa',
+      '2025-06-30',
+      4,
+      eligible('BELT', 'Marrom'),
+    ),
+    1,
+  ),
+];
+
+/** Ids of the simulated events (§ 6.3). */
+export const MOCK_EVENT_IDS = {
+  open: '5e1b7c2a-3d4f-4a6b-8c9d-0e1f2a3b4c01',
+  closed: '5e1b7c2a-3d4f-4a6b-8c9d-0e1f2a3b4c02',
+} as const;
+
+/** One open and one closed event, most recent first (the order of `GET /events`). */
+export const initialMockEvents: readonly ExamEvent[] = [
+  {
+    id: MOCK_EVENT_IDS.open,
+    name: 'Exame novembro/2026',
+    exam_date: '2026-11-21',
+    status: 'OPEN',
+    created_at: '2026-10-20T12:00:00+00:00',
+    updated_at: '2026-10-20T12:00:00+00:00',
+  },
+  {
+    id: MOCK_EVENT_IDS.closed,
+    name: 'Exame março/2026',
+    exam_date: '2026-03-01',
+    status: 'CLOSED',
+    created_at: '2026-02-10T12:00:00+00:00',
+    updated_at: '2026-03-02T12:00:00+00:00',
+  },
+];
+
+function exam(
+  eventId: string,
+  studentId: string,
+  target: string,
+  kind: 'BELT' | 'STRIPE',
+  status: Exam['status'],
+): Exam {
+  const decided = status !== 'IN_PROGRESS';
+  return {
+    // UUID-shaped like the API's, fixed so tests can rely on it.
+    id: `6f2c8d1e-4b3a-4c5d-9e6f-${eventId.slice(-2)}${studentId.slice(-10)}`,
+    event_id: eventId,
+    student_id: studentId,
+    target_belt_id: beltId(target),
+    kind,
+    status,
+    decided_by_id: decided ? examiner : null,
+    decided_at: decided ? '2026-03-01T15:00:00+00:00' : null,
+    notes: null,
+    created_by: examiner,
+    created_at: decided ? '2026-03-01T13:00:00+00:00' : '2026-11-02T12:00:00+00:00',
+  };
+}
+
+/** Exams of the base students: Élida earned her stripe at the closed event. */
+export const initialMockExams: readonly Exam[] = [
+  exam(MOCK_EVENT_IDS.closed, '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e05', 'Roxa', 'STRIPE', 'APPROVED'),
+];
+
+/** Exams of the showcase students: Gabriel at the closed event, Helena at the open one. */
+export const showcaseMockExams: readonly Exam[] = [
+  exam(
+    MOCK_EVENT_IDS.closed,
+    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e07',
+    'Amarela/Laranja',
+    'BELT',
+    'APPROVED',
+  ),
+  exam(
+    MOCK_EVENT_IDS.open,
     '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e08',
-    examiner,
-    'Helena Prado',
-    '2011-06-18',
-    'Roxa',
-    '2025-06-30',
-    4,
-    eligible('BELT', 'Marrom'),
+    'Marrom',
+    'BELT',
+    'IN_PROGRESS',
   ),
 ];
 
 export interface MockDb {
   belts: Belt[];
   students: MockStudent[];
+  events: ExamEvent[];
+  exams: Exam[];
 }
 
 export interface MockDbOptions {
-  /** Add `showcaseMockStudents` (browser simulated mode and the list screen tests). */
+  /**
+   * Add `showcaseMockStudents` and their exams (browser simulated mode and the list screen
+   * tests).
+   */
   includeShowcase?: boolean;
 }
 
@@ -352,8 +434,11 @@ export function createMockDb({ includeShowcase = false }: MockDbOptions = {}): M
   const students = includeShowcase
     ? [...initialMockStudents, ...showcaseMockStudents]
     : initialMockStudents;
+  const exams = includeShowcase ? [...initialMockExams, ...showcaseMockExams] : initialMockExams;
   return {
     belts: mockBelts.map((belt) => ({ ...belt })),
     students: students.map(copy),
+    events: initialMockEvents.map((event) => ({ ...event })),
+    exams: exams.map((item) => ({ ...item })),
   };
 }
