@@ -17,13 +17,17 @@ function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-/** Parse `AAAA-MM-DD`, or return null when the text is not a real calendar date. */
+/**
+ * Parse `AAAA-MM-DD`, or return null when the text is not a real calendar date. Years run
+ * from 1 to 9999, as `date.fromisoformat` in the backend (the year 0000 does not exist).
+ */
 export function parseIsoDate(value: string): CalendarDate | null {
   const match = ISO_DATE.exec(value);
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
+  if (year < 1) return null;
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
   return { year, month, day };
 }
