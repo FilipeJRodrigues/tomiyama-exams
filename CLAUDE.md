@@ -20,6 +20,10 @@ uv run python scripts/build_requirements_seed.py  # regenera os itens do Apêndi
 
 A esteira em `.github/workflows/ci.yml` roda lint, formatação, testes e cfn-lint em todo push e PR.
 
+## Quadro do projeto
+
+O roteiro fica no GitHub Projects ["Tomiyama Exams"](https://github.com/users/FilipeJRodrigues/projects/1). Cada tarefa é um card (issue) que passa por Backlog → A fazer → Em andamento → Em QA → Pronto. Para mover e comentar, use `bash .claude/scripts/card.sh <issue> "<status>" ["comentário"]`. O PR fecha o card com `Closes #N`.
+
 ## Agentes
 
 Os agentes ficam em [.claude/agents/](.claude/agents/):
