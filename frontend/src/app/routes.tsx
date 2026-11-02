@@ -1,5 +1,6 @@
 import { Navigate, type RouteObject } from 'react-router';
 
+import { ExamDayPage } from '../features/exam-day/ExamDayPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { SignUpPage } from '../features/auth/SignUpPage';
 import { NotFoundPage, PlaceholderPage } from '../features/placeholder/PlaceholderPage';
@@ -31,7 +32,8 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
             {
               element: <RequireExaminer />,
               children: [
-                { path: paths.examDay, element: <PlaceholderPage title="Dia do exame" /> },
+                { path: paths.examDay, element: <ExamDayPage /> },
+                { path: paths.exam, element: <PlaceholderPage title="Exame do aluno" /> },
                 { path: paths.belts, element: <PlaceholderPage title="Faixas" /> },
                 { path: paths.requirements, element: <PlaceholderPage title="Requisitos" /> },
                 { path: paths.events, element: <PlaceholderPage title="Eventos" /> },

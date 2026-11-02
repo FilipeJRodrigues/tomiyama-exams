@@ -18,6 +18,8 @@ export const paths = {
   /** Route pattern of the student form in edit mode; build links with `studentPath`. */
   studentEdit: '/alunos/:id',
   examDay: '/dia-do-exame',
+  /** Route pattern of a student's exam (§ 6.4); build links with `examPath`. */
+  exam: '/dia-do-exame/:eventId/alunos/:studentId',
   belts: '/faixas',
   requirements: '/requisitos',
   events: '/eventos',
@@ -27,6 +29,11 @@ export const paths = {
 /** `/alunos/{id}`: the student form in edit mode (the id is the API's opaque UUID). */
 export function studentPath(id: string): string {
   return `${paths.students}/${encodeURIComponent(id)}`;
+}
+
+/** `/dia-do-exame/{eventId}/alunos/{studentId}`: a student's exam in an event (§ 6.4). */
+export function examPath(eventId: string, studentId: string): string {
+  return `${paths.examDay}/${encodeURIComponent(eventId)}/alunos/${encodeURIComponent(studentId)}`;
 }
 
 export interface NavItem {

@@ -75,6 +75,48 @@ export interface StudentFilters {
   reference_date?: IsoDate;
 }
 
+export type EventStatus = 'OPEN' | 'CLOSED';
+export type ExamStatus = 'IN_PROGRESS' | 'APPROVED' | 'FAILED';
+
+/** `GET /events` item; `exam_date` is the reference date of the eligibility (RN015). */
+export interface ExamEvent {
+  id: string;
+  name: string;
+  exam_date: IsoDate;
+  status: EventStatus;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+/** A student's exam in an event, as stored (unique per event and student). */
+export interface Exam {
+  id: string;
+  event_id: string;
+  student_id: string;
+  /** Computed by the API on the event date when the attendance was confirmed. */
+  target_belt_id: string;
+  kind: ExamKind;
+  status: ExamStatus;
+  decided_by_id: string | null;
+  decided_at: IsoDateTime | null;
+  notes: string | null;
+  created_by: string;
+  created_at: IsoDateTime;
+}
+
+/**
+ * `GET /events/{id}/exams` item and `POST /events/{id}/exams` answer: the exam plus the
+ * student's name (`null` if the student no longer exists).
+ */
+export interface ExamView extends Exam {
+  student_name: string | null;
+}
+
+/** Body of `POST /events/{id}/exams` (attendance confirmation, RN005). */
+export interface ConfirmAttendanceInput {
+  student_id: string;
+}
+
 /** Error body returned by the backend and by API Gateway. */
 export interface ApiErrorBody {
   message?: string;
