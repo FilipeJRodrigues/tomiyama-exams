@@ -33,7 +33,7 @@ Para trabalhar sem o master, remova a chave `agent` do `.claude/settings.json`. 
 
 ## Regras de trabalho
 
-- **Todo erro apontado vira teste de regressão.** Antes de corrigir, escreva em `backend/tests/regression/` um teste que reproduza o erro e confirme que ele falha. Só então corrija. Use a branch `fix/*`; a esteira barra PRs `fix/*` sem teste nessa pasta. Formato em [backend/tests/regression/README.md](backend/tests/regression/README.md).
+- **Todo erro apontado vira teste de regressão.** Antes de corrigir, escreva um teste que reproduza o erro e confirme que ele falha: em `backend/tests/regression/` (formato em [backend/tests/regression/README.md](backend/tests/regression/README.md)) ou em `frontend/tests/regression/` (`<issue ou data>-<assunto>.test.ts(x)`), conforme a área. Só então corrija. Use a branch `fix/*`; a esteira barra PRs `fix/*` sem teste numa dessas pastas.
 - Toda regra de negócio nova vem com teste nomeado pelo id (`test_rnXXX_*`).
 - Camadas: `handlers/` (HTTP), `domain/` (regras puras, sem AWS), `repository/` (DynamoDB).
 - Rode lint, formatação e testes antes de dar uma tarefa por concluída.
