@@ -264,17 +264,76 @@ export const initialMockStudents: readonly MockStudent[] = [
   ),
 ];
 
+/**
+ * Extra students that complete the cases of the list (§ 6.2): two blocking reasons, the
+ * last belt (no next exam here) and 2 to 4 stripes. Kept apart so the base set above stays
+ * the one the API tests count on.
+ */
+export const showcaseMockStudents: readonly MockStudent[] = [
+  student(
+    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e06',
+    examiner,
+    'Fábio Lima',
+    '2008-04-22',
+    'Marrom',
+    '2024-02-10',
+    3,
+    {
+      eligible: false,
+      kind: null,
+      target_belt_id: null,
+      target_belt_name: null,
+      reasons: ['Faixa preta é exame da federação'],
+    },
+  ),
+  student(
+    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e07',
+    guardian,
+    'Gabriel Costa',
+    '2017-12-05',
+    'Amarela/Laranja',
+    '2026-03-01',
+    2,
+    blocked('BELT', 'Laranja', [
+      'Idade mínima para a faixa Laranja: 11 anos',
+      'Carência mínima de 12 meses na faixa atual (faltam 4)',
+    ]),
+  ),
+  student(
+    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e08',
+    examiner,
+    'Helena Prado',
+    '2011-06-18',
+    'Roxa',
+    '2025-06-30',
+    4,
+    eligible('BELT', 'Marrom'),
+  ),
+];
+
 export interface MockDb {
   belts: Belt[];
   students: MockStudent[];
 }
 
-export function createMockDb(): MockDb {
+export interface MockDbOptions {
+  /** Add `showcaseMockStudents` (browser simulated mode and the list screen tests). */
+  includeShowcase?: boolean;
+}
+
+function copy(item: MockStudent): MockStudent {
+  return {
+    student: { ...item.student },
+    eligibility: { ...item.eligibility, reasons: [...item.eligibility.reasons] },
+  };
+}
+
+export function createMockDb({ includeShowcase = false }: MockDbOptions = {}): MockDb {
+  const students = includeShowcase
+    ? [...initialMockStudents, ...showcaseMockStudents]
+    : initialMockStudents;
   return {
     belts: mockBelts.map((belt) => ({ ...belt })),
-    students: initialMockStudents.map((item) => ({
-      student: { ...item.student },
-      eligibility: { ...item.eligibility, reasons: [...item.eligibility.reasons] },
-    })),
+    students: students.map(copy),
   };
 }
