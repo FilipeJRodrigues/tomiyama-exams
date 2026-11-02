@@ -67,3 +67,10 @@ def score(
             )
         scores[kind] = KindScore(kind, len(ids), len(marked), correct, percent)
     return scores
+
+
+def summary(
+    requirements: Iterable[Requirement], answers: Mapping[str, bool]
+) -> dict[str, dict[str, Any]]:
+    """Return the score per kind as JSON, keyed by kind (``THEORY``, ``PRACTICE``)."""
+    return {kind.value: item.to_dict() for kind, item in score(requirements, answers).items()}

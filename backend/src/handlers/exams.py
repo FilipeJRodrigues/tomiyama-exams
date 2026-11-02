@@ -1,21 +1,36 @@
-"""Exam routes inside an event, examiners only (RN005).
+"""Exam routes inside an event, examiners only (RN005–RN007).
 
 - ``POST /events/{id}/exams``: confirm a student's attendance (body
   ``{"student_id": ...}``); creates the exam in progress with target belt and
   kind computed on the event date.
 - ``GET /events/{id}/exams``: list the event's exams, with the student's name,
   sorted by name.
+- ``GET /events/{id}/exams/{student_id}``: the exam sheet (§ 6.4): exam, event,
+  student, target belt, the belt's items in sheet order with their answers,
+  and the score per kind (RN007, always recomputed).
+- ``PUT /events/{id}/exams/{student_id}/answers/{requirement_id}``: mark an
+  item (body ``{"correct": true|false}``), replacing any previous mark (RN006).
+- ``DELETE`` on the same path: unmark the item (back to "not marked").
 """
 
 import logging
 from typing import Any
 
-from domain import dates, validation
+from domain import answers as answer_rules
+from domain import dates, scoring, validation
 from domain import exams as exam_rules
+from domain.answers import ExamAnswer
 from domain.errors import ConflictError, NotFoundError
 from domain.events import ExamEvent
-from domain.exams import MSG_ALREADY_CONFIRMED, MSG_EVENT_NOT_FOUND, MSG_STUDENT_NOT_FOUND, Exam
+from domain.exams import (
+    MSG_ALREADY_CONFIRMED,
+    MSG_EVENT_NOT_FOUND,
+    MSG_EXAM_NOT_FOUND,
+    MSG_STUDENT_NOT_FOUND,
+    Exam,
+)
 from domain.names import name_sort_key
+from domain.requirements import MSG_REQUIREMENT_NOT_FOUND, Requirement
 from handlers.http import (
     Event,
     Response,
@@ -26,9 +41,11 @@ from handlers.http import (
     path_param,
     require_examiner,
 )
+from repository import answers as answer_repo
 from repository import belts as belt_repo
 from repository import events as event_repo
 from repository import exams as exam_repo
+from repository import requirements as requirement_repo
 from repository import students as student_repo
 
 logger = logging.getLogger(__name__)
@@ -88,3 +105,112 @@ def list_event_exams(event: Event, context: Any) -> Response:
     views = [_exam_view(exam, names.get(exam.student_id)) for exam in exams]
     views.sort(key=lambda view: name_sort_key(view["student_name"], view["student_id"]))
     return json_response(200, views)
+
+
+def _exam_or_404(event_id: str, student_id: str) -> Exam:
+    exam = exam_repo.get_exam(event_id, student_id)
+    if exam is None:
+        raise NotFoundError(MSG_EXAM_NOT_FOUND)
+    return exam
+
+
+def _requirement_or_404(requirement_id: str) -> Requirement:
+    requirement = requirement_repo.get_requirement(requirement_id)
+    if requirement is None:
+        raise NotFoundError(MSG_REQUIREMENT_NOT_FOUND)
+    return requirement
+
+
+def _correct_by_item(answers: dict[str, ExamAnswer]) -> dict[str, bool]:
+    return {requirement_id: answer.correct for requirement_id, answer in answers.items()}
+
+
+@api_handler
+def get_exam_sheet(event: Event, context: Any) -> Response:
+    """Return everything the exam screen shows (§ 6.4) in one call."""
+    require_examiner(current_user(event))
+    exam_event = _event_or_404(path_param(event, "id"))
+    exam = _exam_or_404(exam_event.id, path_param(event, "student_id"))
+    student = student_repo.get_student(exam.student_id)
+    target_belt = belt_repo.get_belt(exam.target_belt_id)
+    requirements = requirement_repo.list_by_belt(exam.target_belt_id)
+    answers = answer_repo.list_by_exam(exam.id)
+    items = [
+        {
+            **requirement.to_dict(),
+            "answer": answers[requirement.id].to_dict() if requirement.id in answers else None,
+        }
+        for requirement in requirements
+    ]
+    student_view = None
+    if student is not None:
+        student_view = {
+            "id": student.id,
+            "full_name": student.full_name,
+            "birth_date": student.birth_date.isoformat(),
+        }
+    body = {
+        "exam": _exam_view(exam, student.full_name if student else None),
+        "event": exam_event.to_dict(),
+        "student": student_view,
+        "target_belt": target_belt.to_dict() if target_belt else None,
+        "items": items,
+        "summary": scoring.summary(requirements, _correct_by_item(answers)),
+    }
+    return json_response(200, body)
+
+
+def _marking_context(event: Event) -> tuple[ExamEvent, Exam, Requirement]:
+    exam_event = _event_or_404(path_param(event, "id"))
+    exam = _exam_or_404(exam_event.id, path_param(event, "student_id"))
+    return exam_event, exam, _requirement_or_404(path_param(event, "requirement_id"))
+
+
+def _summary_after(exam: Exam, requirement_id: str, answer: ExamAnswer | None) -> dict[str, Any]:
+    """Recompute the score (RN007) with this request's write applied.
+
+    The answers query is eventually consistent; applying our own write keeps
+    the summary right for the caller's optimistic update.
+    """
+    answers = _correct_by_item(answer_repo.list_by_exam(exam.id))
+    if answer is None:
+        answers.pop(requirement_id, None)
+    else:
+        answers[requirement_id] = answer.correct
+    return scoring.summary(requirement_repo.list_by_belt(exam.target_belt_id), answers)
+
+
+@api_handler
+def mark_answer(event: Event, context: Any) -> Response:
+    """Mark an item as correct or wrong, replacing any previous mark (RN006)."""
+    user = current_user(event)
+    require_examiner(user)
+    exam_event, exam, requirement = _marking_context(event)
+    correct = answer_rules.parse_correct(json_body(event))
+    answer = answer_rules.mark(
+        exam,
+        exam_event,
+        requirement,
+        correct=correct,
+        marked_by=user.sub,
+        now_iso=dates.utc_now_iso(),
+    )
+    answer_repo.save_answer(exam, answer)
+    logger.info(
+        "Item %s of exam %s marked %s by %s", requirement.id, exam.id, answer.correct, user.sub
+    )
+    body = {"answer": answer.to_dict(), "summary": _summary_after(exam, requirement.id, answer)}
+    return json_response(200, body)
+
+
+@api_handler
+def unmark_answer(event: Event, context: Any) -> Response:
+    """Unmark an item (back to "not marked"), with the same locks as marking."""
+    user = current_user(event)
+    require_examiner(user)
+    exam_event, exam, requirement = _marking_context(event)
+    answer_rules.ensure_can_mark(exam, exam_event, requirement)
+    if answer_repo.delete_answer(exam, requirement.id):
+        logger.info("Item %s of exam %s unmarked by %s", requirement.id, exam.id, user.sub)
+    body = {"answer": None, "summary": _summary_after(exam, requirement.id, None)}
+    return json_response(200, body)

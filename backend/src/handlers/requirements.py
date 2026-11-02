@@ -3,8 +3,11 @@
 - ``GET /requirements``: list, filterable by ``belt_id`` and ``kind``, ordered by
   belt and sheet order, with no limit that cuts long belts (Marrom: 139 items).
 - ``POST /requirements``: add an item; without ``sort_order`` it goes to the end.
-- ``PUT /requirements/{id}``: edit an item.
-- ``DELETE /requirements/{id}``: remove an item.
+- ``PUT /requirements/{id}``: edit an item; refused (409) if it has answers and
+  the belt or kind changes (description, expected answer, category and order
+  stay editable).
+- ``DELETE /requirements/{id}``: remove an item; refused (409) if any exam has
+  an answer for it.
 """
 
 import logging
@@ -13,6 +16,7 @@ from typing import Any
 
 from domain.errors import NotFoundError, ValidationError
 from domain.requirements import (
+    MSG_REQUIREMENT_NOT_FOUND,
     Requirement,
     RequirementKind,
     build_requirement,
@@ -54,7 +58,7 @@ def _next_sort_order(belt_id: str) -> int:
 def _get_or_404(requirement_id: str) -> Requirement:
     requirement = requirement_repo.get_requirement(requirement_id)
     if requirement is None:
-        raise NotFoundError("Requisito não encontrado")
+        raise NotFoundError(MSG_REQUIREMENT_NOT_FOUND)
     return requirement
 
 
@@ -99,7 +103,7 @@ def create_requirement(event: Event, context: Any) -> Response:
 
 @api_handler
 def update_requirement(event: Event, context: Any) -> Response:
-    """Edit an item."""
+    """Edit an item; belt and kind are locked while it has answers (checked in the write)."""
     user = current_user(event)
     require_examiner(user)
     existing = _get_or_404(path_param(event, "id"))
@@ -116,7 +120,7 @@ def update_requirement(event: Event, context: Any) -> Response:
 
 @api_handler
 def delete_requirement(event: Event, context: Any) -> Response:
-    """Remove an item."""
+    """Remove an item that has no answers (conditional delete on ``answer_count``)."""
     user = current_user(event)
     require_examiner(user)
     requirement = _get_or_404(path_param(event, "id"))

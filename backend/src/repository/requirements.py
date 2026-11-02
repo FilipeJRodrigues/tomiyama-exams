@@ -1,7 +1,9 @@
 """Persistence of belt requirements in the ``Requirements`` table.
 
 Keys: PK ``id``; GSI ``by_belt`` (PK ``belt_id``, SK ``sort_order``) lists a
-belt's items in sheet order.
+belt's items in sheet order. The ``answer_count`` attribute is kept by the
+answer transactions (``repository.answers``); while it is above zero the item
+cannot be deleted nor change its belt or kind.
 """
 
 import logging
@@ -9,13 +11,24 @@ from collections.abc import Iterable
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
-from domain.requirements import Requirement, RequirementKind
+from domain.errors import ConflictError, NotFoundError
+from domain.requirements import (
+    MSG_REQUIREMENT_HAS_ANSWERS,
+    MSG_REQUIREMENT_LOCKED,
+    MSG_REQUIREMENT_NOT_FOUND,
+    Requirement,
+    RequirementKind,
+)
 from repository.tables import (
+    ANSWER_COUNT,
+    NO_ANSWERS_CONDITION,
     REQUIREMENTS_TABLE_ENV,
     SETTINGS_TABLE_ENV,
     paginate,
     put_if_absent,
+    replace_fields,
     table,
 )
 
@@ -71,15 +84,63 @@ def create_requirement(requirement: Requirement) -> None:
 
 
 def save_requirement(requirement: Requirement) -> None:
-    """Replace an existing item."""
-    table(REQUIREMENTS_TABLE_ENV).put_item(
-        Item=_to_item(requirement), ConditionExpression="attribute_exists(id)"
+    """Rewrite an existing item's attributes, keeping its ``answer_count``.
+
+    An item with answers keeps its belt and kind (RN017): moving it would drop
+    the answers from the exam sheet and score (RN006/RN007) and make them
+    impossible to unmark. The lock compares the stored values with the new ones
+    in the write's own condition, so resending the same belt and kind passes,
+    and a first answer committed after the handler's read still blocks a move.
+
+    Raises:
+        NotFoundError: If the item was deleted meanwhile.
+        ConflictError: If the item has answers and the belt or kind changes.
+    """
+    arguments = replace_fields(requirement.to_dict())
+    arguments["ExpressionAttributeNames"].update(
+        {"#answers": ANSWER_COUNT, "#belt": "belt_id", "#kind": "kind"}
     )
+    arguments["ExpressionAttributeValues"].update(
+        {
+            ":zero": 0,
+            ":same_belt": requirement.belt_id,
+            ":same_kind": requirement.kind.value,
+        }
+    )
+    condition = (
+        "attribute_exists(id) AND (attribute_not_exists(#answers) OR #answers = :zero"
+        " OR (#belt = :same_belt AND #kind = :same_kind))"
+    )
+    try:
+        table(REQUIREMENTS_TABLE_ENV).update_item(**arguments, ConditionExpression=condition)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+        if get_requirement(requirement.id) is None:
+            raise NotFoundError(MSG_REQUIREMENT_NOT_FOUND) from exc
+        raise ConflictError(MSG_REQUIREMENT_LOCKED) from exc
 
 
 def delete_requirement(requirement_id: str) -> None:
-    """Delete an item by id."""
-    table(REQUIREMENTS_TABLE_ENV).delete_item(Key={"id": requirement_id})
+    """Delete an item only if no exam has an answer for it.
+
+    The condition reads the ``answer_count`` kept by the answer transactions,
+    so a first answer written after any earlier check still blocks the delete,
+    and a marking that runs after the delete fails on its own condition.
+
+    Raises:
+        ConflictError: If the item has answers.
+    """
+    try:
+        table(REQUIREMENTS_TABLE_ENV).delete_item(
+            Key={"id": requirement_id},
+            ConditionExpression=NO_ANSWERS_CONDITION,
+            ExpressionAttributeValues={":zero": 0},
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+        raise ConflictError(MSG_REQUIREMENT_HAS_ANSWERS) from exc
 
 
 def seed_requirements(requirements: Iterable[Requirement], *, deadline: float | None = None) -> int:

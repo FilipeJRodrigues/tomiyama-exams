@@ -36,9 +36,13 @@ Mappings:
       LogRetentionDays: 30
   # Provisioned capacity used only in dev (prod is PAY_PER_REQUEST). The free
   # tier covers 25 RCU and 25 WCU summed over every table and GSI of the
-  # account in the Region; these add up to 25 RCU and 25 WCU exactly.
+  # account in the Region; these add up to 25 RCU and 24 WCU (1 WCU spare).
   # Requirements and by_belt get the most WCU for the 692-item seed (a write
-  # to the table also writes the GSI, so the seed runs at min(7, 7) items/s).
+  # to the table also writes the GSI, so the seed runs at min(4, 4) items/s).
+  # Each mark (RN006) is a transaction that checks the exam and the event and
+  # writes the answer: 2 WCU in each of Exams, Events and Answers (plus 2 in
+  # Requirements and the by_belt write on the first mark of an item), and its
+  # response reads the belt's items (by_belt) and the exam's answers.
   DevCapacity:
     Belts:
       Read: 3
@@ -51,22 +55,25 @@ Mappings:
       Write: 2
     Exams:
       Read: 2
-      Write: 2
+      Write: 3
     ExamsByStudent:
       Read: 1
       Write: 1
     Requirements:
-      Read: 6
-      Write: 7
+      Read: 3
+      Write: 4
     RequirementsByBelt:
-      Read: 4
-      Write: 7
+      Read: 5
+      Write: 4
     Settings:
-      Read: 2
+      Read: 1
       Write: 1
     Events:
       Read: 2
-      Write: 2
+      Write: 3
+    Answers:
+      Read: 3
+      Write: 3
 
 Globals:
   Function:
@@ -86,6 +93,7 @@ Globals:
         REQUIREMENTS_TABLE: !Ref RequirementsTable
         SETTINGS_TABLE: !Ref SettingsTable
         EVENTS_TABLE: !Ref EventsTable
+        ANSWERS_TABLE: !Ref AnswersTable
 
 Resources:
   # ---------------------------------------------------------------- DynamoDB
@@ -239,6 +247,31 @@ Resources:
       KeySchema:
         - AttributeName: id
           KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+
+  # Exam answers (RN006): one item per (exam, requirement); PK is the exam's UUID.
+  AnswersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
+    Properties:
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Answers, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Answers, Write]
+      AttributeDefinitions:
+        - AttributeName: exam_id
+          AttributeType: S
+        - AttributeName: requirement_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: exam_id
+          KeyType: HASH
+        - AttributeName: requirement_id
+          KeyType: RANGE
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
@@ -686,12 +719,115 @@ Resources:
             Path: /events/{id}/exams
             Method: GET
 
+  # Exam sheet and marking (examiners only, RN006/RN007)
+  GetExamSheetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.exams.get_exam_sheet
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource:
+                - !GetAtt EventsTable.Arn
+                - !GetAtt ExamsTable.Arn
+                - !GetAtt StudentsTable.Arn
+                - !GetAtt BeltsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource:
+                - !Sub ${RequirementsTable.Arn}/index/by_belt
+                - !GetAtt AnswersTable.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}/exams/{student_id}
+            Method: GET
+
+  MarkAnswerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.exams.mark_answer
+      Policies:
+        # TransactWriteItems: ConditionCheck on Exams and Events + Put or
+        # Update in Answers + Update ADD answer_count in Requirements on the
+        # first answer, or ConditionCheck (same belt) in Requirements when
+        # replacing. GetItem reads the items again to explain a failure.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:ConditionCheckItem
+              Resource:
+                - !GetAtt EventsTable.Arn
+                - !GetAtt ExamsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt RequirementsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:Query
+              Resource: !GetAtt AnswersTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${RequirementsTable.Arn}/index/by_belt
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}/exams/{student_id}/answers/{requirement_id}
+            Method: PUT
+
+  UnmarkAnswerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.exams.unmark_answer
+      Policies:
+        # TransactWriteItems: ConditionCheck on Exams and Events + Delete in
+        # Answers + Update ADD answer_count -1 in Requirements.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:ConditionCheckItem
+              Resource:
+                - !GetAtt EventsTable.Arn
+                - !GetAtt ExamsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt RequirementsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+              Resource: !GetAtt AnswersTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${RequirementsTable.Arn}/index/by_belt
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events/{id}/exams/{student_id}/answers/{requirement_id}
+            Method: DELETE
+
   # ------------------------------------------------------------ Initial data
   SeedFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.seed.handler
-      # Lambda maximum. With 7 WCU the 692 items take ~2 min; the handler stops
+      # Lambda maximum. With 4 WCU the 692 items take ~3 min; the handler stops
       # 60 s before this limit and answers FAILED, so the stack never hangs.
       Timeout: 900
       Policies:

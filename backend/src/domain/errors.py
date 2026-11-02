@@ -44,3 +44,9 @@ class ConflictError(DomainError):
     """Uniqueness or state conflict (409)."""
 
     status_code = 409
+
+
+class ServiceUnavailableError(DomainError):
+    """Temporary lack of capacity; the same request may succeed later (503)."""
+
+    status_code = 503
