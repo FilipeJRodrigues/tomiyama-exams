@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Transform: AWS::Serverless-2016-10-31
+# LanguageExtensions must come before SAM: it resolves the !If in
+# DeletionPolicy/UpdateReplacePolicy before the SAM transform runs.
+Transform: [AWS::LanguageExtensions, AWS::Serverless-2016-10-31]
 Description: Academia de Judô — exames de graduação (backend serverless)
 
 Parameters:
@@ -12,8 +14,59 @@ Parameters:
     Description: Origem do front-end liberada no CORS (troque pela URL do Amplify).
   BudgetLimitUsd:
     Type: Number
-    Default: 5
+    Default: 1
     Description: Limite mensal (US$) do alerta do AWS Budgets.
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: >-
+      dev usa DynamoDB provisionado dentro do free tier (25 RCU/25 WCU), sem PITR e
+      logs por 7 dias; prod usa on-demand com PITR, como pede a arquitetura.
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Mappings:
+  # Settings per environment.
+  EnvConfig:
+    dev:
+      LogRetentionDays: 7
+    prod:
+      LogRetentionDays: 30
+  # Provisioned capacity used only in dev (prod is PAY_PER_REQUEST). The free
+  # tier covers 25 RCU and 25 WCU summed over every table and GSI of the
+  # account in the Region; these add up to 25 RCU and 25 WCU exactly.
+  # Requirements and by_belt get the most WCU for the 692-item seed (a write
+  # to the table also writes the GSI, so the seed runs at min(7, 7) items/s).
+  DevCapacity:
+    Belts:
+      Read: 3
+      Write: 1
+    Students:
+      Read: 3
+      Write: 2
+    StudentsByOwner:
+      Read: 2
+      Write: 2
+    Exams:
+      Read: 2
+      Write: 2
+    ExamsByStudent:
+      Read: 1
+      Write: 1
+    Requirements:
+      Read: 6
+      Write: 7
+    RequirementsByBelt:
+      Read: 4
+      Write: 7
+    Settings:
+      Read: 2
+      Write: 1
+    Events:
+      Read: 2
+      Write: 2
 
 Globals:
   Function:
@@ -22,6 +75,8 @@ Globals:
     CodeUri: ../backend/src
     Timeout: 10
     MemorySize: 256
+    LoggingConfig:
+      LogGroup: !Ref FunctionsLogGroup
     Environment:
       Variables:
         LOG_LEVEL: INFO
@@ -34,12 +89,20 @@ Globals:
 
 Resources:
   # ---------------------------------------------------------------- DynamoDB
+  # Tables are kept in prod. In dev they are deleted with the stack (and on a
+  # failed Create rollback), so orphaned PROVISIONED tables never eat the
+  # account-wide 25 RCU/WCU free tier of the next deploy.
   BeltsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
-      BillingMode: PAY_PER_REQUEST
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Belts, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Belts, Write]
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -47,14 +110,19 @@ Resources:
         - AttributeName: id
           KeyType: HASH
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
   StudentsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
-      BillingMode: PAY_PER_REQUEST
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Students, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Students, Write]
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -70,15 +138,25 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProd
+            - !Ref AWS::NoValue
+            - ReadCapacityUnits: !FindInMap [DevCapacity, StudentsByOwner, Read]
+              WriteCapacityUnits: !FindInMap [DevCapacity, StudentsByOwner, Write]
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
   ExamsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
-      BillingMode: PAY_PER_REQUEST
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Exams, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Exams, Write]
       AttributeDefinitions:
         - AttributeName: event_id
           AttributeType: S
@@ -98,15 +176,25 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProd
+            - !Ref AWS::NoValue
+            - ReadCapacityUnits: !FindInMap [DevCapacity, ExamsByStudent, Read]
+              WriteCapacityUnits: !FindInMap [DevCapacity, ExamsByStudent, Write]
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
   RequirementsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
-      BillingMode: PAY_PER_REQUEST
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Requirements, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Requirements, Write]
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -126,15 +214,25 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProd
+            - !Ref AWS::NoValue
+            - ReadCapacityUnits: !FindInMap [DevCapacity, RequirementsByBelt, Read]
+              WriteCapacityUnits: !FindInMap [DevCapacity, RequirementsByBelt, Write]
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
   EventsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
-      BillingMode: PAY_PER_REQUEST
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Events, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Events, Write]
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -142,15 +240,20 @@ Resources:
         - AttributeName: id
           KeyType: HASH
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
   # Academy settings (single record) and markers such as the initial-data load.
   SettingsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
-      BillingMode: PAY_PER_REQUEST
+      BillingMode: !If [IsProd, PAY_PER_REQUEST, PROVISIONED]
+      ProvisionedThroughput: !If
+        - IsProd
+        - !Ref AWS::NoValue
+        - ReadCapacityUnits: !FindInMap [DevCapacity, Settings, Read]
+          WriteCapacityUnits: !FindInMap [DevCapacity, Settings, Write]
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -158,7 +261,7 @@ Resources:
         - AttributeName: id
           KeyType: HASH
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
   # ----------------------------------------------------------------- Cognito
   UserPool:
@@ -588,7 +691,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.seed.handler
-      Timeout: 120
+      # Lambda maximum. With 7 WCU the 692 items take ~2 min; the handler stops
+      # 60 s before this limit and answers FAILED, so the stack never hangs.
+      Timeout: 900
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref BeltsTable
@@ -601,8 +706,21 @@ Resources:
     Type: Custom::InitialData
     Properties:
       ServiceToken: !GetAtt SeedFunction.Arn
+      # Seconds CloudFormation waits for an answer (default 3600) if the
+      # function dies without replying; a bit more than its timeout.
+      ServiceTimeout: 960
       # Bump to re-run the (idempotent) seed on the next deploy.
       SeedVersion: "2"
+
+  # -------------------------------------------------------------------- Logs
+  # One log group for every function (Globals.LoggingConfig), with a short
+  # retention instead of the implicit /aws/lambda/<name> groups kept forever.
+  # Each function writes its own streams, named after the function.
+  FunctionsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}
+      RetentionInDays: !FindInMap [EnvConfig, !Ref Environment, LogRetentionDays]
 
   # ------------------------------------------------------------------ Custos
   MonthlyBudget:
