@@ -9,7 +9,6 @@ import {
   Stack,
   Text,
   Title,
-  em,
   useComputedColorScheme,
   useMantineColorScheme,
 } from '@mantine/core';
@@ -20,10 +19,9 @@ import { NavLink as RouterNavLink, Outlet, useNavigate } from 'react-router';
 
 import { ROLE_LABELS } from '../auth/types';
 import { useAuth } from '../auth/useAuth';
+import { MOBILE_QUERY } from './breakpoints';
 import { navItemsFor, paths } from './navigation';
 
-/** Below `sm` (48em = 768 px) the menu becomes a drawer; 200% zoom at 1280 px lands here. */
-const MOBILE_QUERY = `(max-width: ${em(767.98)})`;
 const NAV_ID = 'main-navigation';
 
 function ColorSchemeToggle() {

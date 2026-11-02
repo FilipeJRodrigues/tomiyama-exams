@@ -3,6 +3,7 @@ import { Navigate, type RouteObject } from 'react-router';
 import { LoginPage } from '../features/auth/LoginPage';
 import { SignUpPage } from '../features/auth/SignUpPage';
 import { NotFoundPage, PlaceholderPage } from '../features/placeholder/PlaceholderPage';
+import { StudentsPage } from '../features/students/StudentsPage';
 import { AppLayout } from './AppLayout';
 import { RequireAuth, RequireExaminer } from './guards';
 import { paths } from './navigation';
@@ -22,7 +23,7 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
           element: <AppLayout useMocks={useMocks} />,
           children: [
             { index: true, element: <Navigate to={paths.students} replace /> },
-            { path: paths.students, element: <PlaceholderPage title="Alunos" /> },
+            { path: paths.students, element: <StudentsPage /> },
             {
               element: <RequireExaminer />,
               children: [
