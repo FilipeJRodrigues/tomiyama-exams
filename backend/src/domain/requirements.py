@@ -20,6 +20,12 @@ _SEED_NAMESPACE = uuid.UUID("2b8f0c57-91d4-4a8e-b6f3-5e0d7c1a9f42")
 MAX_CATEGORY = 60
 MAX_TEXT = 2000
 
+MSG_REQUIREMENT_NOT_FOUND = "Requisito não encontrado"
+MSG_REQUIREMENT_HAS_ANSWERS = "Requisito possui respostas registradas"
+MSG_REQUIREMENT_LOCKED = (
+    "Não é possível trocar a faixa ou o tipo de um requisito com respostas registradas"
+)
+
 
 class RequirementKind(StrEnum):
     """Theory or practice item; percentages are computed per kind (RN007)."""

@@ -19,6 +19,7 @@ EXAMS_TABLE_ENV = "EXAMS_TABLE"
 REQUIREMENTS_TABLE_ENV = "REQUIREMENTS_TABLE"
 SETTINGS_TABLE_ENV = "SETTINGS_TABLE"
 EVENTS_TABLE_ENV = "EVENTS_TABLE"
+ANSWERS_TABLE_ENV = "ANSWERS_TABLE"
 
 
 @lru_cache(maxsize=1)
@@ -95,6 +96,11 @@ def replace_fields(item: dict[str, Any], key_names: tuple[str, ...] = ("id",)) -
 # Items without the attribute count as zero.
 EXAM_COUNT = "exam_count"
 NO_EXAMS_CONDITION = f"attribute_not_exists({EXAM_COUNT}) OR {EXAM_COUNT} = :zero"
+
+# Answers counter kept on requirements by the marking transactions (RN006):
+# +1 with the first answer of an (exam, item), -1 when it is unmarked.
+ANSWER_COUNT = "answer_count"
+NO_ANSWERS_CONDITION = f"attribute_not_exists({ANSWER_COUNT}) OR {ANSWER_COUNT} = :zero"
 
 
 # Errors DynamoDB returns when a table or GSI runs out of provisioned capacity.

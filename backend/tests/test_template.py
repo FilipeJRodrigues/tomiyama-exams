@@ -58,7 +58,7 @@ def _capacities(template: dict[str, Any]) -> dict[str, tuple[int, int]]:
 def test_every_table_and_gsi_is_provisioned_in_dev(template: dict[str, Any]) -> None:
     capacities = _capacities(template)
 
-    assert len(capacities) == 9  # 6 tables + 3 GSIs
+    assert len(capacities) == 10  # 7 tables + 3 GSIs
     assert all(read >= 1 and write >= 1 for read, write in capacities.values())
     for properties in _tables(template).values():
         assert properties["BillingMode"] == {"Fn::If": ["IsProd", "PAY_PER_REQUEST", "PROVISIONED"]}
@@ -154,8 +154,75 @@ def test_tables_are_deleted_in_dev_and_retained_in_prod(
         if resource["Type"] == "AWS::DynamoDB::Table"
     }
 
-    assert len(tables) == 6
+    assert len(tables) == 7
     for name, resource in tables.items():
         for policy in ("DeletionPolicy", "UpdateReplacePolicy"):
             resolved = _resolve_if(resource[policy], is_prod=environment == "prod")
             assert resolved == expected, (name, policy)
+
+
+def _route(function: dict[str, Any]) -> tuple[str, str]:
+    api = function["Properties"]["Events"]["Api"]["Properties"]
+    return api["Method"], api["Path"]
+
+
+def _actions(function: dict[str, Any]) -> set[str]:
+    actions: set[str] = set()
+    for policy in function["Properties"]["Policies"]:
+        for statement in policy.get("Statement", []):
+            action = statement["Action"]
+            actions |= {action} if isinstance(action, str) else set(action)
+    return actions
+
+
+@pytest.mark.parametrize(
+    ("name", "method", "path", "needed"),
+    [
+        (
+            "GetExamSheetFunction",
+            "GET",
+            "/events/{id}/exams/{student_id}",
+            {"dynamodb:GetItem", "dynamodb:Query"},
+        ),
+        (
+            "MarkAnswerFunction",
+            "PUT",
+            "/events/{id}/exams/{student_id}/answers/{requirement_id}",
+            {"dynamodb:ConditionCheckItem", "dynamodb:PutItem", "dynamodb:UpdateItem"},
+        ),
+        (
+            "UnmarkAnswerFunction",
+            "DELETE",
+            "/events/{id}/exams/{student_id}/answers/{requirement_id}",
+            {"dynamodb:ConditionCheckItem", "dynamodb:DeleteItem", "dynamodb:UpdateItem"},
+        ),
+    ],
+)
+def test_rn006_answer_routes_with_least_privilege(
+    template: dict[str, Any], name: str, method: str, path: str, needed: set[str]
+) -> None:
+    function = template["Resources"][name]
+    actions = _actions(function)
+
+    assert _route(function) == (method, path)
+    assert needed <= actions
+    # Only explicit statements: no table-wide CRUD policy, scans or batch writes.
+    assert all("Statement" in policy for policy in function["Properties"]["Policies"])
+    assert not actions & {"dynamodb:Scan", "dynamodb:BatchWriteItem", "dynamodb:*"}
+
+
+def test_rn017_mark_answer_may_check_the_requirement_in_the_transaction(
+    template: dict[str, Any],
+) -> None:
+    # Replacing a mark checks the requirement's belt (ConditionCheck) in the same
+    # transaction, so the function needs ConditionCheckItem on that table.
+    function = template["Resources"]["MarkAnswerFunction"]
+    requirement_actions: set[str] = set()
+    for policy in function["Properties"]["Policies"]:
+        for statement in policy.get("Statement", []):
+            if statement["Resource"] == {"Fn::GetAtt": ["RequirementsTable", "Arn"]}:
+                action = statement["Action"]
+                requirement_actions |= {action} if isinstance(action, str) else set(action)
+
+    assert "dynamodb:ConditionCheckItem" in requirement_actions
+    assert "dynamodb:DeleteItem" not in requirement_actions
