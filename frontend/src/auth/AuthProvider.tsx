@@ -68,6 +68,25 @@ export function AuthProvider({ service, children }: Props) {
     }
   }, [service, queryClient]);
 
+  const signUp = useCallback(
+    (email: string, password: string) => service.signUp(email, password),
+    [service],
+  );
+
+  const confirmSignUp = useCallback(
+    async (email: string, code: string) => {
+      const result = await service.confirmSignUp(email, code);
+      if (result === 'SIGNED_IN') await refresh();
+      return result;
+    },
+    [service, refresh],
+  );
+
+  const resendSignUpCode = useCallback(
+    (email: string) => service.resendSignUpCode(email),
+    [service],
+  );
+
   const getIdToken = useCallback(() => service.getIdToken(), [service]);
 
   const value = useMemo<AuthContextValue>(
@@ -78,9 +97,23 @@ export function AuthProvider({ service, children }: Props) {
       signIn,
       confirmNewPassword,
       signOut,
+      signUp,
+      confirmSignUp,
+      resendSignUpCode,
       getIdToken,
     }),
-    [status, user, service, signIn, confirmNewPassword, signOut, getIdToken],
+    [
+      status,
+      user,
+      service,
+      signIn,
+      confirmNewPassword,
+      signOut,
+      signUp,
+      confirmSignUp,
+      resendSignUpCode,
+      getIdToken,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
