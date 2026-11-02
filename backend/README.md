@@ -9,7 +9,7 @@ A infraestrutura fica em [`../infra/template.yaml`](../infra/template.yaml) (AWS
 src/
 ├── handlers/    # uma função Lambda por rota + utilitários HTTP
 ├── domain/      # regras de negócio puras (RN001–RN018), sem acesso à AWS
-└── repository/  # acesso ao DynamoDB
+└── repository/  # acesso ao DynamoDB e (leitura) ao Cognito
 tests/           # pytest + moto; testes de regra nomeados test_rnXXX_*
 ```
 
@@ -81,9 +81,10 @@ O script confere as contagens de cada faixa com o cabeçalho do documento. Um te
 O front envia o **ID token** do Cognito no cabeçalho `Authorization`. Os perfis são:
 
 - grupo `admin`: examinadores;
+- grupo `master`: administrador master, um examinador (fica em `admin` **e** `master`) que, além do resto, escolhe e troca o sensei. Quem está só em `master`, sem `admin`, não é tratado como master nem como examinador. O template põe o primeiro examinador (`AdminEmail`) nos dois grupos; outros masters só pelo Console ou pela CLI (`aws cognito-idp admin-add-user-to-group --group-name master`). Nenhuma rota da API altera grupos;
 - grupo `responsavel`: quem se cadastra pelo site. O gatilho pós-confirmação coloca a conta nesse grupo.
 
-O sensei é escolhido entre os examinadores, nas configurações da academia.
+O sensei é escolhido pelo master entre os examinadores, nas configurações da academia. O master não decide exames: a decisão (RN008) continua só do sensei. No código, `current_user(event)` devolve `is_examiner` e `is_master` (da claim `cognito:groups`); `require_examiner` e `require_master` barram com 403.
 
 **E-mail sem distinção de maiúsculas.** O nome de usuário é o e-mail, e o pool tem `UsernameConfiguration.CaseSensitive: false`: `Mae.Silva@example.com` e `mae.silva@example.com` são a mesma conta. O front também normaliza o e-mail para minúsculas antes de cadastrar e entrar. Essa opção só é definida na criação do pool, e o CloudFormation não recria o pool sozinho ao mudá-la: mudá-la exige apagar e recriar o pool (no dev, apagar e recriar a stack). Isso gera novos `UserPoolId` e `UserPoolClientId` (atualize a configuração do front), apaga as contas (o examinador inicial recebe uma nova senha temporária) e, como os alunos guardam o `sub` do dono (`owner_id`), quebra o vínculo dos responsáveis com os próprios alunos. Por isso, no prod, decida antes do primeiro deploy.
 
@@ -106,6 +107,8 @@ O sensei é escolhido entre os examinadores, nas configurações da academia.
 | POST | /events/{id}/exams | examinador |
 | GET | /events/{id}/exams/{student_id} | examinador |
 | PUT/DELETE | /events/{id}/exams/{student_id}/answers/{requirement_id} | examinador |
+| GET/PUT | /settings | examinador |
+| GET | /examiners | examinador |
 
 `GET /students` aceita os filtros `active=true|false`, `belt_id` e `reference_date=AAAA-MM-DD`. O último é a data da elegibilidade; sem ele, vale a data de hoje.
 
@@ -118,6 +121,47 @@ O sensei é escolhido entre os examinadores, nas configurações da academia.
 **Contador de exames.** A mesma transação soma 1 ao atributo `exam_count` do evento e do aluno (itens sem o atributo contam como zero). O `DELETE /events/{id}` e o `DELETE /students/{id}` são gravações condicionais a `exam_count` zero ou ausente, então uma presença confirmada no meio da exclusão ainda resulta em 409 ("Evento possui exames registrados" / "Aluno possui exames registrados") e nada é apagado. Pelo mesmo contador, quando um responsável altera faixa, data da faixa ou graus, a gravação só acontece se o aluno ainda não tiver exame (403 "Somente examinadores alteram a graduação após o primeiro exame"). As edições de evento e aluno usam `UpdateItem` só nos campos do modelo e nunca perdem o contador. O mesmo aluno pode ter exames em andamento em dois eventos abertos.
 
 `GET /events/{id}/exams` lista os exames do evento em ordem alfabética do aluno, cada um com `student_name`.
+
+### Configurações da academia (§ 3.7) e examinadores
+
+`GET /settings` devolve o registro único de configurações. Antes do primeiro `PUT`, todos os campos vêm `null`.
+
+```json
+{
+  "academy_name": "Associação Tomiyama de Judô",
+  "sensei_user_id": "<sub>",
+  "certificate_city": "Araraquara",
+  "created_at": "…", "updated_at": "…",
+  "sensei": {"id": "<sub>", "email": "sensei@example.com", "name": "Tomiyama", "active": true}
+}
+```
+
+- `sensei` é `null` sem sensei. `active` é `false` se a conta do sensei foi desabilitada ou saiu do grupo `admin` depois da escolha; no segundo caso (ou se a conta foi apagada), `email` e `name` vêm `null`. A tela deve pedir outro sensei.
+- As imagens (logos e assinaturas do certificado) nunca aparecem neste JSON (RN012); terão rotas próprias. Os nomes, graduações e imagens que vão no certificado serão as **assinaturas do certificado** (até 3, geridas pelo master e pelo sensei; passo 5), e não campos destas configurações.
+
+`PUT /settings` recebe `academy_name`, `sensei_user_id` e `certificate_city` e **substitui** os três: um campo opcional ausente, `null` ou só com espaços passa a `null`, e os textos são gravados sem espaços nas pontas. Outras chaves são ignoradas. A resposta (200) é igual à do `GET`. A gravação é um `UpdateItem` só nesses campos (e em `updated_at`; `created_at` só na primeira vez), então atributos gravados por outras rotas, como as imagens, nunca se perdem.
+
+| Situação | Resposta |
+| --- | --- |
+| `academy_name` ausente ou vazio | 400 "Campo obrigatório: Nome da academia" |
+| texto longo demais | 400 "Nome da academia: máximo de 255 caracteres", "Cidade do certificado: máximo de 80 caracteres" ou "Sensei: máximo de 128 caracteres" |
+| campo que não é texto | 400 "<campo>: valor inválido" |
+| o master envia um `sensei_user_id` inexistente, fora do grupo `admin` ou desabilitado (mesmo que seja o gravado) | 400 "O sensei precisa ser um examinador ativo" (nada é gravado) |
+| quem não é master envia um `sensei_user_id` diferente do gravado (escolher o primeiro, trocar ou remover), válido ou não | 403 "Somente o administrador master escolhe o sensei" (nada é gravado) |
+| Cognito ou DynamoDB sem capacidade, mesmo após as novas tentativas | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+
+`sensei_user_id` `null` (ou vazio) remove o sensei. O valor é o `sub` do usuário, o mesmo `id` de `GET /examiners`.
+
+**Só o master escolhe o sensei.** Os demais examinadores podem salvar o formulário, desde que reenviem o sensei gravado (ou `null`, se não há sensei): o formulário manda todos os campos. A comparação é atômica, uma `ConditionExpression` no próprio `UpdateItem` (`sensei_user_id = :same_sensei`, ou `attribute_not_exists(sensei_user_id)` para `null`); se o master trocou o sensei entre a leitura da tela e a gravação, a resposta é o mesmo 403 e nada é gravado. A gravação do master não tem essa condição. A validação de examinador ativo vale só para o master, que é quem escolhe: para os demais, o sensei reenviado não é conferido no Cognito, já que a condição garante que é o gravado. Assim, se o sensei gravado foi desabilitado ou saiu do grupo `admin`, os outros examinadores continuam salvando nome e cidade (a resposta mostra `active: false`), e o master, para salvar, precisa trocar ou remover o sensei.
+
+`GET /examiners` lista os examinadores ativos para o seletor de sensei (§ 6.6): membros do grupo `admin` com a conta habilitada, em ordem de nome (sem acentos nem maiúsculas; sem nome, pelo e-mail). Os masters aparecem como qualquer examinador. Examinador que ainda não fez o primeiro login (status `FORCE_CHANGE_PASSWORD`, como o examinador inicial do template) tem a conta habilitada e aparece como ativo, podendo ser escolhido como sensei.
+
+```json
+[{"id": "<sub>", "email": "alvaro@example.com", "name": "Álvaro"},
+ {"id": "<sub>", "email": "carla@example.com", "name": null}]
+```
+
+As três rotas leem o Cognito com `ListUsersInGroup` (paginado, 60 por página), e só essa ação é liberada, no ARN do pool. O `GET` e o `PUT /settings` só consultam o Cognito quando há sensei. O ID do pool chega pela variável `USER_POOL_ID`, definida em cada uma dessas funções e não em `Globals`: o pool referencia a `PostConfirmationFunction`, e uma referência de volta seria uma dependência circular.
 
 ### Exame do aluno e marcação (RN006, RN007)
 

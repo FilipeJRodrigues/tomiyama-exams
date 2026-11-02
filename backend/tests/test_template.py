@@ -260,7 +260,8 @@ def test_user_pool_is_only_referenced_through_the_resource(template: dict[str, A
         for name, resource in resources.items()
         if "UserPoolId" in resource.get("Properties", {})
     ]
-    assert len(referencing) == 5  # client, 2 groups, first examiner and its group attachment
+    # client, 3 groups (admin, responsavel, master), first examiner and its 2 attachments
+    assert len(referencing) == 7
     for name in referencing:
         assert resources[name]["Properties"]["UserPoolId"] == {"Ref": "UserPool"}, name
 
@@ -278,3 +279,122 @@ def test_user_pool_is_only_referenced_through_the_resource(template: dict[str, A
     for text in _strings(template):
         assert not POOL_ID_LITERAL.search(text), text
         assert not CLIENT_ID_LITERAL.search(text), text
+
+
+POOL_ARN = {"Fn::GetAtt": ["UserPool", "Arn"]}
+SETTINGS_ARN = {"Fn::GetAtt": ["SettingsTable", "Arn"]}
+
+
+def _statements(function: dict[str, Any]) -> list[dict[str, Any]]:
+    policies = function["Properties"]["Policies"]
+    assert all("Statement" in policy for policy in policies), "explicit statements only"
+    return [statement for policy in policies for statement in policy["Statement"]]
+
+
+@pytest.mark.parametrize(
+    ("name", "method", "path", "expected"),
+    [
+        (
+            "GetSettingsFunction",
+            "GET",
+            "/settings",
+            {("dynamodb:GetItem", "SettingsTable"), ("cognito-idp:ListUsersInGroup", "UserPool")},
+        ),
+        (
+            "UpdateSettingsFunction",
+            "PUT",
+            "/settings",
+            {
+                ("dynamodb:UpdateItem", "SettingsTable"),
+                ("cognito-idp:ListUsersInGroup", "UserPool"),
+            },
+        ),
+        (
+            "ListExaminersFunction",
+            "GET",
+            "/examiners",
+            {("cognito-idp:ListUsersInGroup", "UserPool")},
+        ),
+    ],
+)
+def test_settings_routes_with_least_privilege(
+    template: dict[str, Any], name: str, method: str, path: str, expected: set[tuple[str, str]]
+) -> None:
+    function = template["Resources"][name]
+    granted: set[tuple[str, str]] = set()
+    for statement in _statements(function):
+        assert statement["Effect"] == "Allow"
+        assert statement["Resource"] in (POOL_ARN, SETTINGS_ARN), statement
+        actions = statement["Action"]
+        for action in [actions] if isinstance(actions, str) else actions:
+            granted.add((action, statement["Resource"]["Fn::GetAtt"][0]))
+
+    assert _route(function) == (method, path)
+    assert granted == expected
+
+
+@pytest.mark.parametrize(
+    "name", ["GetSettingsFunction", "UpdateSettingsFunction", "ListExaminersFunction"]
+)
+def test_settings_functions_get_the_pool_id_from_the_resource(
+    template: dict[str, Any], name: str
+) -> None:
+    variables = template["Resources"][name]["Properties"]["Environment"]["Variables"]
+
+    assert variables == {"USER_POOL_ID": {"Ref": "UserPool"}}
+
+
+def test_pool_id_is_never_global_nor_given_to_the_trigger(template: dict[str, Any]) -> None:
+    # The pool references PostConfirmationFunction; a reference back (Globals
+    # reach every function) would be a circular dependency.
+    assert "USER_POOL_ID" not in template["Globals"]["Function"]["Environment"]["Variables"]
+    trigger = template["Resources"]["PostConfirmationFunction"]["Properties"]
+    assert "Environment" not in trigger
+    assert template["Resources"]["UserPool"]["Properties"]["LambdaConfig"] == {
+        "PostConfirmation": {"Fn::GetAtt": ["PostConfirmationFunction", "Arn"]}
+    }
+
+
+def test_master_group_exists_next_to_the_examiners(template: dict[str, Any]) -> None:
+    resources = template["Resources"]
+    groups = {
+        resource["Properties"]["GroupName"]: name
+        for name, resource in resources.items()
+        if resource["Type"] == "AWS::Cognito::UserPoolGroup"
+    }
+
+    assert groups == {
+        "admin": "AdminGroup",
+        "responsavel": "GuardianGroup",
+        "master": "MasterGroup",
+    }
+    assert resources["MasterGroup"]["Properties"]["UserPoolId"] == {"Ref": "UserPool"}
+
+
+def test_first_examiner_is_in_admin_and_master(template: dict[str, Any]) -> None:
+    # The first examiner (AdminEmail) is the first admin master; anyone else
+    # becomes master only through the Console/CLI.
+    attachments = [
+        resource["Properties"]
+        for resource in template["Resources"].values()
+        if resource["Type"] == "AWS::Cognito::UserPoolUserToGroupAttachment"
+    ]
+
+    assert all(item["Username"] == {"Ref": "FirstAdminUser"} for item in attachments)
+    assert all(item["UserPoolId"] == {"Ref": "UserPool"} for item in attachments)
+    assert sorted(item["GroupName"]["Ref"] for item in attachments) == ["AdminGroup", "MasterGroup"]
+
+
+def test_no_function_can_change_group_membership_but_the_trigger(template: dict[str, Any]) -> None:
+    # Promoting someone to master has no API route.
+    for name, resource in template["Resources"].items():
+        if resource["Type"] != "AWS::Serverless::Function" or name == "PostConfirmationFunction":
+            continue
+        for policy in resource["Properties"].get("Policies", []):
+            for statement in policy.get("Statement", []) if isinstance(policy, dict) else []:
+                actions = statement["Action"]
+                for action in [actions] if isinstance(actions, str) else actions:
+                    assert "Group" not in action or action == "cognito-idp:ListUsersInGroup", (
+                        name,
+                        action,
+                    )

@@ -366,6 +366,23 @@ Resources:
       GroupName: !Ref AdminGroup
       Username: !Ref FirstAdminUser
 
+  # Admin master (decision of 2026-11-02): an examiner who also chooses the
+  # sensei. Members are added only here (the first examiner) or by the
+  # Console/CLI; no API route writes to this group.
+  MasterGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: master
+      Description: Administrador master (examinador que escolhe o sensei)
+
+  FirstAdminInMasterGroup:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: !Ref MasterGroup
+      Username: !Ref FirstAdminUser
+
   PostConfirmationFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -825,6 +842,78 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /events/{id}/exams/{student_id}/answers/{requirement_id}
             Method: DELETE
+
+  # Academy settings and the sensei selector (examiners only, § 3.7/§ 6.6).
+  # USER_POOL_ID and the pool ARN are set per function, never in Globals: the
+  # pool references PostConfirmationFunction (LambdaConfig), so giving that
+  # function a reference to the pool would be a circular dependency. These
+  # functions are not referenced by the pool, so !Ref/!GetAtt UserPool is safe.
+  GetSettingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.settings.get_settings
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPool
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+            - Effect: Allow
+              Action: cognito-idp:ListUsersInGroup
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings
+            Method: GET
+
+  UpdateSettingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.settings.update_settings
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPool
+      Policies:
+        # UpdateItem with ReturnValues ALL_NEW: no read before the write.
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+            - Effect: Allow
+              Action: cognito-idp:ListUsersInGroup
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings
+            Method: PUT
+
+  ListExaminersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.users.list_examiners
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPool
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: cognito-idp:ListUsersInGroup
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /examiners
+            Method: GET
 
   # ------------------------------------------------------------ Initial data
   SeedFunction:

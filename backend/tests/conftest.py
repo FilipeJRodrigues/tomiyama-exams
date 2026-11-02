@@ -24,13 +24,15 @@ os.environ["ANSWERS_TABLE"] = "test-answers"
 
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
 from domain.students import Student  # noqa: E402
-from domain.users import ADMIN_GROUP, GUARDIAN_GROUP, User  # noqa: E402
+from domain.users import ADMIN_GROUP, GUARDIAN_GROUP, MASTER_GROUP, User  # noqa: E402
 from repository import belts as belt_repo  # noqa: E402
 from repository import tables  # noqa: E402
+from repository import users as user_repo  # noqa: E402
 
 GUARDIAN_SUB = "guardian-1"
 OTHER_GUARDIAN_SUB = "guardian-2"
 EXAMINER_SUB = "examiner-1"
+MASTER_SUB = "master-1"
 
 
 def _create_tables() -> None:
@@ -131,9 +133,48 @@ def aws() -> Iterator[None]:
     """Mocked AWS account with empty tables."""
     with mock_aws():
         tables.reset_cache()
+        user_repo.reset_cache()
         _create_tables()
         yield
     tables.reset_cache()
+    user_repo.reset_cache()
+
+
+@pytest.fixture
+def user_pool(aws: None, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Mocked Cognito pool (e-mail as username; groups ``admin``, ``responsavel``, ``master``).
+
+    Sets ``USER_POOL_ID`` as SAM does on the functions that read the pool.
+    """
+    client = boto3.client("cognito-idp")
+    pool_id = client.create_user_pool(PoolName="test-users", UsernameAttributes=["email"])[
+        "UserPool"
+    ]["Id"]
+    for group in (ADMIN_GROUP, GUARDIAN_GROUP, MASTER_GROUP):
+        client.create_group(UserPoolId=pool_id, GroupName=group)
+    monkeypatch.setenv(user_repo.USER_POOL_ID_ENV, pool_id)
+    return pool_id
+
+
+def add_user(
+    pool_id: str,
+    email: str,
+    *,
+    name: str | None = None,
+    groups: tuple[str, ...] = (ADMIN_GROUP,),
+    enabled: bool = True,
+) -> str:
+    """Create a Cognito user in the mocked pool and return its ``sub``."""
+    client = boto3.client("cognito-idp")
+    attributes = [{"Name": "email", "Value": email}]
+    if name is not None:
+        attributes.append({"Name": "name", "Value": name})
+    user = client.admin_create_user(UserPoolId=pool_id, Username=email, UserAttributes=attributes)
+    for group in groups:
+        client.admin_add_user_to_group(UserPoolId=pool_id, Username=email, GroupName=group)
+    if not enabled:
+        client.admin_disable_user(UserPoolId=pool_id, Username=email)
+    return next(attr["Value"] for attr in user["User"]["Attributes"] if attr["Name"] == "sub")
 
 
 @pytest.fixture
@@ -183,6 +224,10 @@ OTHER_GUARDIAN = User(
     sub=OTHER_GUARDIAN_SUB, email="mae@example.com", groups=frozenset({GUARDIAN_GROUP})
 )
 EXAMINER = User(sub=EXAMINER_SUB, email="sensei@example.com", groups=frozenset({ADMIN_GROUP}))
+# Admin master: an examiner who also chooses the sensei (groups ``admin`` and ``master``).
+MASTER = User(
+    sub=MASTER_SUB, email="master@example.com", groups=frozenset({ADMIN_GROUP, MASTER_GROUP})
+)
 
 
 def api_event(

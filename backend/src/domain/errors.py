@@ -1,5 +1,8 @@
 """Domain errors mapped to HTTP status codes by the handlers layer."""
 
+# 503 message shared by every AWS service that may throttle (DynamoDB, Cognito).
+MSG_SERVICE_BUSY = "Sistema ocupado no momento. Tente de novo em instantes."
+
 
 class DomainError(Exception):
     """Base class for business rule violations.

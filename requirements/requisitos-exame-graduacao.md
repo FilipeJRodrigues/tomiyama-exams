@@ -43,7 +43,8 @@ futuro (ex.: Jiu-jitsu), mas só Judô é carregado agora.
 |---|---|---|
 | **Responsável/aluno** | Qualquer pessoa que cria conta (cadastro aberto, e-mail + senha) | Cadastra **um ou mais alunos** (pais com vários filhos); vê e edita só os próprios alunos; vê a elegibilidade de cada um |
 | **Examinador** | Usuário administrador | Gerencia faixas, requisitos e eventos; confirma presença; marca os itens do exame |
-| **Sensei** | Um examinador específico, escolhido nas configurações | Tudo do examinador **e** é o **único** que aprova/reprova; sua assinatura vai no certificado |
+| **Admin master** | Um examinador com poder extra *(decisão do responsável, 2026-11-02)* | Tudo do examinador **e** é o **único** que escolhe/troca o sensei; gere as assinaturas do certificado; **não** decide exames |
+| **Sensei** | Um examinador específico, escolhido pelo master nas configurações | Tudo do examinador **e** é o **único** que aprova/reprova; gere as assinaturas do certificado |
 
 Como os perfis nascem:
 
@@ -51,7 +52,9 @@ Como os perfis nascem:
   do servidor).
 - **Novos examinadores:** um examinador promove uma conta existente a examinador (ou cria
   a conta já como examinador) numa tela de usuários; também pode desativar contas.
-- **Sensei:** escolhido entre os examinadores ativos, na aba Academia (§ 6.6).
+- **Admin master:** o primeiro examinador já nasce master; outros, só pelo console da
+  nuvem (Cognito), nunca pelo sistema. Master é sempre também examinador *(decisão do responsável, 2026-11-02)*.
+- **Sensei:** escolhido **pelo master** entre os examinadores ativos, na aba Academia (§ 6.6).
 - **Contas:** senha com no mínimo 8 caracteres; recuperação de senha por e-mail é
   desejável, mas opcional nesta fase (a POC rodava sem servidor de e-mail).
 
@@ -148,14 +151,15 @@ A **elegibilidade é calculada** (nunca gravada) — ver § 5.
 | Campo | Tipo | Regras |
 |---|---|---|
 | `academy_name` | texto ≤ 255 | aparece no topo do certificado |
-| `sensei_user_id` | FK → Usuário, opcional | precisa ser **examinador**; único que decide |
-| `sensei_display_name` | texto ≤ 120, opcional | nome no certificado (se vazio, nome do usuário) |
-| `sensei_title` | texto ≤ 80, opcional | ex.: "Sensei, 3º Dan" |
+| `sensei_user_id` | FK → Usuário, opcional | precisa ser **examinador**; único que decide; só o master escolhe/troca |
 | `certificate_city` | texto ≤ 80, opcional | ex.: "Araraquara" |
-| `logo_primary`, `logo_secondary`, `signature` | imagem (binário + tipo) | PNG ou JPEG, ≤ 2 MB cada; a assinatura é obrigatória para emitir certificado |
+| `logo_primary`, `logo_secondary` | imagem (binário + tipo) | PNG ou JPEG, ≤ 2 MB cada |
+| assinaturas do certificado (até 3) | lista ordenada | cada uma: **nome**, **graduação** (texto livre, ex.: "Fundador, 6º Dan (in memoriam)"), **imagem** da assinatura (PNG ou JPEG, ≤ 2 MB) e **posição** no certificado; pode ser de pessoa sem login; ≥ 1 completa para emitir certificado |
 
-As imagens **não** vão no JSON das configurações (saem por rota própria) e só
-**examinadores** podem lê-las (ver RN012).
+Os antigos `sensei_display_name`, `sensei_title` e `signature` saem: o nome e a graduação no certificado vêm das assinaturas *(decisão do responsável, 2026-11-02)*.
+
+As imagens **não** vão no JSON das configurações (saem por rota própria); quem pode lê-las
+está na RN012.
 
 ---
 
@@ -223,7 +227,9 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
 - **RN008 — Decisão do sensei.** Só o usuário configurado como sensei aprova/reprova,
   **independentemente do percentual** (o % é só apoio). Grava quem e quando.
   Outro usuário → *"Somente o sensei pode decidir o exame"* (403); sem sensei →
-  *"Defina o sensei nas configurações da academia"*.
+  *"Defina o sensei nas configurações da academia"*. O admin master **não** decide (a menos
+  que seja ele o sensei). Só o master escolhe/troca o sensei; outro examinador que tente →
+  *"Somente o administrador master escolhe o sensei"* (403) *(decisão do responsável, 2026-11-02)*.
 - **RN009 — Efeito da aprovação.** Exame de **faixa** aprovado: aluno passa à faixa-alvo,
   `current_belt_since` = data do evento, `stripes` = 0. Exame de **grau** aprovado:
   `stripes` + 1, faixa mantida. Reprovado: nada muda.
@@ -232,17 +238,20 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
 - **RN010 — Decisão final.** Decidido, não se alteram respostas nem a decisão
   (*"Exame já decidido"*).
 - **RN011 — Certificado.** Só para exame **aprovado** (faixa **e** grau), em PDF (§ 7).
-  Sem assinatura carregada → *"Carregue a assinatura do sensei nas configurações"*.
+  Exige **pelo menos uma assinatura completa** (nome, graduação e imagem); sem ela →
+  *"Cadastre ao menos uma assinatura completa nas configurações"* *(decisão do responsável, 2026-11-02)*.
   A faixa impressa **não pode depender do estado atual do aluno**: no grau, é a faixa
   imediatamente anterior à faixa-alvo; na faixa, é a faixa-alvo. (Reimprimir um
   certificado antigo deve sair igual, mesmo que o aluno tenha avançado depois.)
 
 ### Cadastros e configurações
 
-- **RN012 — Imagens.** Logos e assinatura: só PNG ou JPEG (validar a assinatura binária do
-  arquivo, não só o content-type), até 2 MB (*"Envie PNG ou JPEG de até 2 MB"*). Upload,
-  remoção **e leitura** só por examinadores — a assinatura do sensei **nunca** pode ser
-  baixada por um responsável (risco de falsificação de certificado).
+- **RN012 — Imagens.** Logos e assinaturas: só PNG ou JPEG (validar a assinatura binária do
+  arquivo, não só o content-type), até 2 MB (*"Envie PNG ou JPEG de até 2 MB"*). Logos:
+  upload, remoção e leitura por examinadores. Assinaturas do certificado: criação, edição,
+  remoção **e leitura** só pelo **master** e pelo **sensei** *(decisão do responsável, 2026-11-02)* — nunca por um
+  responsável nem por outro examinador (risco de falsificação de certificado); o PDF é
+  gerado no servidor.
 - **RN013 — Posse e trava de graduação.** O responsável vê/edita só os próprios alunos;
   examinadores veem todos. Depois do **primeiro exame** do aluno, `current_belt_id`,
   `current_belt_since` e `stripes` só mudam por examinador (ou pelo exame) —
@@ -306,7 +315,7 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
   - outros: "A decisão é do sensei {nome}";
   - sem sensei: aviso com link para as configurações;
   - decidido: "Decidido por {nome}" e **"Baixar certificado"** (desabilitado com o motivo
-    se faltar assinatura).
+    se não houver assinatura completa).
 - Exame decidido ou evento encerrado: itens somente leitura, mostrando "Certo", "Errado" ou
   "Não marcado" em texto com ícone (não usar botões desabilitados — contraste ruim).
 - Recarregar o exame ao voltar o foco na janela (dois examinadores no mesmo exame).
@@ -316,9 +325,11 @@ CRUDs simples. Faixas na ordem da graduação; eventos do mais recente para o ma
 Enums sempre como seletor com rótulo em pt-BR.
 
 ### 6.6 Academia (aba de templates, examinadores)
-Nome da academia; **sensei** (seletor entre examinadores ativos), nome no certificado,
-título, cidade; três espaços de imagem (**logo principal**, **logo secundário**,
-**assinatura do sensei**) com prévia, "Carregar/Trocar" e "Remover".
+Nome da academia; **sensei** (seletor entre examinadores ativos; só o master altera);
+cidade; dois espaços de imagem (**logo principal**, **logo secundário**) com prévia,
+"Carregar/Trocar" e "Remover"; e a lista de **assinaturas do certificado** (até 3; nome,
+graduação, imagem com prévia; ordem ajustável), visível e editável só pelo master e pelo
+sensei *(decisão do responsável, 2026-11-02)*.
 
 ---
 
@@ -350,7 +361,8 @@ Layout (de cima para baixo):
    pontas na cor secundária; contorno cinza (para a faixa branca aparecer).
 6. "{cidade}, {data do exame por extenso}" — ex.: "Araraquara, 13 de março de 2027".
    Usar a **data do exame**, não a de emissão.
-7. Imagem da assinatura sobre uma linha; abaixo, nome e título do sensei.
+7. De 1 a 3 assinaturas lado a lado, na ordem configurada: cada uma com a imagem sobre
+   uma linha e, abaixo, o nome e a graduação *(decisão do responsável, 2026-11-02)*.
 
 Nome do arquivo: `certificado-{nome do aluno}.pdf`. A fonte do PDF precisa suportar
 acentuação do português.
@@ -377,7 +389,9 @@ acentuação do português.
 
 ## 9. Fluxo completo (critério de aceite da POC)
 
-1. Examinador configura a academia: sensei, título, cidade, logo e assinatura.
+1. O master escolhe o sensei; um examinador configura o nome da academia, a cidade e os
+   logos; o master ou o sensei cadastra ao menos uma assinatura do certificado (nome,
+   graduação e imagem) *(decisão do responsável, 2026-11-02)*.
 2. Examinador cria o evento "Exame março/2027" (13/03/2027).
 3. Responsável cria conta e cadastra a aluna Ana (Cinza desde 14/03/2026, nascida em
    10/05/2018) e o aluno Bruno (Azul, 7 anos).
@@ -407,6 +421,7 @@ acentuação do português.
 | Inelegível | **Bloqueia** (não só avisa) |
 | Aparelhos | Notebook e celular/tablet |
 | Hospedagem | Tudo local |
+| Admin master e assinaturas (2026-11-02) | Grupo **master** (o primeiro examinador; outros só pelo console): único que escolhe o sensei, **não** decide exames. Certificado com 1–3 assinaturas (nome, graduação, imagem, posição), geridas pelo master e pelo sensei; ≥ 1 completa para emitir |
 
 ---
 
