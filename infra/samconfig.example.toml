@@ -1,0 +1,25 @@
+# Exemplo de configuração do SAM CLI para o ambiente dev.
+# Copie para infra/samconfig.toml (ignorado pelo git) e troque o AdminEmail:
+#   cp infra/samconfig.example.toml infra/samconfig.toml
+# Depois, dentro de infra/:
+#   sam build --config-env dev
+#   sam deploy --config-env dev
+version = 0.1
+
+[dev.global.parameters]
+stack_name = "tomiyama-dev"
+region = "us-east-2"
+profile = "tomiyama"
+
+[dev.build.parameters]
+cached = true
+
+[dev.deploy.parameters]
+# AUTO_EXPAND: o template usa a transform AWS::LanguageExtensions.
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "tomiyama-dev"
+# Na linha de comando, --parameter-overrides substitui esta linha inteira:
+# repita Environment=dev se usar a opção.
+parameter_overrides = "Environment=dev AdminEmail=voce@example.com"

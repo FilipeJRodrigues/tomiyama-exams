@@ -9,10 +9,15 @@ from collections.abc import Iterable
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 
 from domain.requirements import Requirement, RequirementKind
-from repository.tables import REQUIREMENTS_TABLE_ENV, SETTINGS_TABLE_ENV, paginate, table
+from repository.tables import (
+    REQUIREMENTS_TABLE_ENV,
+    SETTINGS_TABLE_ENV,
+    paginate,
+    put_if_absent,
+    table,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,15 +82,18 @@ def delete_requirement(requirement_id: str) -> None:
     table(REQUIREMENTS_TABLE_ENV).delete_item(Key={"id": requirement_id})
 
 
-def seed_requirements(requirements: Iterable[Requirement]) -> int:
+def seed_requirements(requirements: Iterable[Requirement], *, deadline: float | None = None) -> int:
     """Load the initial items once, never duplicating or overwriting screen edits.
 
     A marker in the settings table records that the load finished, so items
     deleted by an examiner are not recreated on the next deploy. If a previous
     run stopped midway, the conditional writes only add the missing items.
+    Throttled writes (low provisioned capacity) are retried with backoff.
 
     Args:
         requirements: Seed items with deterministic ids.
+        deadline: ``time.monotonic()`` value after which the load stops
+            (``DeadlineExceededError``) without writing the marker.
 
     Returns:
         Number of items inserted.
@@ -98,14 +106,8 @@ def seed_requirements(requirements: Iterable[Requirement]) -> int:
     inserted = 0
     requirements_table = table(REQUIREMENTS_TABLE_ENV)
     for requirement in requirements:
-        try:
-            requirements_table.put_item(
-                Item=_to_item(requirement), ConditionExpression="attribute_not_exists(id)"
-            )
+        if put_if_absent(requirements_table, _to_item(requirement), deadline=deadline):
             inserted += 1
-        except ClientError as exc:
-            if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
-    settings.put_item(Item={"id": SEED_MARKER_ID})
+    put_if_absent(settings, {"id": SEED_MARKER_ID}, deadline=deadline)
     logger.info("Seeded %d requirements", inserted)
     return inserted

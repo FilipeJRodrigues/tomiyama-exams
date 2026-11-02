@@ -4,10 +4,8 @@ import logging
 from collections.abc import Iterable
 from typing import Any
 
-from botocore.exceptions import ClientError
-
 from domain.belts import Belt, BeltLevel, sort_belts
-from repository.tables import BELTS_TABLE_ENV, paginate, table
+from repository.tables import BELTS_TABLE_ENV, paginate, put_if_absent, table
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +47,15 @@ def save_belt(belt: Belt) -> None:
     table(BELTS_TABLE_ENV).put_item(Item=_to_item(belt), ConditionExpression="attribute_exists(id)")
 
 
-def seed_belts(belts: Iterable[Belt]) -> int:
+def seed_belts(belts: Iterable[Belt], *, deadline: float | None = None) -> int:
     """Insert belts that do not exist yet, never overwriting screen edits.
+
+    Throttled writes (low provisioned capacity) are retried with backoff.
 
     Args:
         belts: Seed belts with deterministic ids.
+        deadline: ``time.monotonic()`` value after which the load stops
+            (``DeadlineExceededError``).
 
     Returns:
         Number of belts inserted.
@@ -61,13 +63,7 @@ def seed_belts(belts: Iterable[Belt]) -> int:
     inserted = 0
     belts_table = table(BELTS_TABLE_ENV)
     for belt in belts:
-        try:
-            belts_table.put_item(
-                Item=_to_item(belt), ConditionExpression="attribute_not_exists(id)"
-            )
+        if put_if_absent(belts_table, _to_item(belt), deadline=deadline):
             inserted += 1
-        except ClientError as exc:
-            if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
     logger.info("Seeded %d belts", inserted)
     return inserted

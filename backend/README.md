@@ -1,6 +1,6 @@
 # Backend — exames de graduação de Judô
 
-Python 3.12 em AWS Lambda, DynamoDB on-demand, Cognito e API Gateway (HTTP API).
+Python 3.12 em AWS Lambda, DynamoDB (provisionado no dev, on-demand no prod), Cognito e API Gateway (HTTP API).
 A infraestrutura fica em [`../infra/template.yaml`](../infra/template.yaml) (AWS SAM).
 
 ## Estrutura
@@ -23,17 +23,48 @@ uv run pytest
 
 ## Deploy
 
-Precisa do [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
+Precisa do [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html). Os comandos rodam dentro de `infra/`.
+
+### Parâmetros do template
+
+| Parâmetro | Padrão | Uso |
+| --- | --- | --- |
+| `AdminEmail` | (obrigatório) | Primeiro examinador; recebe a senha temporária e os alertas do Budgets. |
+| `AllowedOrigin` | `http://localhost:5173` | Origem liberada no CORS (troque pela URL do Amplify). |
+| `BudgetLimitUsd` | `1` | Limite mensal (US$) do alerta do AWS Budgets: e-mail ao passar de 80% do real e de 100% da previsão. |
+| `Environment` | `dev` | `dev` ou `prod`; veja a tabela abaixo. |
+
+| | `dev` | `prod` |
+| --- | --- | --- |
+| DynamoDB | `PROVISIONED`, 25 RCU e 25 WCU somando as 6 tabelas e os 3 GSIs (free tier permanente), sem auto scaling | `PAY_PER_REQUEST` |
+| PITR | desligado | ligado |
+| Retenção dos logs das funções | 7 dias | 30 dias |
+| Tabelas ao apagar a stack | apagadas | mantidas |
+
+**Atenção no dev:** apagar a stack dev (ou o rollback de um primeiro deploy que falhou) apaga as tabelas e os dados de teste. Se sobrar tabela de um deploy antigo (de antes desta regra, por exemplo), apague-a antes de reimplantar: ela continua provisionada e ocupa parte dos 25 RCU/WCU do free tier. No prod as tabelas ficam (`DeletionPolicy` e `UpdateReplacePolicy` `Retain`). O template usa a transform `AWS::LanguageExtensions` para escolher a política pelo ambiente, por isso o deploy pede `CAPABILITY_AUTO_EXPAND`.
+
+As capacidades de cada tabela e GSI ficam no mapping `DevCapacity` do template; `tests/test_template.py` falha se a soma passar de 25. O free tier vale para a conta inteira na região: outra stack provisionada na mesma conta e região soma no mesmo limite.
+
+Todas as funções escrevem no log group `/aws/lambda/<stack>`, um stream por função.
+
+### Deploy do dev
 
 ```bash
-sam build -t infra/template.yaml
-sam deploy --guided   # pede AdminEmail, AllowedOrigin e BudgetLimitUsd
+cd infra
+sam build
+sam deploy --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
+  --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --resolve-s3 \
+  --parameter-overrides Environment=dev AdminEmail=voce@example.com
 ```
+
+Ou, com o arquivo de configuração: copie `infra/samconfig.example.toml` para `infra/samconfig.toml` (ignorado pelo git), troque o `AdminEmail` e rode `sam build --config-env dev` e `sam deploy --config-env dev`. Não versione e-mail real.
 
 No primeiro deploy:
 
 - o examinador inicial (`AdminEmail`) recebe uma senha temporária por e-mail;
 - as faixas (§ 4 dos requisitos) e os 692 itens do Apêndice A são carregados pelo recurso `InitialData`. A carga é idempotente e não sobrescreve edições. Os itens só entram uma vez: um item apagado na tela não volta no próximo deploy.
+
+**Carga inicial no dev.** Com 7 WCU em `Requirements` e no GSI `by_belt`, os 692 itens levam cerca de 2 minutos (cada gravação ocupa 1 WCU na tabela e 1 no GSI). Gravações barradas por falta de capacidade são repetidas com backoff exponencial. A `SeedFunction` tem timeout de 900 s; a carga para 60 s antes disso e responde `FAILED` ao CloudFormation com o motivo, para a stack não ficar travada. Se a função cair sem responder, o CloudFormation desiste depois de 960 s (`ServiceTimeout`).
 
 ## Itens de exame (Apêndice A)
 
