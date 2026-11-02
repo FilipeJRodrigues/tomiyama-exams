@@ -4,12 +4,15 @@ Keys: PK ``event_id``, SK ``student_id`` (one exam per event and student);
 GSI ``by_student`` (PK ``student_id``, SK ``event_id``) for a student's history.
 
 Two transactions write here: the attendance (``create_exam``, RN005) and the
-sensei's decision (``decide_exam``, RN008–RN010).
+sensei's decision (``decide_exam``, RN008–RN010). Together they keep at most
+one exam in progress per student through the ``exam_in_progress_id`` marker on
+the student (RN005).
 """
 
 import logging
 import random
 import time
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
@@ -39,6 +42,7 @@ from domain.exams import (
     MSG_EVENT_NOT_FOUND,
     MSG_EXAM_DECIDED,
     MSG_EXAM_NOT_FOUND,
+    MSG_IN_PROGRESS_ELSEWHERE,
     MSG_STUDENT_CHANGED,
     MSG_STUDENT_INACTIVE,
     MSG_STUDENT_NOT_FOUND,
@@ -52,6 +56,7 @@ from domain.students import Student
 from repository.tables import (
     EVENTS_TABLE_ENV,
     EXAM_COUNT,
+    EXAM_IN_PROGRESS,
     EXAMS_TABLE_ENV,
     SETTINGS_TABLE_ENV,
     STUDENTS_TABLE_ENV,
@@ -71,7 +76,7 @@ _BACKOFF_SECONDS = 0.05
 # Order of the items in the attendance transaction (CancellationReasons follow it).
 _PUT_EXAM, _UPDATE_EVENT, _UPDATE_STUDENT = range(3)
 # Order of the items in the decision transaction.
-_DECIDE_EXAM, _CHECK_STUDENT, _CHECK_SENSEI = range(3)
+_DECIDE_EXAM, _UPDATE_STUDENT_DECISION, _CHECK_SENSEI = range(3)
 
 _CANCELLED = "TransactionCanceledException"
 _CONDITION_FAILED = "ConditionalCheckFailed"
@@ -155,13 +160,16 @@ def create_exam(exam: Exam, student: Student | None = None) -> None:
     """Insert the exam born from an attendance confirmation (RN005).
 
     One transaction writes the exam only if it does not exist yet, the event
-    still exists and is open, and the student still exists and is active. The
-    same transaction adds 1 to ``exam_count`` on the event and on the student,
+    still exists and is open, and the student still exists, is active and has
+    no exam in progress (no ``exam_in_progress_id``; the same transaction sets
+    it to the new exam's id, RN005). The same transaction adds 1 to
+    ``exam_count`` on the event and on the student,
     the counter that the conditional deletes (RN016, RN018) and the guardian's
-    graduation lock (RN013) read. This closes the race with a concurrent
-    confirmation, closing, deletion or graduation edit. Transactions that touch
-    the same items at the same time may be cancelled with
-    ``TransactionConflict``; those are retried with a short backoff.
+    graduation lock (RN013) read; the marker is what blocks a graduation edit
+    while the exam is in progress (RN005). This closes the race with a
+    concurrent confirmation, closing, deletion or graduation edit.
+    ``TransactionConflict`` and throttling inside the transaction are retried
+    with a short backoff; throttling of the whole request is a 503 at once.
 
     Args:
         exam: Exam to insert.
@@ -170,35 +178,83 @@ def create_exam(exam: Exam, student: Student | None = None) -> None:
             date and stripes are still those values (RN003, RN004).
 
     Raises:
-        ConflictError: If the attendance was already confirmed, the student's
-            graduation changed meanwhile, or the transaction kept conflicting
-            after every retry.
+        ConflictError: If the attendance was already confirmed, the student
+            has an exam in progress in another event, the student's graduation
+            changed meanwhile, or the transaction kept conflicting after every
+            retry.
         NotFoundError: If the event or the student was deleted meanwhile.
         ValidationError: If the event was closed or the student deactivated meanwhile.
+        ServiceUnavailableError: If the transaction or the re-read of the event
+            or student kept throttling (503).
     """
     items = _attendance_items(exam, student)
+    _run_transaction(
+        "Attendance",
+        lambda: _transact_create(items),
+        lambda reasons: _condition_error(exam, student, reasons),
+        MSG_TRY_AGAIN,
+    )
+
+
+def _run_transaction(
+    label: str,
+    transact: Callable[[], None],
+    translate: Callable[[list[str | None]], DomainError | None],
+    try_again: str,
+) -> None:
+    """Run a transaction, translating failed conditions and retrying transient causes.
+
+    Shared by the attendance and the decision. Throttling of the whole request
+    (``THROTTLING_ERRORS``) already outlasted botocore's retries and becomes a
+    503 at once. A cancelled transaction goes to ``translate`` first; with no
+    failed condition, ``TransactionConflict`` and throttled items are retried
+    with a short backoff and, if they persist, become 409 ``try_again`` and 503.
+
+    Args:
+        label: Name of the transaction, for the log.
+        transact: Sends the transaction.
+        translate: Turns the cancellation reasons (in item order) into the
+            error of a failed condition, or None when no condition failed.
+        try_again: Message of the 409 when the conflicts persist.
+
+    Raises:
+        DomainError: From ``translate``, or 409/503 after every retry.
+        ClientError: Any other DynamoDB error, unchanged.
+    """
+    last_error: DomainError = ConflictError(try_again)
     for attempt in range(_MAX_ATTEMPTS):
         try:
-            _transact_create(items)
+            transact()
             return
         except ClientError as exc:
-            if exc.response["Error"]["Code"] != "TransactionCanceledException":
+            code = exc.response["Error"]["Code"]
+            if code in THROTTLING_ERRORS:
+                logger.warning("%s transaction throttled after botocore retries: %s", label, code)
+                raise ServiceUnavailableError(MSG_SERVICE_BUSY) from exc
+            if code != _CANCELLED:
                 raise
             reasons = [reason.get("Code") for reason in exc.response.get("CancellationReasons", [])]
-            error = _condition_error(exam, student, reasons)
+            error = translate(reasons)
             if error is not None:
                 raise error from exc
-            if "TransactionConflict" not in reasons:
+            if _THROTTLED_REASONS.intersection(reasons):
+                last_error = ServiceUnavailableError(MSG_SERVICE_BUSY)
+            elif _CONFLICT in reasons:
+                last_error = ConflictError(try_again)
+            else:
                 raise
-            logger.info("Attendance transaction conflict (attempt %d)", attempt + 1)
-            time.sleep(_BACKOFF_SECONDS * 2**attempt * (1 + random.random()))
-    raise ConflictError(MSG_TRY_AGAIN)
+            if attempt + 1 < _MAX_ATTEMPTS:
+                logger.info("%s transaction retry %d after %s", label, attempt + 1, reasons)
+                time.sleep(_BACKOFF_SECONDS * 2**attempt * (1 + random.random()))
+    raise last_error
 
 
 def _attendance_items(exam: Exam, student: Student | None) -> list[dict[str, Any]]:
     """Return the items of the attendance transaction, in ``_PUT_EXAM`` order."""
-    student_condition = "attribute_exists(id) AND active = :true"
-    student_values: dict[str, Any] = {":one": 1, ":true": True}
+    student_condition = (
+        f"attribute_exists(id) AND active = :true AND attribute_not_exists({EXAM_IN_PROGRESS})"
+    )
+    student_values: dict[str, Any] = {":one": 1, ":true": True, ":exam_id": exam.id}
     if student is not None:
         # Same serialization as repository.students._to_item.
         student_condition += (
@@ -232,7 +288,7 @@ def _attendance_items(exam: Exam, student: Student | None) -> list[dict[str, Any
             "Update": {
                 "TableName": table(STUDENTS_TABLE_ENV).name,
                 "Key": {"id": exam.student_id},
-                "UpdateExpression": f"ADD {EXAM_COUNT} :one",
+                "UpdateExpression": f"SET {EXAM_IN_PROGRESS} = :exam_id ADD {EXAM_COUNT} :one",
                 "ConditionExpression": student_condition,
                 "ExpressionAttributeValues": student_values,
             }
@@ -252,8 +308,12 @@ def _condition_error(
     ``reasons`` follows the order of the transaction items. A duplicate wins
     over the other reasons; for the event and the student the item is read
     again to tell "deleted" (404) from "closed"/"inactive" (400) and, for the
-    student, from "graduation changed" (409). Returns None when no condition
-    failed (e.g. only a transaction conflict).
+    student, from "exam in progress in another event" and "graduation
+    changed" (both 409). Returns None when no condition failed (e.g. only a
+    transaction conflict).
+
+    Raises:
+        ServiceUnavailableError: If a re-read kept throttling (503).
     """
 
     def failed(index: int) -> bool:
@@ -262,13 +322,17 @@ def _condition_error(
     if failed(_PUT_EXAM):
         return ConflictError(MSG_ALREADY_CONFIRMED)
     if failed(_UPDATE_EVENT):
-        item = table(EVENTS_TABLE_ENV).get_item(Key={"id": exam.event_id}).get("Item")
+        item = get_item_or_busy(table(EVENTS_TABLE_ENV), {"id": exam.event_id})
         return ValidationError(MSG_EVENT_CLOSED) if item else NotFoundError(MSG_EVENT_NOT_FOUND)
     if failed(_UPDATE_STUDENT):
-        item = table(STUDENTS_TABLE_ENV).get_item(Key={"id": exam.student_id}).get("Item")
+        item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": exam.student_id})
         if not item:
             return NotFoundError(MSG_STUDENT_NOT_FOUND)
-        if not item.get("active", True) or student is None:
+        if not item.get("active", True):
+            return ValidationError(MSG_STUDENT_INACTIVE)
+        if item.get(EXAM_IN_PROGRESS):
+            return ConflictError(MSG_IN_PROGRESS_ELSEWHERE)
+        if student is None:
             return ValidationError(MSG_STUDENT_INACTIVE)
         return ConflictError(MSG_STUDENT_CHANGED)
     return None
@@ -317,37 +381,32 @@ def _decision_items(
         }
     }
     condition, values = _graduation_condition(expected)
-    students_table = table(STUDENTS_TABLE_ENV).name
-    key = {"id": decided.student_id}
-    if approved is None:
-        student_item = {
-            "ConditionCheck": {
-                "TableName": students_table,
-                "Key": key,
-                "ConditionExpression": condition,
-                "ExpressionAttributeValues": values,
-            }
-        }
-    else:
+    # The marker is removed only if it is this exam's, or absent (exams
+    # confirmed before the marker existed); never another exam's (RN005).
+    condition += f" AND (attribute_not_exists({EXAM_IN_PROGRESS}) OR {EXAM_IN_PROGRESS} = :exam_id)"
+    values[":exam_id"] = decided.id
+    update = f"REMOVE {EXAM_IN_PROGRESS}"
+    if approved is not None:
         # Only the graduation fields: exam_count and the rest are kept.
-        student_item = {
-            "Update": {
-                "TableName": students_table,
-                "Key": key,
-                "UpdateExpression": (
-                    "SET current_belt_id = :new_belt, current_belt_since = :new_since,"
-                    " stripes = :new_stripes, updated_at = :updated"
-                ),
-                "ConditionExpression": condition,
-                "ExpressionAttributeValues": values
-                | {
-                    ":new_belt": approved.current_belt_id,
-                    ":new_since": approved.current_belt_since.isoformat(),
-                    ":new_stripes": approved.stripes,
-                    ":updated": approved.updated_at,
-                },
-            }
+        update = (
+            "SET current_belt_id = :new_belt, current_belt_since = :new_since,"
+            " stripes = :new_stripes, updated_at = :updated " + update
+        )
+        values |= {
+            ":new_belt": approved.current_belt_id,
+            ":new_since": approved.current_belt_since.isoformat(),
+            ":new_stripes": approved.stripes,
+            ":updated": approved.updated_at,
         }
+    student_item = {
+        "Update": {
+            "TableName": table(STUDENTS_TABLE_ENV).name,
+            "Key": {"id": decided.student_id},
+            "UpdateExpression": update,
+            "ConditionExpression": condition,
+            "ExpressionAttributeValues": values,
+        }
+    }
     # The sensei who decides must still be the configured one at write time (RN008).
     sensei_check = {
         "ConditionCheck": {
@@ -367,8 +426,9 @@ def _decision_error(exam: Exam, reasons: list[str | None]) -> DomainError | None
     The sensei comes first, so whoever is no longer the sensei learns nothing
     about the exam: sensei removed → 409; another sensei → 403 (RN008). Exam
     deleted or replaced → 404; already decided → 409 (RN010). Student deleted
-    → 404; graduation changed since the attendance → 409. Returns None when no
-    condition failed (e.g. only a transaction conflict).
+    → 404; marked with another exam in progress (only possible with data from
+    before the marker) → 409; graduation changed since the attendance → 409.
+    Returns None when no condition failed (e.g. only a transaction conflict).
     """
 
     def failed(index: int) -> bool:
@@ -387,10 +447,12 @@ def _decision_error(exam: Exam, reasons: list[str | None]) -> DomainError | None
         if not item or item.get("id") != exam.id:
             return NotFoundError(MSG_EXAM_NOT_FOUND)
         return ConflictError(MSG_EXAM_DECIDED)
-    if failed(_CHECK_STUDENT):
+    if failed(_UPDATE_STUDENT_DECISION):
         item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": exam.student_id})
         if not item:
             return NotFoundError(MSG_STUDENT_NOT_FOUND)
+        if item.get(EXAM_IN_PROGRESS, exam.id) != exam.id:
+            return ConflictError(MSG_IN_PROGRESS_ELSEWHERE)
         return ConflictError(MSG_GRADUATION_CHANGED)
     return None
 
@@ -405,10 +467,11 @@ def decide_exam(decided: Exam, expected: Graduation, approved: Student | None) -
     One transaction updates the exam only if it is still the same exam and in
     progress and, at the same instant, checks that the student still has the
     graduation the decision was based on and that the one deciding is still
-    the sensei in the settings (RN008). On approval the same transaction
-    writes the student's new belt, belt date and stripes (RN009) with
-    ``UpdateItem``, keeping ``exam_count`` and every other attribute; on
-    failure the student is only checked. The event is not checked: a closed
+    the sensei in the settings (RN008). The student's ``UpdateItem`` removes
+    the ``exam_in_progress_id`` marker (only if it is this exam's or absent),
+    freeing the student for another attendance (RN005); on approval it also
+    writes the new belt, belt date and stripes (RN009). ``exam_count`` and
+    every other attribute are kept. The event is not checked: a closed
     event still accepts decisions (RN008a), and an event with exams is never
     deleted. The marking transactions check the same exam status, so a mark
     never lands after the decision (RN010).
@@ -430,30 +493,9 @@ def decide_exam(decided: Exam, expected: Graduation, approved: Student | None) -
         ServiceUnavailableError: If it kept being throttled.
     """
     items = _decision_items(decided, expected, approved)
-    last_error: DomainError = ConflictError(MSG_DECISION_TRY_AGAIN)
-    for attempt in range(_MAX_ATTEMPTS):
-        try:
-            _transact_decision(items)
-            return
-        except ClientError as exc:
-            code = exc.response["Error"]["Code"]
-            if code in THROTTLING_ERRORS:
-                # Botocore already retried the whole request.
-                logger.warning("Decision transaction throttled after botocore retries: %s", code)
-                raise ServiceUnavailableError(MSG_SERVICE_BUSY) from exc
-            if code != _CANCELLED:
-                raise
-            reasons = [reason.get("Code") for reason in exc.response.get("CancellationReasons", [])]
-            error = _decision_error(decided, reasons)
-            if error is not None:
-                raise error from exc
-            if _THROTTLED_REASONS.intersection(reasons):
-                last_error = ServiceUnavailableError(MSG_SERVICE_BUSY)
-            elif _CONFLICT in reasons:
-                last_error = ConflictError(MSG_DECISION_TRY_AGAIN)
-            else:
-                raise
-            if attempt + 1 < _MAX_ATTEMPTS:
-                logger.info("Decision transaction retry %d after %s", attempt + 1, reasons)
-                time.sleep(_BACKOFF_SECONDS * 2**attempt * (1 + random.random()))
-    raise last_error
+    _run_transaction(
+        "Decision",
+        lambda: _transact_decision(items),
+        lambda reasons: _decision_error(decided, reasons),
+        MSG_DECISION_TRY_AGAIN,
+    )

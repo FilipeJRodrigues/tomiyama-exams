@@ -40,7 +40,7 @@ from repository import exams as exam_repo
 from repository import requirements as requirement_repo
 from repository import settings as settings_repo
 from repository import students as student_repo
-from repository.tables import EXAMS_TABLE_ENV, STUDENTS_TABLE_ENV, table
+from repository.tables import EXAM_IN_PROGRESS, EXAMS_TABLE_ENV, STUDENTS_TABLE_ENV, table
 
 EVENT_DATE = date(2027, 3, 20)
 NOW = "2026-11-01T12:00:00+00:00"
@@ -204,12 +204,12 @@ def test_rn008_rn009_sensei_approves_belt_exam(belt_exam: Exam) -> None:
     assert after["current_belt_since"] == EVENT_DATE.isoformat()
     assert after["stripes"] == 0
     assert after["updated_at"] == DECIDED_AT
-    # Only the graduation changed: the counter and every other field are kept.
-    unchanged = {
-        k: v
-        for k, v in before.items()
-        if k not in {"current_belt_id", "current_belt_since", "stripes", "updated_at"}
-    }
+    # Only the graduation changed and the exam-in-progress marker left (RN005):
+    # the counter and every other field are kept.
+    assert before[EXAM_IN_PROGRESS] == belt_exam.id
+    assert EXAM_IN_PROGRESS not in after
+    changed = {"current_belt_id", "current_belt_since", "stripes", "updated_at", EXAM_IN_PROGRESS}
+    unchanged = {k: v for k, v in before.items() if k not in changed}
     assert {k: after[k] for k in unchanged} == unchanged
     assert after["exam_count"] == 1
     assert after["federation_id"] == "FPJ-123"
@@ -236,6 +236,8 @@ def test_rn008_rn009_sensei_fails_and_student_does_not_change(belt_exam: Exam) -
     assert body["exam"]["notes"] is None
     assert body["student"] is None
     assert _stored_exam(belt_exam).status == ExamStatus.FAILED
+    # Only the exam-in-progress marker leaves the student (RN005).
+    assert before.pop(EXAM_IN_PROGRESS) == belt_exam.id
     assert _student_item(belt_exam.student_id) == before
 
 

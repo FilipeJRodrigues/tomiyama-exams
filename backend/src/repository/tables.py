@@ -99,6 +99,12 @@ def replace_fields(item: dict[str, Any], key_names: tuple[str, ...] = ("id",)) -
 EXAM_COUNT = "exam_count"
 NO_EXAMS_CONDITION = f"attribute_not_exists({EXAM_COUNT}) OR {EXAM_COUNT} = :zero"
 
+# Id of the student's exam in progress, set by the attendance transaction only
+# while absent (one exam in progress per student, RN005) and removed by the
+# decision transaction (RN008). Not a model field: ``replace_fields`` keeps it.
+# Exams confirmed before it existed (dev only) have no marker.
+EXAM_IN_PROGRESS = "exam_in_progress_id"
+
 # Answers counter kept on requirements by the marking transactions (RN006):
 # +1 with the first answer of an (exam, item), -1 when it is unmarked.
 ANSWER_COUNT = "answer_count"
@@ -127,15 +133,17 @@ def raise_if_throttled(exc: ClientError, source: str) -> None:
         raise ServiceUnavailableError(MSG_SERVICE_BUSY) from exc
 
 
-def get_item_or_busy(target: Any, key: dict[str, Any]) -> dict[str, Any] | None:
+def get_item_or_busy(target: Any, key: dict[str, Any], **options: Any) -> dict[str, Any] | None:
     """Read one item by key from the ``target`` table, turning persistent throttling into a 503.
+
+    Extra ``options`` (e.g. ``ProjectionExpression``) go to ``get_item`` as given.
 
     Raises:
         ServiceUnavailableError: If the table kept throttling.
         ClientError: Any other DynamoDB error, unchanged.
     """
     try:
-        return target.get_item(Key=key).get("Item")
+        return target.get_item(Key=key, **options).get("Item")
     except ClientError as exc:
         raise_if_throttled(exc, f"GetItem on {getattr(target, 'name', 'table')}")
         raise

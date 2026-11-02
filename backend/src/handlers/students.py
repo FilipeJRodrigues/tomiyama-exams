@@ -6,7 +6,8 @@ Guardians see and edit only their own students; examiners see all (RN013).
   ``belt_id`` and ``reference_date`` (date for the eligibility; default today).
 - ``POST /students``: register a student owned by the caller.
 - ``GET /students/{id}``: detail with eligibility.
-- ``PUT /students/{id}``: edit (graduation lock after the first exam).
+- ``PUT /students/{id}``: edit (graduation lock after the first exam, RN013,
+  and while an exam is in progress, RN005).
 - ``DELETE /students/{id}``: delete a student without exams (RN018).
 """
 
@@ -129,14 +130,24 @@ def update_student(event: Event, context: Any) -> Response:
         has_exams=exam_repo.student_has_exams(existing.id),
         today=dates.today(),
         now_iso=dates.utc_now_iso(),
+        exam_in_progress=student_repo.has_exam_in_progress(existing.id),
     )
-    # The check above answers the common case; under concurrency the
-    # conditional write is what keeps the lock (RN013).
-    student_repo.save_student(
-        updated, require_no_exams=student_rules.needs_graduation_lock(existing, updated, user)
+    # The checks above answer the common case; under concurrency the
+    # conditional write is what keeps the locks (RN005, RN013). An edit that
+    # keeps the graduation does not write it, so an approval between the read
+    # and the write stays (RN009); the answer is the student as stored. An
+    # edit that changes it is written only over the graduation read
+    # (optimistic lock), so it never reverts an approval either.
+    graduation_changed = student_rules.graduation_changed(existing, updated)
+    stored = student_repo.save_student(
+        updated,
+        require_no_exams=student_rules.needs_graduation_lock(existing, updated, user),
+        require_no_exam_in_progress=graduation_changed,
+        write_graduation=graduation_changed,
+        expected_graduation=existing,
     )
-    logger.info("Student %s updated by %s", updated.id, user.sub)
-    return json_response(200, _student_view(updated, belts, dates.today()))
+    logger.info("Student %s updated by %s", stored.id, user.sub)
+    return json_response(200, _student_view(stored, belts, dates.today()))
 
 
 @api_handler

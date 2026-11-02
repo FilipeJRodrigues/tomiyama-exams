@@ -16,12 +16,15 @@ from conftest import EXAMINER, GUARDIAN, api_event, belt_id, make_student, respo
 from domain import dates
 from domain.errors import ConflictError, NotFoundError
 from domain.events import EventStatus, ExamEvent
+from domain.settings import AcademySettings
 from domain.students import Student
+from domain.users import ADMIN_GROUP, User
 from handlers import events as event_handlers
 from handlers import exams as exam_handlers
 from handlers import students as student_handlers
 from repository import events as event_repo
 from repository import exams as exam_repo
+from repository import settings as settings_repo
 from repository import students as student_repo
 from repository.tables import EVENTS_TABLE_ENV, STUDENTS_TABLE_ENV, table
 
@@ -60,6 +63,24 @@ def _count(env_var: str, item_id: str) -> int:
     return int(item.get("exam_count", 0))
 
 
+def _decide_failed(event_id: str, student_id: str) -> None:
+    """Have the sensei fail the exam, so it is no longer in progress (RN005)."""
+    sensei = User(sub="sensei-1", email="sensei@example.com", groups=frozenset({ADMIN_GROUP}))
+    settings_repo.save_settings(
+        AcademySettings(
+            academy_name="Associação Tomiyama de Judô",
+            sensei_user_id=sensei.sub,
+            certificate_city="Araraquara",
+            updated_at=NOW,
+        )
+    )
+    path = {"id": event_id, "student_id": student_id}
+    response = exam_handlers.decide_exam(
+        api_event(sensei, path=path, body={"result": "FAILED"}), None
+    )
+    assert response["statusCode"] == 200, response["body"]
+
+
 def _student_payload(student: Student, **changes: Any) -> dict[str, Any]:
     payload = {
         "full_name": student.full_name,
@@ -82,15 +103,19 @@ def test_rn005_attendance_increments_counters(seeded: None) -> None:
 
 
 def test_rn005_same_student_in_two_open_events(seeded: None) -> None:
-    """Decision: a student may have exams in progress in two open events."""
+    """Decision of 2026-11-02: one exam in progress per student; nothing is counted."""
     first = _event("event-1")
     second = _event("event-2")
     student = _student()
     assert _confirm(first.id, student.id)["statusCode"] == 201
-    assert _confirm(second.id, student.id)["statusCode"] == 201
-    assert _count(STUDENTS_TABLE_ENV, student.id) == 2
+    response = _confirm(second.id, student.id)
+    assert response["statusCode"] == 409, response["body"]
+    assert response_json(response)["message"] == (
+        "O aluno já tem um exame em andamento em outro evento."
+    )
+    assert _count(STUDENTS_TABLE_ENV, student.id) == 1
     assert _count(EVENTS_TABLE_ENV, first.id) == 1
-    assert _count(EVENTS_TABLE_ENV, second.id) == 1
+    assert _count(EVENTS_TABLE_ENV, second.id) == 0
 
 
 def test_rn005_graduation_changed_between_read_and_write_is_409(
@@ -184,7 +209,9 @@ def test_rn013_guardian_graduation_change_racing_with_attendance(
     )
     assert response["statusCode"] == 200, response["body"]
 
-    # Examiners still change the graduation after the first exam.
+    # Examiners still change the graduation after the first exam, once it is
+    # decided (while it is in progress nobody does, RN005).
+    _decide_failed(exam_event.id, student.id)
     response = student_handlers.update_student(
         api_event(EXAMINER, path={"id": student.id}, body=change), None
     )
