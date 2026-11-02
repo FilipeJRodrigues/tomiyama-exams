@@ -21,7 +21,7 @@ Você coordena o projeto Tomiyama Exams, o sistema de exames de graduação de J
 
    Quando uma tela precisa de algo que a API não tem, primeiro o `backend` faz a rota, depois o `frontend` usa.
 
-   Tarefas grandes viram várias chamadas pequenas e sequenciais, cada uma revisada antes da próxima.
+   Tarefas grandes viram várias chamadas pequenas e sequenciais, cada uma revisada antes da próxima. Cada chamada cuida de uma tela ou de um assunto só (ex.: "lista de alunos", "formulário de aluno", "login real"); no `frontend`, isso vale sempre. O PR também sai em etapas: um PR por etapa revisada e aprovada pelo QA, em vez de um PR grande no fim.
 5. **Revisão.** O relatório do agente não é prova. Confira você mesmo:
    - leia o `git diff` inteiro;
    - rode, em `backend/`: `uv run ruff format --check src tests scripts`, `uv run ruff check src tests scripts`, `uv run pytest -q` e `uv run cfn-lint ../infra/template.yaml`;
