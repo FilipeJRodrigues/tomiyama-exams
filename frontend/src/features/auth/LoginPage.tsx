@@ -9,8 +9,8 @@ import {
   TextInput,
   Group,
 } from '@mantine/core';
-import { IconAlertCircle } from '@tabler/icons-react';
-import { useState, type SubmitEvent } from 'react';
+import { IconCircleCheck } from '@tabler/icons-react';
+import { useId, useState, type SubmitEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 
 import { paths } from '../../app/navigation';
@@ -19,9 +19,9 @@ import { MOCK_TEMPORARY_PASSWORD } from '../../auth/mockConstants';
 import { AuthError, ROLE_LABELS, type Role } from '../../auth/types';
 import { useAuth } from '../../auth/useAuth';
 import { AuthCard } from './AuthCard';
-
-const MIN_PASSWORD_LENGTH = 8;
-const EDGE_SPACE_MESSAGE = 'A senha não pode começar nem terminar com espaço.';
+import { ErrorAlert } from './ErrorAlert';
+import { PASSWORD_HINT, newPasswordProblem } from './passwordRules';
+import { confirmedEmailOf, type SignUpPageState } from './routeState';
 
 function messageOf(error: unknown): string {
   return error instanceof AuthError ? error.message : 'Não foi possível entrar. Tente de novo.';
@@ -30,15 +30,6 @@ function messageOf(error: unknown): string {
 function redirectTarget(state: unknown): string {
   const from = (state as LoginRedirectState | null)?.from;
   return from && from !== paths.login ? from : paths.students;
-}
-
-function ErrorAlert({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <Alert color="red" icon={<IconAlertCircle aria-hidden />} role="alert" title="Erro">
-      {message}
-    </Alert>
-  );
 }
 
 function NewPasswordForm({ onDone }: { onDone: () => void }) {
@@ -50,21 +41,9 @@ function NewPasswordForm({ onDone }: { onDone: () => void }) {
 
   const handleSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!password.trim()) {
-      setError('Informe a nova senha.');
-      return;
-    }
-    if (password !== password.trim()) {
-      // Cognito rejects a password that starts or ends with a space.
-      setError(EDGE_SPACE_MESSAGE);
-      return;
-    }
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`A senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
-      return;
-    }
-    if (password !== confirmation) {
-      setError('As senhas não conferem.');
+    const problem = newPasswordProblem(password, confirmation, 'Informe a nova senha.');
+    if (problem) {
+      setError(problem);
       return;
     }
     setSubmitting(true);
@@ -87,7 +66,7 @@ function NewPasswordForm({ onDone }: { onDone: () => void }) {
           <ErrorAlert message={error} />
           <PasswordInput
             label="Nova senha"
-            description={`Pelo menos ${MIN_PASSWORD_LENGTH} caracteres`}
+            description={PASSWORD_HINT}
             autoComplete="new-password"
             required
             value={password}
@@ -118,10 +97,15 @@ export function LoginPage() {
   const { status, signIn, supportsRoleChoice } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const errorId = useId();
+  // After the e-mail confirmation, when the automatic sign-in did not happen.
+  const [confirmedEmail] = useState(() => confirmedEmailOf(location.state));
+  const [email, setEmail] = useState(confirmedEmail ?? '');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<Role>('examiner');
+  const [role, setRole] = useState<Role>(confirmedEmail ? 'guardian' : 'examiner');
   const [error, setError] = useState<string | null>(null);
+  /** E-mail of an account that still needs the code (offers the confirmation step). */
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [needsNewPassword, setNeedsNewPassword] = useState(false);
 
@@ -133,18 +117,24 @@ export function LoginPage() {
 
   const handleSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
     if (!email.trim() || !password) {
       setError('Informe o e-mail e a senha.');
+      setUnconfirmedEmail(null);
       return;
     }
     setSubmitting(true);
     setError(null);
+    setUnconfirmedEmail(null);
     try {
       const step = await signIn({ email, password, role });
       if (step === 'NEW_PASSWORD_REQUIRED') setNeedsNewPassword(true);
       else goToApp();
     } catch (caught) {
       setError(messageOf(caught));
+      if (caught instanceof AuthError && caught.code === 'USER_NOT_CONFIRMED') {
+        setUnconfirmedEmail(email.trim());
+      }
     } finally {
       setSubmitting(false);
     }
@@ -157,9 +147,34 @@ export function LoginPage() {
           Qualquer e-mail entra. A senha “{MOCK_TEMPORARY_PASSWORD}” simula o primeiro acesso.
         </Alert>
       )}
-      <form onSubmit={(event) => void handleSubmit(event)} noValidate>
+      {confirmedEmail && (
+        <Alert color="green" variant="light" icon={<IconCircleCheck aria-hidden />} role="status">
+          Conta confirmada. Entre com seu e-mail e senha.
+        </Alert>
+      )}
+      <form
+        onSubmit={(event) => void handleSubmit(event)}
+        noValidate
+        aria-describedby={error ? errorId : undefined}
+      >
         <Stack gap="md">
-          <ErrorAlert message={error} />
+          <ErrorAlert message={error} id={errorId}>
+            {unconfirmedEmail && (
+              <Text size="sm" mt="xs">
+                {/* Inherits the alert text color: the link color is under 4.5:1 on it. */}
+                <Anchor
+                  component={Link}
+                  c="inherit"
+                  fw={700}
+                  underline="always"
+                  to={paths.signUp}
+                  state={{ confirmEmail: unconfirmedEmail } satisfies SignUpPageState}
+                >
+                  Confirmar e-mail
+                </Anchor>
+              </Text>
+            )}
+          </ErrorAlert>
           <TextInput
             label="E-mail"
             type="email"

@@ -1,4 +1,11 @@
-import { MOCK_TEMPORARY_PASSWORD, MOCK_USER_IDS } from './mockConstants';
+import { normalizeEmail } from './email';
+import {
+  MOCK_EXISTING_EMAIL,
+  MOCK_EXPIRED_CODE,
+  MOCK_SIGN_UP_CODE,
+  MOCK_TEMPORARY_PASSWORD,
+  MOCK_USER_IDS,
+} from './mockConstants';
 import { encodeMockToken } from './mockToken';
 import {
   AuthError,
@@ -6,6 +13,7 @@ import {
   GUARDIAN_GROUP,
   type AuthService,
   type AuthUser,
+  type ConfirmSignUpResult,
   type Role,
   type SignInInput,
   type SignInStep,
@@ -13,6 +21,22 @@ import {
 
 export const MOCK_SESSION_KEY = 'tomiyama.mock-session';
 const MIN_PASSWORD_LENGTH = 8;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ALREADY_CONFIRMED = 'Este e-mail já foi confirmado. Entre com seu e-mail e senha.';
+
+function alreadyConfirmed(): AuthError {
+  return new AuthError(ALREADY_CONFIRMED, 'ALREADY_CONFIRMED');
+}
+
+/** Same rules as the Cognito pool: at least 8 characters, no space at the edges. */
+function passwordProblem(password: string): string | null {
+  if (!password.trim()) return 'Informe a senha.';
+  if (password !== password.trim()) return 'A senha não pode começar nem terminar com espaço.';
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `A senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+  }
+  return null;
+}
 
 function isRole(value: unknown): value is Role {
   return value === 'examiner' || value === 'guardian';
@@ -38,10 +62,17 @@ function defaultStorage(): Storage | null {
 /**
  * Simulated login: any e-mail signs in with the chosen profile. The session (e-mail and
  * profile only) lives in `sessionStorage`, so it ends when the tab closes.
+ *
+ * Simulated sign-up: the code is always `MOCK_SIGN_UP_CODE` (`MOCK_EXPIRED_CODE` simulates
+ * an expired one) and `MOCK_EXISTING_EMAIL` already has an account. The accounts (e-mail
+ * only, never the password) live in memory.
  */
 export function createMockAuth(storage: Storage | null = defaultStorage()): AuthService {
   let user = readStored(storage);
   let pending: AuthUser | null = null;
+  /** E-mails of the accounts waiting for the code. */
+  const unconfirmed = new Set<string>();
+  const confirmed = new Set<string>([MOCK_EXISTING_EMAIL]);
 
   function finish(next: AuthUser): SignInStep {
     user = next;
@@ -61,6 +92,11 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
       const cleanEmail = email.trim();
       if (!cleanEmail || !password) {
         return Promise.reject(new AuthError('Informe o e-mail e a senha.'));
+      }
+      if (unconfirmed.has(normalizeEmail(cleanEmail))) {
+        return Promise.reject(
+          new AuthError('Confirme o e-mail antes de entrar.', 'USER_NOT_CONFIRMED'),
+        );
       }
       const next: AuthUser = { id: MOCK_USER_IDS[role], email: cleanEmail, role };
       if (password === MOCK_TEMPORARY_PASSWORD) {
@@ -87,6 +123,48 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
         );
       }
       return Promise.resolve(finish(pending));
+    },
+
+    signUp(email: string, password: string) {
+      const key = normalizeEmail(email);
+      if (!EMAIL_PATTERN.test(key)) {
+        return Promise.reject(new AuthError('Informe um e-mail válido.'));
+      }
+      const problem = passwordProblem(password);
+      if (problem) return Promise.reject(new AuthError(problem));
+      if (confirmed.has(key) || unconfirmed.has(key)) {
+        return Promise.reject(new AuthError('Já existe uma conta com este e-mail.'));
+      }
+      unconfirmed.add(key);
+      return Promise.resolve();
+    },
+
+    confirmSignUp(email: string, code: string) {
+      const key = normalizeEmail(email);
+      const cleanCode = code.trim();
+      if (!cleanCode) return Promise.reject(new AuthError('Informe o código.'));
+      // Like Cognito (NotAuthorizedException): the account no longer takes a code.
+      if (confirmed.has(key)) return Promise.reject(alreadyConfirmed());
+      if (cleanCode === MOCK_EXPIRED_CODE) {
+        return Promise.reject(new AuthError('Código expirado. Peça um novo.'));
+      }
+      // Like Cognito with PreventUserExistenceErrors: an unknown e-mail reads as a bad code.
+      if (cleanCode !== MOCK_SIGN_UP_CODE || !unconfirmed.has(key)) {
+        return Promise.reject(new AuthError('Código incorreto.'));
+      }
+      unconfirmed.delete(key);
+      confirmed.add(key);
+      finish({ id: MOCK_USER_IDS.guardian, email: email.trim(), role: 'guardian' });
+      return Promise.resolve<ConfirmSignUpResult>('SIGNED_IN');
+    },
+
+    resendSignUpCode(email: string) {
+      if (!EMAIL_PATTERN.test(normalizeEmail(email))) {
+        return Promise.reject(new AuthError('Informe um e-mail válido.'));
+      }
+      // Like Cognito (InvalidParameterException "User is already confirmed.").
+      if (confirmed.has(normalizeEmail(email))) return Promise.reject(alreadyConfirmed());
+      return Promise.resolve();
     },
 
     signOut() {
