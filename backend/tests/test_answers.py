@@ -274,9 +274,9 @@ def test_rn006_rn010_decided_exam_blocks_marking(
     assert _mark(exam, "t1", True)["statusCode"] == 200
     _set_exam_status(exam, status)
 
-    _assert_rejected(_mark(exam, "t1", False), 400, "Exame já decidido")
-    _assert_rejected(_mark(exam, "t2", True), 400, "Exame já decidido")
-    _assert_rejected(_unmark(exam, "t1"), 400, "Exame já decidido")
+    _assert_rejected(_mark(exam, "t1", False), 409, "Exame já decidido")
+    _assert_rejected(_mark(exam, "t2", True), 409, "Exame já decidido")
+    _assert_rejected(_unmark(exam, "t1"), 409, "Exame já decidido")
     stored = answer_repo.list_by_exam(exam.id)
     assert {key: answer.correct for key, answer in stored.items()} == {"t1": True}
 
@@ -339,7 +339,7 @@ def test_rn006_exam_decided_between_read_and_write(
     _stale_exam(monkeypatch, exam)
     _set_exam_status(exam, "APPROVED")
 
-    _assert_rejected(_mark(exam, "t1", False), 400, "Exame já decidido")
+    _assert_rejected(_mark(exam, "t1", False), 409, "Exame já decidido")
     stored = answer_repo.list_by_exam(exam.id)
     assert [answer.correct for answer in stored.values()] == ([True] if already_marked else [])
 

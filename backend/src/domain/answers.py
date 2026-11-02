@@ -8,12 +8,12 @@ an answer is "not marked" and counts as not correct (RN007).
 from dataclasses import dataclass
 from typing import Any
 
-from domain.errors import MSG_SERVICE_BUSY, ValidationError
+from domain.errors import MSG_SERVICE_BUSY, ConflictError, ValidationError
 from domain.events import ExamEvent
 from domain.exams import MSG_EVENT_CLOSED, Exam, ExamStatus
+from domain.exams import MSG_EXAM_DECIDED as MSG_EXAM_DECIDED
 from domain.requirements import Requirement
 
-MSG_EXAM_DECIDED = "Exame já decidido"
 MSG_ITEM_NOT_IN_BELT = "Item não pertence à faixa do exame"
 MSG_INVALID_CORRECT = "Marcação inválida: envie correct como true (certo) ou false (errado)"
 MSG_MARK_TRY_AGAIN = "Outra marcação está em andamento. Tente de novo."
@@ -56,11 +56,12 @@ def ensure_can_mark(exam: Exam, event: ExamEvent, requirement: Requirement) -> N
     """Check that the item may be marked or unmarked in the exam now (RN006).
 
     Raises:
-        ValidationError: If the exam is decided (RN010), the event is closed
-            (RN016) or the item is not of the exam's target belt.
+        ConflictError: If the exam is decided (RN010).
+        ValidationError: If the event is closed (RN016) or the item is not of
+            the exam's target belt.
     """
     if exam.status != ExamStatus.IN_PROGRESS:
-        raise ValidationError(MSG_EXAM_DECIDED)
+        raise ConflictError(MSG_EXAM_DECIDED)
     if not event.is_open:
         raise ValidationError(MSG_EVENT_CLOSED)
     if requirement.belt_id != exam.target_belt_id:
@@ -79,6 +80,7 @@ def mark(
     """Build the answer of a marking (RN006), recording who marked and when.
 
     Raises:
+        ConflictError: See ``ensure_can_mark``.
         ValidationError: See ``ensure_can_mark``.
     """
     ensure_can_mark(exam, event, requirement)

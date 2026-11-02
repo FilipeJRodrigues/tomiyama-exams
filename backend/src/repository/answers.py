@@ -250,7 +250,7 @@ def _failed(reasons: list[str | None], index: int) -> bool:
 def _guard_error(exam: Exam, reasons: list[str | None]) -> DomainError | None:
     """Translate a failed exam or event check, reading the item again.
 
-    Exam deleted or replaced → 404; decided → 400 "Exame já decidido" (RN010).
+    Exam deleted or replaced → 404; decided → 409 "Exame já decidido" (RN010).
     Event deleted → 404; closed → 400 "Evento encerrado" (RN016).
     """
     if _failed(reasons, _CHECK_EXAM):
@@ -258,7 +258,7 @@ def _guard_error(exam: Exam, reasons: list[str | None]) -> DomainError | None:
         item = table(EXAMS_TABLE_ENV).get_item(Key=key).get("Item")
         if not item or item.get("id") != exam.id:
             return NotFoundError(MSG_EXAM_NOT_FOUND)
-        return ValidationError(MSG_EXAM_DECIDED)
+        return ConflictError(MSG_EXAM_DECIDED)
     if _failed(reasons, _CHECK_EVENT):
         item = table(EVENTS_TABLE_ENV).get_item(Key={"id": exam.event_id}).get("Item")
         return ValidationError(MSG_EVENT_CLOSED) if item else NotFoundError(MSG_EVENT_NOT_FOUND)
@@ -290,9 +290,10 @@ def save_answer(exam: Exam, answer: ExamAnswer) -> None:
 
     Raises:
         NotFoundError: If the exam, the event or the requirement was deleted.
-        ValidationError: If the exam was decided, the event closed or the item
-            moved to another belt meanwhile.
-        ConflictError: If the transaction kept conflicting after every retry.
+        ValidationError: If the event was closed or the item moved to another
+            belt meanwhile.
+        ConflictError: If the exam was decided meanwhile (RN010) or the
+            transaction kept conflicting after every retry.
         ServiceUnavailableError: If it kept being throttled after every retry.
     """
     create = True
@@ -329,8 +330,9 @@ def delete_answer(exam: Exam, requirement_id: str) -> bool:
 
     Raises:
         NotFoundError: If the exam or the event was deleted meanwhile.
-        ValidationError: If the exam was decided or the event closed meanwhile.
-        ConflictError: If the transaction kept conflicting after every retry.
+        ValidationError: If the event was closed meanwhile.
+        ConflictError: If the exam was decided meanwhile (RN010) or the
+            transaction kept conflicting after every retry.
         ServiceUnavailableError: If it kept being throttled after every retry.
     """
     last_error: DomainError = ConflictError(MSG_MARK_TRY_AGAIN)
