@@ -26,9 +26,10 @@ Os agentes ficam em [.claude/agents/](.claude/agents/):
 
 - **`master`** é a sessão principal, configurada em `.claude/settings.json`. Ele escolhe o passo do roteiro, delega, revisa o diff, roda a verificação e cuida de branch, commit, PR e merge. Pede aprovação antes de cada passo de git.
 - **`backend`** escreve o código em `backend/` e `infra/` e devolve um relatório. Não mexe no git.
-- **`qa`** testa tudo que vai subir, no backend e no frontend, antes de cada commit. Para cada falha, escreve um teste de regressão que falha (`backend/tests/regression/` ou `frontend/tests/regression/`), e o `backend` corrige o código sem mexer no teste. O `qa` não corrige código de produção.
+- **`frontend`** escreve o código em `frontend/` (TypeScript + React + Vite, Amplify Hosting) e devolve um relatório. Usa a API como está descrita em `backend/README.md`, não mexe no backend nem no git.
+- **`qa`** testa o que vai subir no backend (`backend/` e `infra/`), e **`qa-frontend`** testa o que vai subir no frontend (`frontend/`), antes de cada commit. Quando a mudança toca os dois lados, rodam em paralelo. Para cada falha, escrevem um teste de regressão que falha (`backend/tests/regression/` ou `frontend/tests/regression/`), e o agente da área (`backend` ou `frontend`) corrige o código sem mexer no teste. Os QAs não corrigem código de produção.
 
-Para trabalhar sem o master, remova a chave `agent` do `.claude/settings.json`. No terminal, `claude --agent backend` abre uma sessão direto com o agente de backend.
+Para trabalhar sem o master, remova a chave `agent` do `.claude/settings.json`. No terminal, `claude --agent backend` (ou `frontend`) abre uma sessão direto com o agente da área.
 
 ## Regras de trabalho
 
