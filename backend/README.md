@@ -85,6 +85,8 @@ O front envia o **ID token** do Cognito no cabeçalho `Authorization`. Os perfis
 
 O sensei é escolhido entre os examinadores, nas configurações da academia.
 
+**E-mail sem distinção de maiúsculas.** O nome de usuário é o e-mail, e o pool tem `UsernameConfiguration.CaseSensitive: false`: `Mae.Silva@example.com` e `mae.silva@example.com` são a mesma conta. O front também normaliza o e-mail para minúsculas antes de cadastrar e entrar. Essa opção só é definida na criação do pool: mudá-la faz o CloudFormation recriar o pool, com novos `UserPoolId` e `UserPoolClientId` (atualize a configuração do front), contas apagadas e o examinador inicial recebendo uma nova senha temporária.
+
 ## Rotas implementadas
 
 | Método | Rota | Quem |

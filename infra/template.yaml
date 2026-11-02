@@ -302,6 +302,9 @@ Resources:
     Properties:
       UserPoolName: !Sub ${AWS::StackName}-users
       UsernameAttributes: [email]
+      # Set only at creation: changing it replaces the pool (new pool and client IDs).
+      UsernameConfiguration:
+        CaseSensitive: false
       AutoVerifiedAttributes: [email]
       AccountRecoverySetting:
         RecoveryMechanisms:
