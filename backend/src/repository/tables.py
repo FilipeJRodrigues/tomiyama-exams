@@ -1,11 +1,17 @@
 """DynamoDB table access; table names come from environment variables set by SAM."""
 
+import logging
 import os
-from collections.abc import Iterator
+import random
+import time
+from collections.abc import Callable, Iterator
 from functools import lru_cache
 from typing import Any
 
 import boto3
+from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 BELTS_TABLE_ENV = "BELTS_TABLE"
 STUDENTS_TABLE_ENV = "STUDENTS_TABLE"
@@ -89,3 +95,65 @@ def replace_fields(item: dict[str, Any], key_names: tuple[str, ...] = ("id",)) -
 # Items without the attribute count as zero.
 EXAM_COUNT = "exam_count"
 NO_EXAMS_CONDITION = f"attribute_not_exists({EXAM_COUNT}) OR {EXAM_COUNT} = :zero"
+
+
+# Errors DynamoDB returns when a table or GSI runs out of provisioned capacity.
+THROTTLING_ERRORS = frozenset(
+    {"ProvisionedThroughputExceededException", "ThrottlingException", "RequestLimitExceeded"}
+)
+BACKOFF_BASE_SECONDS = 0.1
+BACKOFF_CAP_SECONDS = 5.0
+
+
+class DeadlineExceededError(Exception):
+    """The write did not finish before the caller's deadline."""
+
+
+def put_if_absent(
+    target: Any,
+    item: dict[str, Any],
+    *,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Insert ``item`` only if its ``id`` does not exist, retrying on throttling.
+
+    Throttling (low provisioned capacity on the table or on a GSI) is retried
+    with exponential backoff and full jitter until it succeeds or the deadline
+    passes. Botocore's own retries (up to ~25 s in legacy mode) run first,
+    inside each attempt, so callers should keep that much slack after the
+    deadline.
+
+    Args:
+        target: DynamoDB ``Table`` resource.
+        item: Item with an ``id`` attribute.
+        deadline: ``clock()`` value after which no new attempt starts; None waits forever.
+        sleep: Injected for tests.
+        clock: Injected for tests.
+
+    Returns:
+        True if the item was inserted, False if it already existed.
+
+    Raises:
+        DeadlineExceededError: Still throttled when the deadline passed.
+    """
+    attempt = 0
+    while True:
+        if deadline is not None and clock() >= deadline:
+            raise DeadlineExceededError(f"Deadline passed before writing {item.get('id')!r}")
+        try:
+            target.put_item(Item=item, ConditionExpression="attribute_not_exists(id)")
+            return True
+        except ClientError as exc:
+            code = exc.response["Error"]["Code"]
+            if code == "ConditionalCheckFailedException":
+                return False
+            if code not in THROTTLING_ERRORS:
+                raise
+        delay = random.uniform(0, min(BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS * 2**attempt))
+        if deadline is not None and clock() + delay >= deadline:
+            raise DeadlineExceededError(f"Throttled writing {item.get('id')!r} until the deadline")
+        attempt += 1
+        logger.info("Throttled writing %s, retry %d in %.2fs", item.get("id"), attempt, delay)
+        sleep(delay)
