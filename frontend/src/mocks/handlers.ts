@@ -7,12 +7,14 @@
  * `domain/exams.py`): RN005 and RN016. The exam screen (§ 6.4) gets the exam sheet with the
  * RN007 summary (`get_exam_sheet`, `domain/scoring.py`), the marking of its items
  * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
- * examiners (`handlers/users.py`).
+ * examiners (`handlers/users.py`), the settings (`handlers/settings.py`, read only) and the
+ * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
 import { buildApiUrl } from '../api/client';
 import type {
+  AcademySettings,
   Eligibility,
   Exam,
   ExamEvent,
@@ -66,6 +68,13 @@ const MSG_REQUIREMENT_NOT_FOUND = 'Requisito não encontrado';
 const MSG_INVALID_CORRECT = 'Marcação inválida: envie correct como true (certo) ou false (errado)';
 const MSG_EXAM_DECIDED = 'Exame já decidido';
 const MSG_ITEM_NOT_IN_BELT = 'Item não pertence à faixa do exame';
+const MSG_NO_SENSEI = 'Defina o sensei nas configurações da academia';
+const MSG_SENSEI_ONLY = 'Somente o sensei pode decidir o exame';
+const MSG_INVALID_RESULT =
+  'Resultado inválido: envie result como APPROVED (aprovado) ou FAILED (reprovado)';
+const MSG_GRADUATION_CHANGED =
+  'A graduação do aluno mudou desde a presença. Confira antes de decidir.';
+const NOTES_MAX = 500;
 
 /**
  * The mock does not compute eligibility (RN001–RN004 live in the backend). A student
@@ -337,6 +346,45 @@ function markingRefusal(db: MockDb, event: ExamEvent, exam: Exam, requirementId:
   return null;
 }
 
+/** Like `get_settings`: the sensei is active while among the examiners (`admin`, enabled). */
+function settingsView(db: MockDb): AcademySettings {
+  const id = db.settings.sensei_user_id;
+  const examiner = id ? db.examiners.find((candidate) => candidate.id === id) : undefined;
+  return {
+    ...db.settings,
+    sensei: id
+      ? {
+          id,
+          email: examiner?.email ?? null,
+          name: examiner?.name ?? null,
+          active: examiner !== undefined,
+        }
+      : null,
+  };
+}
+
+/** Optional note up to 500 characters, trimmed; blank means none. */
+function decisionNotes(payload: Payload): string | null {
+  const value = payload.notes;
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw new MockValidationError('Observação: valor inválido');
+  const trimmed = value.trim();
+  if (lengthOf(trimmed) > NOTES_MAX) {
+    throw new MockValidationError(`Observação: máximo de ${NOTES_MAX} caracteres`);
+  }
+  return trimmed || null;
+}
+
+/** The student's graduation is still the one of the attendance (exams with the source). */
+function sameGraduation(exam: Exam, student: Student): boolean {
+  if (exam.source_belt_id === null) return true;
+  return (
+    student.current_belt_id === exam.source_belt_id &&
+    student.current_belt_since === exam.source_belt_since &&
+    student.stripes === exam.source_stripes
+  );
+}
+
 export interface MockHandlersOptions {
   baseUrl: string;
   db?: MockDb;
@@ -568,6 +616,57 @@ export function createHandlers({
         return HttpResponse.json({ answer: null, summary: examSheet(db, event, exam).summary });
       },
     ),
+
+    // RN008 to RN010, in the order of the table in `backend/README.md`.
+    http.post(url('/events/:id/exams/:studentId/decision'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const event = db.events.find((candidate) => candidate.id === params.id);
+      if (!event) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      const exam = db.exams.find(
+        (candidate) => candidate.event_id === event.id && candidate.student_id === params.studentId,
+      );
+      if (!exam) return errorResponse(404, MSG_EXAM_NOT_FOUND);
+      const senseiId = db.settings.sensei_user_id;
+      if (!senseiId) return errorResponse(409, MSG_NO_SENSEI);
+      if (senseiId !== claims.sub) return errorResponse(403, MSG_SENSEI_ONLY);
+      if (exam.status !== 'IN_PROGRESS') return errorResponse(409, MSG_EXAM_DECIDED);
+      return withValidation(async () => {
+        const payload = await readPayload(request);
+        const result = payload.result;
+        if (result !== 'APPROVED' && result !== 'FAILED') return badRequest(MSG_INVALID_RESULT);
+        const notes = decisionNotes(payload);
+        const item = db.students.find((candidate) => candidate.student.id === exam.student_id);
+        if (!item) return errorResponse(404, MSG_STUDENT_NOT_FOUND);
+        if (!sameGraduation(exam, item.student)) return errorResponse(409, MSG_GRADUATION_CHANGED);
+        const now = new Date().toISOString();
+        Object.assign(exam, { status: result, decided_by_id: claims.sub, decided_at: now, notes });
+        if (result === 'FAILED') {
+          return HttpResponse.json({ exam: examView(db, exam), student: null });
+        }
+        // RN009: a belt exam moves to the target belt; a stripe exam adds one stripe.
+        item.student =
+          exam.kind === 'BELT'
+            ? {
+                ...item.student,
+                current_belt_id: exam.target_belt_id,
+                current_belt_since: event.exam_date,
+                stripes: 0,
+                updated_at: now,
+              }
+            : { ...item.student, stripes: item.student.stripes + 1, updated_at: now };
+        item.eligibility = unknownEligibility();
+        return HttpResponse.json({ exam: examView(db, exam), student: { ...item.student } });
+      });
+    }),
+
+    http.get(url('/settings'), ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      return HttpResponse.json(settingsView(db));
+    }),
 
     http.get(url('/examiners'), ({ request }) => {
       const claims = claimsFrom(request);

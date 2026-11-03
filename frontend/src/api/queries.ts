@@ -3,9 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
 import type {
+  AcademySettings,
   AnswerResult,
   Belt,
   ConfirmAttendanceInput,
+  DecisionInput,
+  DecisionOutcome,
   ExamEvent,
   ExamSheet,
   ExamView,
@@ -28,6 +31,7 @@ export const queryKeys = {
   examSheet: (eventId: string, studentId: string) =>
     ['events', eventId, 'exams', studentId] as const,
   examiners: ['examiners'] as const,
+  settings: ['settings'] as const,
 };
 
 export function listBelts(api: ApiClient): Promise<Belt[]> {
@@ -119,6 +123,23 @@ export function unmarkAnswer(
   requirementId: string,
 ): Promise<AnswerResult> {
   return api.delete<AnswerResult>(answerPath(eventId, studentId, requirementId));
+}
+
+/** `POST …/decision`: the sensei approves or fails the exam (RN008, RN009, RN010). */
+export function decideExam(
+  api: ApiClient,
+  eventId: string,
+  studentId: string,
+  input: DecisionInput,
+): Promise<DecisionOutcome> {
+  return api.post<DecisionOutcome>(
+    `${eventExamsPath(eventId)}/${encodeURIComponent(studentId)}/decision`,
+    input,
+  );
+}
+
+export function getSettings(api: ApiClient): Promise<AcademySettings> {
+  return api.get<AcademySettings>('/settings');
 }
 
 export function listExaminers(api: ApiClient): Promise<Examiner[]> {
@@ -279,6 +300,68 @@ export function useConfirmAttendance(eventId: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.eventExams(eventId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.events });
       void queryClient.invalidateQueries({ queryKey: queryKeys.allStudents });
+    },
+  });
+}
+
+/** `GET /settings`: the academy settings, here for who the sensei is (RN008). */
+export function useSettings() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.settings, queryFn: () => getSettings(api) });
+}
+
+/** API messages after which the screen reloads what it shows (RN008, RN010). */
+export const MSG_EXAM_ALREADY_DECIDED = 'Exame já decidido';
+const MSG_SENSEI_ONLY = 'Somente o sensei pode decidir o exame';
+const MSG_NO_SENSEI = 'Defina o sensei nas configurações da academia';
+const MSG_GRADUATION_CHANGED =
+  'A graduação do aluno mudou desde a presença. Confira antes de decidir.';
+
+/** The exam was decided meanwhile (by another device, or a repeated request). */
+export function isAlreadyDecided(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 409 && error.message === MSG_EXAM_ALREADY_DECIDED
+  );
+}
+
+/**
+ * `POST /events/{id}/exams/{student_id}/decision` (RN008). The decided exam goes straight
+ * into the cached sheet, so the screen turns read-only at once (RN010); then the exam, the
+ * event's exams and the students reload (RN009 changed the student's graduation). A refusal
+ * reloads what made it: the exam ("Exame já decidido", graduation changed), the settings
+ * (sensei changed or removed) or the student.
+ */
+export function useDecideExam(eventId: string, studentId: string) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const reloadExam = () => {
+    // Under `eventExams`: also reloads this exam's sheet.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.eventExams(eventId) });
+  };
+  const reloadStudents = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.allStudents });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.student(studentId) });
+  };
+  return useMutation({
+    mutationFn: (input: DecisionInput) => decideExam(api, eventId, studentId, input),
+    onSuccess: ({ exam }) => {
+      queryClient.setQueryData<ExamSheet>(
+        queryKeys.examSheet(eventId, studentId),
+        (sheet) => sheet && { ...sheet, exam: { ...sheet.exam, ...exam } },
+      );
+      reloadExam();
+      reloadStudents();
+    },
+    onError: (error) => {
+      if (!(error instanceof ApiError)) return;
+      if (error.status === 404 || isAlreadyDecided(error)) {
+        reloadExam();
+      } else if (error.message === MSG_SENSEI_ONLY || error.message === MSG_NO_SENSEI) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+      } else if (error.message === MSG_GRADUATION_CHANGED) {
+        reloadExam();
+        reloadStudents();
+      }
     },
   });
 }

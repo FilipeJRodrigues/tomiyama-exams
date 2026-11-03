@@ -1,7 +1,14 @@
-import { Alert, Box, Button, Group, Stack, Text, Title } from '@mantine/core';
+import { Alert, Box, Button, Stack, Text, Title, VisuallyHidden } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconAlertCircle, IconArrowLeft, IconLock, IconUserOff } from '@tabler/icons-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Link, useParams } from 'react-router';
 
 import { ApiError } from '../../api/client';
@@ -9,6 +16,7 @@ import { useBelts, useExamSheet, useExaminers } from '../../api/queries';
 import type { ExamSheet, ExamSheetItem, RequirementKind } from '../../api/types';
 import { EXAM_SIDE_SUMMARY_QUERY } from '../../app/breakpoints';
 import { LoadError, LoadingState } from '../students/screenStates';
+import { DecisionDialog } from './ExamDecision';
 import { ExamHeader, ExamNav } from './ExamHeader';
 import { ExamItems, MarkButtons, MarkText, type RenderMark } from './ExamItems';
 import { SummaryBar, SummaryColumn } from './ExamSummary';
@@ -20,6 +28,8 @@ import {
   withPendingMarks,
   type MarkState,
 } from './examModel';
+import { focusIfLost, useScrollPadding } from './focus';
+import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
 import { useExamMarking, type MarkFailure } from './useExamMarking';
 
 const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
@@ -87,11 +97,37 @@ function Notices({ sheet }: { sheet: ExamSheet }) {
   );
 }
 
+interface MarkFailureNoticeProps {
+  failure: MarkFailure;
+  onClose: () => void;
+  /**
+   * Where the focus goes when it was in the notice (its close button goes away, § 6.7) and
+   * the item the notice names is no longer on the screen (another tab, the filter).
+   */
+  focusTarget: RefObject<HTMLElement | null>;
+}
+
+/**
+ * The Certo/Errado button of an item on the screen: the pressed one, else the first. The
+ * examiner keeps the place in the list when the notice about that item closes.
+ */
+function markButtonOf(itemId: string): HTMLElement | null {
+  const item = Array.from(document.querySelectorAll<HTMLElement>('[data-item]')).find(
+    (element) => element.dataset.item === itemId,
+  );
+  if (item === undefined) return null;
+  return (
+    item.querySelector<HTMLElement>('button[data-choice][aria-pressed="true"]') ??
+    item.querySelector<HTMLElement>('button[data-choice]')
+  );
+}
+
 /**
  * A refused mark (§ 6.4: "em erro, volta e avisa"), with the API message. Sticky at the top
  * of the items, so it is seen wherever the examiner is in the list.
  */
-function MarkFailureNotice({ failure, onClose }: { failure: MarkFailure; onClose: () => void }) {
+function MarkFailureNotice({ failure, onClose, focusTarget }: MarkFailureNoticeProps) {
+  const ref = useRef<HTMLDivElement>(null);
   return (
     <Alert
       color="red"
@@ -101,7 +137,13 @@ function MarkFailureNotice({ failure, onClose }: { failure: MarkFailure; onClose
       title={`Não foi possível salvar a marcação de "${failure.item}"`}
       withCloseButton
       closeButtonLabel="Fechar aviso"
-      onClose={onClose}
+      onClose={() => {
+        focusIfLost([markButtonOf(failure.itemId), focusTarget.current], {
+          leaving: [ref.current],
+        });
+        onClose();
+      }}
+      ref={ref}
       style={{
         position: 'sticky',
         top: 'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))',
@@ -127,10 +169,34 @@ function useReadOnlyFocus(readOnly: boolean) {
     const turned = readOnly && !wasReadOnly.current;
     wasReadOnly.current = readOnly;
     if (!turned) return;
-    const active = document.activeElement;
-    if (active === null || active === document.body) titleRef.current?.focus();
+    focusIfLost(titleRef.current);
   }, [readOnly]);
   return titleRef;
+}
+
+/** Clear of the fixed header when the focus scrolls a target into view (§ 6.7). */
+const HEADER_SCROLL_PADDING =
+  'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))';
+
+/**
+ * The summary is a column from 1024 px and a bar below (§ 6.4). Crossing that width (turning
+ * the tablet, 200% zoom) swaps only the summary: the items stay mounted, so a focused
+ * Certo/Errado keeps the focus, and a focus in the decision area that left goes to the
+ * decision area of the new layout, never to the page (§ 6.7).
+ */
+function useSummaryLayout(flow: DecisionFlow): SummaryLayout {
+  const sideSummary = useMediaQuery(EXAM_SIDE_SUMMARY_QUERY, true, {
+    getInitialValueInEffect: false,
+  });
+  const layout: SummaryLayout = sideSummary ? 'column' : 'bar';
+  const shown = useRef(layout);
+  const { layoutChanged } = flow;
+  useLayoutEffect(() => {
+    if (shown.current === layout) return;
+    shown.current = layout;
+    layoutChanged(layout);
+  }, [layout, layoutChanged]);
+  return layout;
 }
 
 interface ExamContentProps {
@@ -158,25 +224,37 @@ function ExamContent({
 }: ExamContentProps) {
   const belts = useBelts();
   const examiners = useExaminers();
-  const sideSummary = useMediaQuery(EXAM_SIDE_SUMMARY_QUERY, true, {
-    getInitialValueInEffect: false,
-  });
+  const titleRef = useReadOnlyFocus(onMark === undefined);
+  const flow = useDecisionFlow(sheet.exam.event_id, sheet.exam.student_id, titleRef);
+  const layout = useSummaryLayout(flow);
+  useScrollPadding('top', HEADER_SCROLL_PADDING);
   const summaryProps = {
     summary: sheet.summary,
     exam: sheet.exam,
     examiners: examiners.data,
+    flow,
     settled,
+    studentDeleted: sheet.student === null,
   };
+  const decision = (
+    <>
+      <DecisionDialog flow={flow} sheet={sheet} belts={belts.data} settled={settled} />
+      <VisuallyHidden role="status" aria-live="polite" data-testid="decision-live">
+        {flow.announcement}
+      </VisuallyHidden>
+    </>
+  );
   const renderMark: RenderMark = onMark
     ? (item) => <MarkButtons item={item} onMark={onMark} />
     : renderReadOnlyMark;
-  const titleRef = useReadOnlyFocus(onMark === undefined);
 
   const main = (
     <Stack gap="md">
       <ExamHeader sheet={sheet} belts={belts.data} titleRef={titleRef} />
       <Notices sheet={sheet} />
-      {failure && <MarkFailureNotice failure={failure} onClose={onDismissFailure} />}
+      {failure && (
+        <MarkFailureNotice failure={failure} onClose={onDismissFailure} focusTarget={titleRef} />
+      )}
       <ExamItems
         items={sheet.items}
         summary={sheet.summary}
@@ -186,21 +264,22 @@ function ExamContent({
     </Stack>
   );
 
-  if (sideSummary) {
-    return (
-      <Group align="flex-start" gap="lg" wrap="nowrap">
-        <Box miw={0} style={{ flex: 1 }}>
-          {main}
-        </Box>
-        <SummaryColumn {...summaryProps} />
-      </Group>
-    );
-  }
+  const side = layout === 'column';
+  // One container for both layouts: `main` keeps its place in the tree and is not remounted.
   return (
-    <>
-      {main}
-      <SummaryBar {...summaryProps} />
-    </>
+    <Box
+      style={
+        side
+          ? { display: 'flex', alignItems: 'flex-start', gap: 'var(--mantine-spacing-lg)' }
+          : undefined
+      }
+    >
+      <Box miw={0} style={side ? { flex: 1 } : undefined}>
+        {main}
+      </Box>
+      {side ? <SummaryColumn {...summaryProps} /> : <SummaryBar {...summaryProps} />}
+      {decision}
+    </Box>
   );
 }
 
@@ -268,6 +347,8 @@ export function ExamPage() {
     };
     content = (
       <ExamContent
+        // One decision state per exam: nothing carries over to the previous/next student.
+        key={examKey}
         sheet={markable ? withPendingMarks(data, marking.pending) : data}
         kind={kind}
         onKindChange={(value) => {

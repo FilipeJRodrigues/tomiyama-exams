@@ -60,7 +60,7 @@ export function examTitle(sheet: Pick<ExamSheet, 'exam' | 'target_belt'>, belts?
  * highest `sort_order` below the target's (orders may have gaps, as in the backend's
  * `previous_belt`).
  */
-function stripeBelt(
+export function stripeBelt(
   sourceBeltId: string | null | undefined,
   target: Pick<Belt, 'id' | 'sort_order'>,
   belts: readonly Belt[],

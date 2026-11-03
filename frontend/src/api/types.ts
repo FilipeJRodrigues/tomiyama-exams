@@ -210,3 +210,44 @@ export interface Examiner {
 export interface ApiErrorBody {
   message?: string;
 }
+
+/**
+ * The sensei chosen in the academy settings. `active` is `false` when the account was
+ * disabled or left the `admin` group; in the second case (or when deleted) `email` and
+ * `name` are `null`.
+ */
+export interface SettingsSensei {
+  id: string;
+  email: string | null;
+  name: string | null;
+  active: boolean;
+}
+
+/** `GET /settings`: the single academy settings record (every field `null` before the first save). */
+export interface AcademySettings {
+  academy_name: string | null;
+  sensei_user_id: string | null;
+  certificate_city: string | null;
+  created_at: IsoDateTime | null;
+  updated_at: IsoDateTime | null;
+  /** `null` without a sensei. */
+  sensei: SettingsSensei | null;
+}
+
+export type DecisionResult = 'APPROVED' | 'FAILED';
+
+/** Body of `POST /events/{id}/exams/{student_id}/decision` (RN008). */
+export interface DecisionInput {
+  result: DecisionResult;
+  /** Optional note, up to 500 characters; blank means none. */
+  notes: string | null;
+}
+
+/**
+ * 200 of the decision: the decided exam and, on approval, the student with the new
+ * graduation (RN009; `null` on failure).
+ */
+export interface DecisionOutcome {
+  exam: ExamView;
+  student: Student | null;
+}
