@@ -1,8 +1,8 @@
 """Um sensei trocado no meio do envio da imagem ainda substituía a assinatura.
 
-``PUT /settings/signatures/{id}/image`` confere o sensei no início, grava o
-objeto em ``signatures/{id}`` (chave fixa) e só depois grava os metadados numa
-transação que confere o sensei de novo. Se o master troca o sensei entre a
+Até o commit e8b1105, ``PUT /settings/signatures/{id}/image`` conferia o sensei
+no início, gravava o objeto em ``signatures/{id}`` (chave fixa) e só depois os
+metadados, numa transação que conferia o sensei de novo. Se o master troca o sensei entre a
 conferência e a transação, a resposta é 403, mas o objeto da assinatura já foi
 sobrescrito pelos bytes enviados pelo ex-sensei: a imagem que vai no
 certificado muda, e os metadados continuam os da imagem antiga.

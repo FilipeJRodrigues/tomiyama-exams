@@ -1,10 +1,11 @@
 """Envio e remoção da imagem da assinatura ao mesmo tempo deixavam metadados sem objeto.
 
-``PUT /settings/signatures/{id}/image`` grava o objeto em ``signatures/{id}``
-e depois os metadados; ``DELETE /settings/signatures/{id}/image`` apaga os
-metadados e depois o objeto da mesma chave. Se o ``DELETE`` inteiro acontece
-entre as duas gravações do ``PUT``, ele apaga o objeto recém-enviado e o
-``PUT`` grava os metadados em seguida: a assinatura fica ``complete`` e
+Até o commit e8b1105, ``PUT /settings/signatures/{id}/image`` gravava o objeto
+numa chave fixa, ``signatures/{id}``, e depois os metadados;
+``DELETE /settings/signatures/{id}/image`` apagava os
+metadados e depois o objeto da mesma chave. Se o ``DELETE`` inteiro acontecesse
+entre as duas gravações do ``PUT``, ele apagava o objeto recém-enviado e o
+``PUT`` gravava os metadados em seguida: a assinatura ficava ``complete`` e
 ``has_complete`` fica verdadeiro, mas a imagem não existe no bucket. O
 certificado (RN011) seria liberado com uma assinatura sem imagem, e a URL do
 ``GET /{id}/image`` responde 404 do S3.
