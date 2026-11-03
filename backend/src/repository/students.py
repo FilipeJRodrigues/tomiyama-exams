@@ -236,6 +236,7 @@ def delete_student(student_id: str) -> None:
 
     Raises:
         ConflictError: If the student has exams.
+        ServiceUnavailableError: If the delete kept throttling (503).
     """
     try:
         table(STUDENTS_TABLE_ENV).delete_item(
@@ -245,5 +246,6 @@ def delete_student(student_id: str) -> None:
         )
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise_if_throttled(exc, "DeleteItem on Students")
             raise
         raise ConflictError(MSG_STUDENT_HAS_EXAMS) from exc

@@ -63,6 +63,7 @@ from repository.tables import (
     THROTTLING_ERRORS,
     get_item_or_busy,
     paginate,
+    raise_if_throttled,
     table,
 )
 
@@ -118,21 +119,37 @@ def _from_item(item: dict[str, Any]) -> Exam:
 
 
 def student_has_exams(student_id: str) -> bool:
-    """Return whether the student has at least one exam."""
-    response = table(EXAMS_TABLE_ENV).query(
-        IndexName=BY_STUDENT_INDEX,
-        KeyConditionExpression=Key("student_id").eq(student_id),
-        Limit=1,
-    )
+    """Return whether the student has at least one exam.
+
+    Raises:
+        ServiceUnavailableError: If the ``by_student`` index kept throttling (503).
+    """
+    try:
+        response = table(EXAMS_TABLE_ENV).query(
+            IndexName=BY_STUDENT_INDEX,
+            KeyConditionExpression=Key("student_id").eq(student_id),
+            Limit=1,
+        )
+    except ClientError as exc:
+        raise_if_throttled(exc, f"Query on Exams (index {BY_STUDENT_INDEX})")
+        raise
     return bool(response.get("Items"))
 
 
 def event_has_exams(event_id: str) -> bool:
-    """Return whether the event has at least one exam."""
-    response = table(EXAMS_TABLE_ENV).query(
-        KeyConditionExpression=Key("event_id").eq(event_id),
-        Limit=1,
-    )
+    """Return whether the event has at least one exam.
+
+    Raises:
+        ServiceUnavailableError: If the exams table kept throttling (503).
+    """
+    try:
+        response = table(EXAMS_TABLE_ENV).query(
+            KeyConditionExpression=Key("event_id").eq(event_id),
+            Limit=1,
+        )
+    except ClientError as exc:
+        raise_if_throttled(exc, "Query on Exams")
+        raise
     return bool(response.get("Items"))
 
 
