@@ -175,8 +175,10 @@ def _marking_context(event: Event) -> tuple[ExamEvent, Exam, Requirement]:
 def _summary_after(exam: Exam, requirement_id: str, answer: ExamAnswer | None) -> dict[str, Any]:
     """Recompute the score (RN007) with this request's write applied.
 
-    The answers query is eventually consistent; applying our own write keeps
-    the summary right for the caller's optimistic update.
+    The answers query is strongly consistent, so it already sees this write and
+    any mark written just before; applying our own write again is a safeguard
+    for the caller's optimistic update. The totals come from the ``by_belt``
+    GSI, which is always eventually consistent.
     """
     answers = _correct_by_item(answer_repo.list_by_exam(exam.id))
     if answer is None:

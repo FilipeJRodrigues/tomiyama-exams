@@ -42,7 +42,9 @@ Mappings:
   # Each mark (RN006) is a transaction that checks the exam and the event and
   # writes the answer: 2 WCU in each of Exams, Events and Answers (plus 2 in
   # Requirements and the by_belt write on the first mark of an item), and its
-  # response reads the belt's items (by_belt) and the exam's answers.
+  # response reads the belt's items (by_belt) and the exam's answers. The
+  # answers query is strongly consistent (1 RCU per 4 KB): ~2.5 RCU per mark on
+  # a 58-item belt, up to 10 on a full 139-item exam (see backend/README.md).
   DevCapacity:
     Belts:
       Read: 3
