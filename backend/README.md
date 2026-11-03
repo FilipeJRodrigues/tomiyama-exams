@@ -1,6 +1,6 @@
 # Backend — exames de graduação de Judô
 
-Python 3.12 em AWS Lambda, DynamoDB (provisionado no dev, on-demand no prod), Cognito e API Gateway (HTTP API).
+Python 3.12 em AWS Lambda, DynamoDB (provisionado no dev, on-demand no prod), S3 (imagens, privado), Cognito e API Gateway (HTTP API).
 A infraestrutura fica em [`../infra/template.yaml`](../infra/template.yaml) (AWS SAM).
 
 ## Estrutura
@@ -9,7 +9,7 @@ A infraestrutura fica em [`../infra/template.yaml`](../infra/template.yaml) (AWS
 src/
 ├── handlers/    # uma função Lambda por rota + utilitários HTTP
 ├── domain/      # regras de negócio puras (RN001–RN018), sem acesso à AWS
-└── repository/  # acesso ao DynamoDB e (leitura) ao Cognito
+└── repository/  # acesso ao DynamoDB, ao S3 (imagens) e (leitura) ao Cognito
 tests/           # pytest + moto; testes de regra nomeados test_rnXXX_*
 ```
 
@@ -39,11 +39,13 @@ Precisa do [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-mode
 | DynamoDB | `PROVISIONED`, 25 RCU e 24 WCU somando as 7 tabelas e os 3 GSIs (free tier permanente: até 25/25), sem auto scaling | `PAY_PER_REQUEST` |
 | PITR | desligado | ligado |
 | Retenção dos logs das funções | 7 dias | 30 dias |
-| Tabelas ao apagar a stack | apagadas | mantidas |
+| Tabelas e bucket de imagens ao apagar a stack | apagados (o bucket precisa estar vazio) | mantidos |
 
 **Atenção no dev:** apagar a stack dev (ou o rollback de um primeiro deploy que falhou) apaga as tabelas e os dados de teste. Se sobrar tabela de um deploy antigo (de antes desta regra, por exemplo), apague-a antes de reimplantar: ela continua provisionada e ocupa parte dos 25 RCU/WCU do free tier. No prod as tabelas ficam (`DeletionPolicy` e `UpdateReplacePolicy` `Retain`). O template usa a transform `AWS::LanguageExtensions` para escolher a política pelo ambiente, por isso o deploy pede `CAPABILITY_AUTO_EXPAND`.
 
 As capacidades de cada tabela e GSI ficam no mapping `DevCapacity` do template; `tests/test_template.py` falha se a soma passar de 25. Cada marcação de item (RN006) é uma transação que custa 2 WCU em `Exams`, em `Events` e em `Answers` (e mais 2 em `Requirements`, além da escrita no GSI `by_belt`, na primeira marcação do item); com 3 WCU em cada uma, o dev aguenta em média 1,5 marcação por segundo somando todos os examinadores, com folga para picos curtos (burst do DynamoDB). O free tier vale para a conta inteira na região: outra stack provisionada na mesma conta e região soma no mesmo limite.
+
+**Bucket de imagens no dev.** O CloudFormation só apaga bucket vazio. Se houver logos carregados, esvazie o bucket antes de apagar a stack dev (`aws s3 rm s3://<bucket> --recursive`; o nome está no recurso `ImagesBucket` da stack); senão a exclusão fica em `DELETE_FAILED` só nesse recurso e pode ser repetida depois de esvaziar. No prod o bucket fica (`Retain`), como as tabelas.
 
 Todas as funções escrevem no log group `/aws/lambda/<stack>`, um stream por função.
 
@@ -109,7 +111,19 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 | PUT/DELETE | /events/{id}/exams/{student_id}/answers/{requirement_id} | examinador |
 | POST | /events/{id}/exams/{student_id}/decision | examinador (só o sensei decide) |
 | GET/PUT | /settings | examinador |
+| GET/PUT/DELETE | /settings/logos/{slot} | examinador |
 | GET | /examiners | examinador |
+
+### Erros comuns
+
+Valem para todas as rotas que recebem corpo (`POST` e `PUT`), com ou sem `isBase64Encoded`, e saem no mesmo formato `{"message": ...}` das outras respostas:
+
+| Situação | Resposta |
+| --- | --- |
+| corpo ausente, que não é UTF-8 nem base64 válido (como uma imagem crua), JSON malformado ou aninhado demais, inteiro com mais de 4300 dígitos, `NaN`/`Infinity`/`-Infinity`, número que estoura para infinito (como `1e999`) ou JSON que não é um objeto | 400 "Corpo da requisição inválido: envie um objeto JSON" |
+| corpo acima de 3 MiB (3.145.728 bytes em UTF-8; com `isBase64Encoded`, o texto base64 é conferido antes de decodificar) | 413 "Corpo da requisição grande demais" |
+
+O teto de 3 MiB cabe o maior corpo legítimo, o envio de um logo de 2 MB (cerca de 2,8 MB de JSON, por causa do base64), e fica abaixo do limite de 6 MB da Lambda. O tamanho é conferido antes da leitura do JSON, e nada é gravado.
 
 `GET /students` aceita os filtros `active=true|false`, `belt_id` e `reference_date=AAAA-MM-DD`. O último é a data da elegibilidade; sem ele, vale a data de hoje.
 
@@ -144,7 +158,7 @@ O exame também guarda a **graduação de origem**, a do aluno no momento da pre
 ```
 
 - `sensei` é `null` sem sensei. `active` é `false` se a conta do sensei foi desabilitada ou saiu do grupo `admin` depois da escolha; no segundo caso (ou se a conta foi apagada), `email` e `name` vêm `null`. A tela deve pedir outro sensei.
-- As imagens (logos e assinaturas do certificado) nunca aparecem neste JSON (RN012); terão rotas próprias. Os nomes, graduações e imagens que vão no certificado serão as **assinaturas do certificado** (até 3, geridas pelo master e pelo sensei; passo 5), e não campos destas configurações.
+- As imagens (logos e assinaturas do certificado) nunca aparecem neste JSON, nem os metadados delas (RN012): os logos têm rotas próprias (veja "Imagens da academia (RN012)" abaixo), e as assinaturas terão. Os nomes, graduações e imagens que vão no certificado serão as **assinaturas do certificado** (até 3, geridas pelo master e pelo sensei; passo 5), e não campos destas configurações.
 
 `PUT /settings` recebe `academy_name`, `sensei_user_id` e `certificate_city` e **substitui** os três: um campo opcional ausente, `null` ou só com espaços passa a `null`, e os textos são gravados sem espaços nas pontas. Outras chaves são ignoradas. A resposta (200) é igual à do `GET`. A gravação é um `UpdateItem` só nesses campos (e em `updated_at`; `created_at` só na primeira vez), então atributos gravados por outras rotas, como as imagens, nunca se perdem.
 
@@ -169,6 +183,77 @@ O exame também guarda a **graduação de origem**, a do aluno no momento da pre
 ```
 
 As três rotas leem o Cognito com `ListUsersInGroup` (paginado, 60 por página), e só essa ação é liberada, no ARN do pool. O `GET` e o `PUT /settings` só consultam o Cognito quando há sensei. O ID do pool chega pela variável `USER_POOL_ID`, definida em cada uma dessas funções e não em `Globals`: o pool referencia a `PostConfirmationFunction`, e uma referência de volta seria uma dependência circular.
+
+### Imagens da academia (RN012)
+
+Os logos ficam num bucket S3 **privado** (`ImagesBucket`), nunca no DynamoDB nem em URL pública. As rotas são dos examinadores (grupo `admin`), com `{slot}` = `primary` (logo principal) ou `secondary` (logo secundário):
+
+| Método | Rota | Resposta |
+| --- | --- | --- |
+| PUT | /settings/logos/{slot} | 200 com os metadados; envia ou troca o logo |
+| DELETE | /settings/logos/{slot} | 204; remove (sem logo também é 204) |
+| GET | /settings/logos/{slot} | 200 com a URL pré-assinada; 404 sem logo |
+
+**Envio.** O corpo é JSON com o arquivo em base64 padrão, sem quebras de linha e sem o prefixo `data:image/png;base64,` que o `FileReader.readAsDataURL` põe (o front tira o prefixo):
+
+```json
+{"content_type": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAA…"}
+```
+
+- `content_type`: `image/png` ou `image/jpeg`, exatamente assim.
+- A Lambda decodifica e confere a **assinatura binária** do arquivo: PNG começa com `89 50 4E 47 0D 0A 1A 0A` e JPEG com `FF D8 FF`. O tipo real vem dos bytes; se não bater com o `content_type`, o envio é recusado. GIF, PDF, SVG e o resto são recusados.
+- Tamanho: até 2 MB (2 × 1024 × 1024 = 2.097.152 bytes) **depois de decodificar**; exatamente 2 MB é aceito. Um `data` maior que o base64 de 2 MB (2.796.204 caracteres) é recusado antes de decodificar.
+- Só depois da validação o arquivo é gravado no S3, na chave fixa do slot (`logos/primary` ou `logos/secondary`). Trocar o logo é sobrescrever a mesma chave (sem versionamento).
+- Cabeçalhos do objeto: `Content-Type` é o tipo **detectado pelos bytes** (`image/png` ou `image/jpeg`), nunca o cabeçalho `Content-Type` da requisição nem outro texto do cliente; `Content-Disposition` é sempre `inline; filename="logo.png"` (ou `logo.jpg`), um nome fixo escolhido pelo código, sem nada do nome do arquivo enviado. Assim o navegador mostra a imagem e não a trata como página, script ou download de outro tipo.
+- Por que pela API e não por upload direto com URL pré-assinada de `PUT`: assim o arquivo é validado (tipo real e tamanho) antes de entrar no bucket, e nada inválido chega a ser gravado. O corpo de até ~2,8 MB cabe nos limites do HTTP API (10 MB) e da Lambda (6 MB); um corpo acima de 6 MB é barrado pela AWS antes da função. O timeout (10 s) e a memória (256 MB) padrão bastam para decodificar e gravar 2 MB.
+
+A resposta do `PUT` (200) traz os metadados, os mesmos gravados nas configurações:
+
+```json
+{"slot": "primary", "content_type": "image/png", "size": 48213,
+ "updated_at": "2026-11-02T12:00:00+00:00", "updated_by": "<sub>"}
+```
+
+**Leitura.** O `GET` devolve uma URL pré-assinada de `GET` do S3, válida por 5 minutos (300 s), e nunca o arquivo nem uma URL pública:
+
+```json
+{"slot": "primary", "url": "https://<bucket>.s3.<região>.amazonaws.com/logos/primary?X-Amz-Algorithm=AWS4-HMAC-SHA256&…&X-Amz-Expires=300&…",
+ "expires_in": 300, "content_type": "image/png", "size": 48213,
+ "updated_at": "…", "updated_by": "<sub>"}
+```
+
+A URL fixa os cabeçalhos da resposta com os mesmos valores do envio (`response-content-type` = o `content_type` dos metadados e `response-content-disposition` = `inline; filename="logo.png"` ou `logo.jpg`). Esses parâmetros entram na assinatura, então trocá-los invalida a URL, e a resposta não depende dos metadados gravados no objeto. Metadados com `content_type` diferente de PNG e JPEG contam como "sem logo" (404).
+
+**Sem `X-Content-Type-Options: nosniff`.** O S3 não deixa definir esse cabeçalho na resposta de um objeto: no `PutObject` só valem `Cache-Control`, `Content-Disposition`, `Content-Encoding`, `Content-Language`, `Content-Type`, `Expires` e metadados `x-amz-meta-*`, e na URL pré-assinada só as seis sobreposições `response-*` correspondentes (conferido no modelo do S3 do botocore). Um `x-amz-meta-*` não teria efeito no navegador, por isso não é usado. O `nosniff` só seria possível servindo os logos por CloudFront com *response headers policy*, que a stack não usa. A proteção que fica é o tipo validado pelos bytes, o `Content-Type` e o `Content-Disposition: inline` fixos na URL, e o uso da URL só em `<img src>` (que nunca executa o arquivo).
+
+A URL serve para `<img src>`, que não precisa de CORS; para mostrar o logo de novo depois de 5 minutos, a tela chama o `GET` outra vez. Como `GET /settings` não traz os logos, a aba Academia chama `GET /settings/logos/primary` e `/secondary` e trata 404 como espaço vazio. A assinatura é SigV4 contra o endpoint da região (o endpoint global pode redirecionar um bucket novo e quebrar a assinatura) e é feita localmente na Lambda, sem chamada ao S3; a URL vale enquanto o papel da função puder ler `logos/*` e as credenciais da função não expirarem.
+
+**Metadados.** O registro de configurações (`Settings`, `id = "academy"`) guarda só `logo_primary` e `logo_secondary`, cada um um mapa com `content_type`, `size`, `updated_at` e `updated_by` (o `sub` de quem enviou), sem o binário. É o que o `GET` usa para saber se há logo. Cada envio ou remoção é um `UpdateItem` só nesse atributo (1 WCU: o item fica bem abaixo de 1 KB), e o `PUT /settings` não mexe neles. Enviar um logo antes do primeiro `PUT /settings` cria o registro só com o logo; a remoção nunca cria o registro.
+
+**Ordem das gravações.** S3 e DynamoDB não entram numa mesma transação, então a ordem garante que a API nunca mostre um logo que não existe:
+
+- envio: grava no S3 **primeiro** e os metadados **depois**. Se a gravação dos metadados falhar (503), o arquivo novo já está no S3, mas sem metadados novos: se não havia logo, ele fica invisível (o `GET` responde 404); se havia, o `GET` continua com os metadados antigos e a URL entrega o arquivo novo. Reenviar resolve;
+- remoção: apaga os metadados **primeiro** e o objeto **depois**. Se o S3 falhar (503), o logo já some da API e o objeto fica órfão; repetir o `DELETE` apaga o objeto, porque a remoção sempre apaga a chave do slot, com ou sem metadados.
+
+Corrida que sobra: um `PUT` e um `DELETE` do **mesmo** slot ao mesmo tempo podem terminar com metadados sem objeto (a URL responde 404 do S3 e a imagem não aparece). Reenviar ou remover o logo corrige. O `GET` não confere o objeto no S3 de propósito: conferir exigiria `s3:ListBucket` (sem ela o S3 responde 403 para chave inexistente), e a corrida pede dois examinadores agindo no mesmo logo no mesmo instante.
+
+| Situação | Resposta |
+| --- | --- |
+| sem login / responsável | 401 "Faça login para continuar" / 403 "Esta área é dos examinadores" |
+| `slot` diferente de `primary` e `secondary` | 404 "Logo não encontrado" |
+| `GET` de slot sem logo | 404 "Logo não encontrado" |
+| `content_type` ausente ou diferente de `image/png`/`image/jpeg`; `data` ausente, vazio, que não é texto ou base64 inválido; bytes que não são PNG nem JPEG, ou de tipo diferente do declarado; mais de 2 MB | 400 "Envie PNG ou JPEG de até 2 MB" (nada é gravado; o logo atual fica) |
+| corpo que não é um objeto JSON | 400 "Corpo da requisição inválido: envie um objeto JSON" |
+| DynamoDB ou S3 (`SlowDown`) sem capacidade, mesmo após as novas tentativas | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+| S3 lento ou fora do ar (timeout de conexão ou de leitura, conexão recusada ou derrubada) | 503 "Sistema ocupado no momento. Tente de novo em instantes." (no envio, nada é gravado; na remoção, como no `SlowDown` acima) |
+
+**Timeouts do cliente S3.** O padrão do boto3 (60 s para conectar e 60 s para ler) passa do `Timeout` de 10 s das funções, e a Lambda seria encerrada no meio, com 500 genérico do API Gateway. Por isso o cliente (`repository/images.py`) usa `connect_timeout` de 1 s, `read_timeout` de 2 s (por operação de socket, não para o corpo inteiro) e no máximo 2 tentativas no modo `standard`. O pior caso é 2 × (1 + 2) s mais até 1 s de espera entre as tentativas, ou seja, 7 s, o que deixa folga para a gravação no DynamoDB. Um teste confere essa conta contra o `Timeout` do template. Esgotadas as tentativas, timeout ou falha de conexão viram 503. A assinatura da URL do `GET` é local e não faz chamada de rede.
+
+O `slot` inválido é 404, e não 400, porque o caminho aponta para um recurso que não existe, como um `id` desconhecido nas outras rotas. A autorização vem antes: um responsável recebe 403 mesmo com `slot` inválido.
+
+**Bucket** (`infra/template.yaml`): bloqueio de acesso público completo (as 4 opções), criptografia SSE-S3 (AES256), `BucketOwnerEnforced` (sem ACLs), sem versionamento, política que nega qualquer acesso sem TLS (`aws:SecureTransport` `false`) e nome gerado pelo CloudFormation, passado às funções pela variável `IMAGES_BUCKET` (só nas três funções de logo). `DeletionPolicy` e `UpdateReplacePolicy` seguem as tabelas: `Retain` no prod e `Delete` no dev (veja "Bucket de imagens no dev" acima). Permissões mínimas: `PutLogoFunction` só `s3:PutObject`, `DeleteLogoFunction` só `s3:DeleteObject` e `GetLogoFunction` só `s3:GetObject`, todas restritas a `logos/*`, mais `dynamodb:UpdateItem` (envio e remoção) ou `dynamodb:GetItem` (leitura) na tabela `Settings`. Nenhuma outra função acessa o bucket.
+
+**Assinaturas do certificado (próxima etapa).** Vão reaproveitar a validação (`domain/images.py`: `parse_image_upload`, `ImageMeta` e a validade de 300 s), o acesso ao S3 por chave (`repository/images.py`) e os metadados no registro de configurações (`get_image_meta`, `set_image_meta` e `remove_image_meta` em `repository/settings.py`), com prefixo e permissões próprios e acesso só do master e do sensei.
 
 ### Exame do aluno e marcação (RN006, RN007)
 
