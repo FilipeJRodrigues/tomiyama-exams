@@ -19,11 +19,15 @@ _SEED_NAMESPACE = uuid.UUID("2b8f0c57-91d4-4a8e-b6f3-5e0d7c1a9f42")
 
 MAX_CATEGORY = 60
 MAX_TEXT = 2000
+MAX_SORT_ORDER = 9999
 
 MSG_REQUIREMENT_NOT_FOUND = "Requisito não encontrado"
 MSG_REQUIREMENT_HAS_ANSWERS = "Requisito possui respostas registradas"
 MSG_REQUIREMENT_LOCKED = (
     "Não é possível trocar a faixa ou o tipo de um requisito com respostas registradas"
+)
+MSG_DEFAULT_SORT_ORDER_FULL = (
+    f"Ordem: a faixa já tem um item na ordem {MAX_SORT_ORDER}; informe a ordem do novo item"
 )
 
 
@@ -101,16 +105,21 @@ def build_requirement(
         belts_by_id: Every belt indexed by id; the item's belt must exist.
         requirement_id: Id of the item (new UUID or the existing one).
         default_sort_order: Order used when the payload omits ``sort_order``.
+            It must also fit in 0 to ``MAX_SORT_ORDER`` (RN015); a belt whose last
+            item is already at the maximum needs an explicit order.
 
     Returns:
         The validated item.
 
     Raises:
-        ValidationError: If a field is invalid or the belt does not exist.
+        ValidationError: If a field is invalid, the belt does not exist or the
+            default order would go past ``MAX_SORT_ORDER``.
     """
     belt_id = validation.required_str(payload, "belt_id", "Faixa", 64)
     if belt_id not in belts_by_id:
         raise ValidationError("Faixa: faixa não encontrada")
+    if payload.get("sort_order") is None and default_sort_order > MAX_SORT_ORDER:
+        raise ValidationError(MSG_DEFAULT_SORT_ORDER_FULL)
     return Requirement(
         id=requirement_id,
         belt_id=belt_id,
@@ -121,6 +130,11 @@ def build_requirement(
             payload, "expected_answer", "Resposta esperada", MAX_TEXT
         ),
         sort_order=validation.int_field(
-            payload, "sort_order", "Ordem", minimum=0, default=default_sort_order
+            payload,
+            "sort_order",
+            "Ordem",
+            minimum=0,
+            maximum=MAX_SORT_ORDER,
+            default=default_sort_order,
         ),
     )

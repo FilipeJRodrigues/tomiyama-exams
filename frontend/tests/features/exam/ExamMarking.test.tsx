@@ -205,12 +205,16 @@ describe('marking the exam items (§ 6.4)', () => {
     });
 
     it('rn006 marks an item errado', async () => {
+      const held = holdWrites();
       const { user } = await openHelena();
       await user.click(button('Errado: Parar'));
       expect(button('Errado: Parar')).toHaveAttribute('aria-pressed', 'true');
       expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'false');
       expect(within(theoryScore()).getByText('33,3%')).toBeInTheDocument();
       expect(within(theoryScore()).getByText('marcados 2 de 3')).toBeInTheDocument();
+      expect(answerOf(PARAR)).toBeUndefined();
+
+      await release(held[0]);
       await waitFor(() => {
         expect(answerOf(PARAR)?.correct).toBe(false);
       });
@@ -218,18 +222,23 @@ describe('marking the exam items (§ 6.4)', () => {
     });
 
     it('rn006 switches a mark from certo to errado', async () => {
+      const held = holdWrites();
       const { user } = await openHelena();
       await user.click(button('Errado: Professor'));
       expect(button('Errado: Professor')).toHaveAttribute('aria-pressed', 'true');
       expect(button('Certo: Professor')).toHaveAttribute('aria-pressed', 'false');
       expect(within(theoryScore()).getByText('0%')).toBeInTheDocument();
       expect(screen.getByRole('tab', { name: /^Teórico 1\/3$/ })).toBeInTheDocument();
+      expect(answerOf(PROFESSOR)?.correct).toBe(true);
+
+      await release(held[0]);
       await waitFor(() => {
         expect(answerOf(PROFESSOR)?.correct).toBe(false);
       });
     });
 
     it('rn006 takes the mark off when the pressed button is clicked again', async () => {
+      const held = holdWrites();
       const { user } = await openHelena();
       await user.click(button('Certo: Professor'));
       expect(button('Certo: Professor')).toHaveAttribute('aria-pressed', 'false');
@@ -237,6 +246,9 @@ describe('marking the exam items (§ 6.4)', () => {
       expect(screen.getByRole('tab', { name: /^Teórico 0\/3$/ })).toBeInTheDocument();
       expect(screen.getByRole('region', { name: /^Vocabulário 0\/2$/ })).toBeInTheDocument();
       expect(within(theoryScore()).getByText('0%')).toBeInTheDocument();
+      expect(answerOf(PROFESSOR)?.correct).toBe(true);
+
+      await release(held[0]);
       await waitFor(() => {
         expect(answerOf(PROFESSOR)).toBeUndefined();
       });
