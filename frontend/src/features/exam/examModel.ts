@@ -37,17 +37,44 @@ export function examDayPath(eventId?: string): string {
 
 /**
  * `Faixa Cinza/Azul` (belt exam) or `Grau na faixa Roxa (rumo à Marrom)` (stripe exam). The
- * stripe is earned in the belt right before the target (RN004, RN011); while the belts load,
+ * stripe is earned in the student's belt (RN004, RN011): the exam's `source_belt_id`, else
+ * (older exams) the belt right before the target in the order; while the belts load,
  * `Grau (rumo à Marrom)` as in the students list.
  */
 export function examTitle(sheet: Pick<ExamSheet, 'exam' | 'target_belt'>, belts?: Belt[]) {
   const target = sheet.target_belt;
   if (!target) return sheet.exam.kind === 'BELT' ? 'Faixa —' : 'Grau';
   if (sheet.exam.kind === 'BELT') return `Faixa ${target.name}`;
-  const current = belts?.find((belt) => belt.sort_order === target.sort_order - 1);
+  const current = belts && stripeBelt(sheet.exam.source_belt_id, target, belts);
   return current
     ? `Grau na faixa ${current.name} (rumo à ${target.name})`
     : `Grau (rumo à ${target.name})`;
+}
+
+/**
+ * The belt the stripe is earned in: the exam's source belt when known, else the belt with the
+ * highest `sort_order` below the target's (orders may have gaps, as in the backend's
+ * `previous_belt`).
+ */
+function stripeBelt(
+  sourceBeltId: string | null | undefined,
+  target: Pick<Belt, 'id' | 'sort_order'>,
+  belts: readonly Belt[],
+): Belt | undefined {
+  if (sourceBeltId) {
+    const source = belts.find((belt) => belt.id === sourceBeltId);
+    if (source) return source;
+  }
+  let previous: Belt | undefined;
+  for (const belt of belts) {
+    if (
+      belt.sort_order < target.sort_order &&
+      (!previous || belt.sort_order > previous.sort_order)
+    ) {
+      previous = belt;
+    }
+  }
+  return previous;
 }
 
 /**
