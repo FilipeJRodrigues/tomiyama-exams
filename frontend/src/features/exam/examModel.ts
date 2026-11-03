@@ -3,12 +3,15 @@
  * grouped and labelled. Target belt, kind, marks and percentages (RN004, RN006, RN007) come
  * from the API; nothing here recalculates them.
  */
+import { ApiError } from '../../api/client';
 import type {
   Belt,
+  ExamAnswer,
   ExamEvent,
   ExamSheet,
   ExamSheetItem,
   ExamSheetStudent,
+  ExamSummary,
   ExamView,
   Examiner,
   KindSummary,
@@ -102,8 +105,118 @@ export function canMark(exam: Pick<ExamView, 'status'>, event: Pick<ExamEvent, '
 export type MarkState = 'correct' | 'wrong' | 'unmarked';
 
 export function markState(item: Pick<ExamSheetItem, 'answer'>): MarkState {
-  if (!item.answer) return 'unmarked';
-  return item.answer.correct ? 'correct' : 'wrong';
+  return answerState(item.answer);
+}
+
+export function answerState(answer: Pick<ExamAnswer, 'correct'> | null): MarkState {
+  if (!answer) return 'unmarked';
+  return answer.correct ? 'correct' : 'wrong';
+}
+
+/**
+ * Clicking a button: Certo or Errado marks the item; clicking the one already pressed
+ * takes the mark off (back to "não marcado").
+ */
+export function nextMarkState(current: MarkState, clicked: 'correct' | 'wrong'): MarkState {
+  return current === clicked ? 'unmarked' : clicked;
+}
+
+/** Marks clicked but not confirmed by the API yet, by item id. */
+export type PendingMarks = Readonly<Record<string, MarkState>>;
+
+function optimisticAnswer(item: ExamSheetItem, state: MarkState): ExamAnswer | null {
+  if (state === 'unmarked') return null;
+  // Who and when come with the API answer; until then the previous ones stay.
+  return {
+    requirement_id: item.id,
+    correct: state === 'correct',
+    marked_by: item.answer?.marked_by ?? '',
+    marked_at: item.answer?.marked_at ?? '',
+  };
+}
+
+/** One decimal, half up, like the API (RN007); only while a mark is on its way. */
+function optimisticPercent(correct: number, total: number): number | null {
+  return total === 0 ? null : Math.round((correct * 1000) / total) / 10;
+}
+
+/**
+ * The summary moved by the marks that changed from `before` to `after` (same items, same
+ * order). Only a preview: the API answer replaces it (RN007 is computed by the API).
+ */
+export function shiftSummary(
+  summary: ExamSummary,
+  before: readonly ExamSheetItem[],
+  after: readonly ExamSheetItem[],
+): ExamSummary {
+  const next: ExamSummary = { THEORY: { ...summary.THEORY }, PRACTICE: { ...summary.PRACTICE } };
+  let changed = false;
+  before.forEach((item, index) => {
+    const from = markState(item);
+    const to = markState(after[index] ?? item);
+    if (from === to) return;
+    changed = true;
+    const score = next[item.kind];
+    score.marked += Number(to !== 'unmarked') - Number(from !== 'unmarked');
+    score.correct += Number(to === 'correct') - Number(from === 'correct');
+  });
+  if (!changed) return summary;
+  for (const kind of REQUIREMENT_KINDS) {
+    const score = next[kind];
+    score.marked = Math.min(Math.max(score.marked, 0), score.total);
+    score.correct = Math.min(Math.max(score.correct, 0), score.marked);
+    score.percent = optimisticPercent(score.correct, score.total);
+  }
+  return next;
+}
+
+/** The sheet as the examiner sees it: the API data with the marks still on their way. */
+export function withPendingMarks(sheet: ExamSheet, pending: PendingMarks): ExamSheet {
+  if (Object.keys(pending).length === 0) return sheet;
+  const items = sheet.items.map((item) => {
+    const state = pending[item.id];
+    if (state === undefined || state === markState(item)) return item;
+    return { ...item, answer: optimisticAnswer(item, state) };
+  });
+  return { ...sheet, items, summary: shiftSummary(sheet.summary, sheet.items, items) };
+}
+
+/**
+ * The sheet after the API saved one item: the answer it sent, and its summary when that
+ * one can be trusted (no other mark on its way at the same time); otherwise the summary
+ * is moved by this item only, until the exam reloads.
+ */
+export function withSavedAnswer(
+  sheet: ExamSheet,
+  requirementId: string,
+  answer: ExamAnswer | null,
+  summary: ExamSummary | undefined,
+): ExamSheet {
+  const items = sheet.items.map((item) =>
+    item.id === requirementId ? { ...item, answer } : item,
+  );
+  return { ...sheet, items, summary: summary ?? shiftSummary(sheet.summary, sheet.items, items) };
+}
+
+/** API messages after which the exam reloads (RN010, RN016, item gone or of another belt). */
+const MSG_EXAM_DECIDED = 'Exame já decidido';
+const MSG_EVENT_CLOSED = 'Evento encerrado';
+const MSG_ITEM_NOT_IN_BELT = 'Item não pertence à faixa do exame';
+
+/**
+ * A refused mark that means the screen is out of date: the exam was decided (409), the
+ * event closed or the item left the belt (400), or something is gone (404). The exam
+ * reloads and turns read-only when it no longer takes marks. A 409 of a transaction
+ * conflict, a 503 or a network error only ask to try again.
+ */
+export function reloadsExam(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 404) return true;
+  if (error.status === 409) return error.message === MSG_EXAM_DECIDED;
+  if (error.status === 400) {
+    return error.message === MSG_EVENT_CLOSED || error.message === MSG_ITEM_NOT_IN_BELT;
+  }
+  return false;
 }
 
 export const MARK_LABELS: Record<MarkState, string> = {
@@ -132,12 +245,14 @@ export interface CategoryGroup {
 
 /**
  * Items grouped by category in sheet order (a category comes where its first item is). With
- * `onlyUnmarked`, the marked items are hidden and so are the categories left empty; the
- * `x/N` count stays the one of the whole category.
+ * `onlyUnmarked`, the marked items are hidden and so are the categories left empty, except
+ * the ones in `keep` (marked while the filter was on: they leave when the tab or the filter
+ * changes, not under the finger); the `x/N` count stays the one of the whole category.
  */
 export function groupByCategory(
   items: readonly ExamSheetItem[],
   onlyUnmarked = false,
+  keep: ReadonlySet<string> = new Set(),
 ): CategoryGroup[] {
   const groups = new Map<string, ExamSheetItem[]>();
   for (const item of items) {
@@ -147,7 +262,7 @@ export function groupByCategory(
   }
   return Array.from(groups, ([category, all]) => ({
     category,
-    items: onlyUnmarked ? all.filter((item) => item.answer === null) : all,
+    items: onlyUnmarked ? all.filter((item) => item.answer === null || keep.has(item.id)) : all,
     marked: markedCount(all),
     total: all.length,
   })).filter((group) => group.items.length > 0);

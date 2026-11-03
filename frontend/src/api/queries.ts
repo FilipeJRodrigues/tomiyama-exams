@@ -3,12 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
 import type {
+  AnswerResult,
   Belt,
   ConfirmAttendanceInput,
   ExamEvent,
   ExamSheet,
   ExamView,
   Examiner,
+  MarkAnswerInput,
   StudentFilters,
   StudentInput,
   StudentView,
@@ -91,6 +93,32 @@ export function getExamSheet(
   studentId: string,
 ): Promise<ExamSheet> {
   return api.get<ExamSheet>(`${eventExamsPath(eventId)}/${encodeURIComponent(studentId)}`);
+}
+
+function answerPath(eventId: string, studentId: string, requirementId: string): string {
+  return `${eventExamsPath(eventId)}/${encodeURIComponent(studentId)}/answers/${encodeURIComponent(requirementId)}`;
+}
+
+/** `PUT …/answers/{requirement_id}`: mark the item certo or errado, replacing any mark (RN006). */
+export function markAnswer(
+  api: ApiClient,
+  eventId: string,
+  studentId: string,
+  requirementId: string,
+  correct: boolean,
+): Promise<AnswerResult> {
+  const body: MarkAnswerInput = { correct };
+  return api.put<AnswerResult>(answerPath(eventId, studentId, requirementId), body);
+}
+
+/** `DELETE …/answers/{requirement_id}`: back to "não marcado" (also 200 when it was not). */
+export function unmarkAnswer(
+  api: ApiClient,
+  eventId: string,
+  studentId: string,
+  requirementId: string,
+): Promise<AnswerResult> {
+  return api.delete<AnswerResult>(answerPath(eventId, studentId, requirementId));
 }
 
 export function listExaminers(api: ApiClient): Promise<Examiner[]> {
@@ -193,17 +221,31 @@ export function useEventExams(eventId: string) {
   });
 }
 
+export interface ExamSheetOptions {
+  /**
+   * Asked when the window gets the focus back; `false` skips that reload (the exam screen
+   * holds it while a mark is on its way, so the optimistic marks do not flicker).
+   */
+  canReloadOnFocus?: () => boolean;
+}
+
 /**
  * `GET /events/{id}/exams/{student_id}` (§ 6.4): the exam, its items with the marks and the
  * RN007 summary. Reloaded whenever the window gets the focus back, so two examiners on the
  * same exam see each other's marks (set here explicitly, not only as the app default).
  */
-export function useExamSheet(eventId: string, studentId: string) {
+export function useExamSheet(
+  eventId: string,
+  studentId: string,
+  { canReloadOnFocus }: ExamSheetOptions = {},
+) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.examSheet(eventId, studentId),
     queryFn: () => getExamSheet(api, eventId, studentId),
-    refetchOnWindowFocus: 'always',
+    refetchOnWindowFocus: canReloadOnFocus
+      ? () => (canReloadOnFocus() ? 'always' : false)
+      : 'always',
   });
 }
 

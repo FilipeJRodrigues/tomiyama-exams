@@ -165,6 +165,21 @@ export interface KindSummary {
 
 export type ExamSummary = Record<RequirementKind, KindSummary>;
 
+/** Body of `PUT /events/{id}/exams/{student_id}/answers/{requirement_id}` (RN006). */
+export interface MarkAnswerInput {
+  /** `true` = certo, `false` = errado. */
+  correct: boolean;
+}
+
+/**
+ * 200 of the `PUT` (the saved mark) and of the `DELETE` (`answer` null) on an item: the
+ * RN007 summary already counts this write.
+ */
+export interface AnswerResult {
+  answer: ExamAnswer | null;
+  summary: ExamSummary;
+}
+
 /** The few student fields the exam sheet carries. */
 export interface ExamSheetStudent {
   id: string;

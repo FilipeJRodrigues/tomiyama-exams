@@ -1,6 +1,17 @@
-import { Box, Group, Paper, Progress, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import {
+  Box,
+  Group,
+  Paper,
+  Progress,
+  SimpleGrid,
+  Stack,
+  Text,
+  Title,
+  VisuallyHidden,
+} from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import { IconGavel } from '@tabler/icons-react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { ExamSummary as Summary, ExamView, Examiner, RequirementKind } from '../../api/types';
 import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
@@ -94,17 +105,60 @@ export function DecisionArea({ exam, examiners }: DecisionAreaProps) {
 
 interface ExamSummaryProps extends DecisionAreaProps {
   summary: Summary;
+  /** No mark on its way: the percentages are the API's. */
+  settled?: boolean;
+}
+
+/** Quiet time after the last change before the percentages are read out. */
+export const ANNOUNCE_DELAY_MS = 1000;
+
+function spokenPercent(kind: RequirementKind, summary: Summary): string {
+  const { percent } = summary[kind];
+  const label = REQUIREMENT_KIND_LABELS[kind];
+  return percent === null ? `${label} sem itens` : `${label} ${percentLabel(summary[kind])}`;
+}
+
+/** `Teórico 66,7%, Prático 25%`. */
+export function percentsAnnouncement(summary: Summary): string {
+  return REQUIREMENT_KINDS.map((kind) => spokenPercent(kind, summary)).join(', ');
 }
 
 /**
- * % teórico and % prático (from the API, RN007), in a polite live region so screen readers
- * hear them change, plus the marking progress and the decision area.
+ * § 6.7: the percentages are read out when they change, but not at every click: only once
+ * no mark is on its way (the API's numbers) and nothing changed for `ANNOUNCE_DELAY_MS`,
+ * and never the values the screen opened with.
+ */
+function PercentAnnouncer({ summary, settled }: { summary: Summary; settled: boolean }) {
+  const text = percentsAnnouncement(summary);
+  const [announced, setAnnounced] = useState('');
+  const lastSpoken = useRef(text);
+  useEffect(() => {
+    if (!settled || text === lastSpoken.current) return;
+    const timer = setTimeout(() => {
+      lastSpoken.current = text;
+      setAnnounced(text);
+    }, ANNOUNCE_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [settled, text]);
+  return (
+    <VisuallyHidden role="status" aria-live="polite" aria-atomic="true" data-testid="percent-live">
+      {announced}
+    </VisuallyHidden>
+  );
+}
+
+/**
+ * % teórico and % prático (from the API, RN007; moved at once by a click until the API
+ * answers), the marking progress and the decision area.
  */
 function SummaryContent({
   summary,
   exam,
   examiners,
   compact,
+  settled = true,
 }: ExamSummaryProps & { compact: boolean }) {
   return (
     <Stack gap={compact ? 'xs' : 'md'}>
@@ -114,7 +168,8 @@ function SummaryContent({
       <Text size="xs" c="dimmed">
         {PERCENT_HINT}
       </Text>
-      <div aria-live="polite" aria-atomic="true" data-testid="exam-scores">
+      <PercentAnnouncer summary={summary} settled={settled} />
+      <div data-testid="exam-scores">
         <SimpleGrid cols={2} spacing="sm">
           {REQUIREMENT_KINDS.map((kind) => (
             <Score key={kind} kind={kind} summary={summary} compact={compact} />

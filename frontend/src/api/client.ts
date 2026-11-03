@@ -80,7 +80,8 @@ export interface ApiClient {
   get<T>(path: string, query?: QueryParams): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
   put<T>(path: string, body: unknown): Promise<T>;
-  delete(path: string): Promise<void>;
+  /** `T` is the JSON body of a 200; a 204 resolves to `undefined`. */
+  delete<T = void>(path: string): Promise<T>;
 }
 
 /** Build the absolute URL of an API path (`/students`) with its query string. */
@@ -145,6 +146,6 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     get: (path, query) => request('GET', path, { query }),
     post: (path, body) => request('POST', path, { body }),
     put: (path, body) => request('PUT', path, { body }),
-    delete: (path) => request<undefined>('DELETE', path),
+    delete: (path) => request('DELETE', path),
   };
 }
