@@ -9,6 +9,11 @@ from domain.errors import ValidationError
 
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
+# DynamoDB numbers keep at most 38 significant digits; larger integers make the
+# boto3 serializer raise ``decimal.Inexact``. No integer field may go past this.
+MAX_STORABLE_DIGITS = 38
+MAX_STORABLE_INT = 10**MAX_STORABLE_DIGITS - 1
+
 
 def required_str(payload: dict[str, Any], field: str, label: str, max_len: int) -> str:
     """Return a trimmed, non-empty string field.
@@ -56,7 +61,8 @@ def int_field(
         field: Key in the payload.
         label: Field name shown to the user.
         minimum: Inclusive lower bound.
-        maximum: Inclusive upper bound.
+        maximum: Inclusive upper bound. Any value is also capped at
+            ``MAX_STORABLE_INT`` (in absolute value), the largest integer DynamoDB stores.
         default: Value used when the field is missing.
         required: Whether a missing field without default is an error.
 
@@ -76,6 +82,8 @@ def int_field(
         raise ValidationError(f"{label}: deve ser maior ou igual a {minimum}")
     if maximum is not None and value > maximum:
         raise ValidationError(f"{label}: deve ser menor ou igual a {maximum}")
+    if abs(value) > MAX_STORABLE_INT:
+        raise ValidationError(f"{label}: deve ter no máximo {MAX_STORABLE_DIGITS} dígitos")
     return value
 
 

@@ -12,6 +12,11 @@ from domain.errors import ConflictError
 # Fixed namespace so seeded belts get the same UUID on every deploy (idempotent seed).
 _SEED_NAMESPACE = uuid.UUID("6f1f6d0c-4b0e-4f5e-9a51-1c2a9b7e3d10")
 
+# Business ceilings for the editable numbers (RN015); the seed uses 0-11, 0-14 and 0-12.
+MAX_SORT_ORDER = 99
+MAX_MIN_AGE_YEARS = 99
+MAX_MIN_MONTHS_PREVIOUS = 240
+
 
 class BeltLevel(StrEnum):
     """Belt level; stripe exams only exist for intermediate belts (RN004)."""
@@ -127,11 +132,15 @@ def apply_belt_update(existing: Belt, payload: dict[str, Any], all_belts: Iterab
         id=existing.id,
         name=validation.required_str(payload, "name", "Nome", 40),
         kyu=validation.int_field(payload, "kyu", "Kyū", minimum=1, maximum=11, required=False),
-        sort_order=validation.int_field(payload, "sort_order", "Ordem", minimum=0),
+        sort_order=validation.int_field(
+            payload, "sort_order", "Ordem", minimum=0, maximum=MAX_SORT_ORDER
+        ),
         level=validation.enum_field(payload, "level", "Nível", BeltLevel),
-        min_age_years=validation.int_field(payload, "min_age_years", "Idade mínima", minimum=0),
+        min_age_years=validation.int_field(
+            payload, "min_age_years", "Idade mínima", minimum=0, maximum=MAX_MIN_AGE_YEARS
+        ),
         min_months_previous=validation.int_field(
-            payload, "min_months_previous", "Carência", minimum=0
+            payload, "min_months_previous", "Carência", minimum=0, maximum=MAX_MIN_MONTHS_PREVIOUS
         ),
         color_primary=validation.hex_color(payload, "color_primary", "Cor", required=True),
         color_secondary=validation.hex_color(
