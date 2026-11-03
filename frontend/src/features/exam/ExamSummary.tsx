@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ExamSummary as Summary, ExamView, Examiner, RequirementKind } from '../../api/types';
 import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
 import { DecisionArea, type DecisionLayout } from './ExamDecision';
+import { useScrollPadding } from './focus';
 import type { DecisionFlow } from './useDecisionFlow';
 import {
   ANNOUNCE_DELAY_MS,
@@ -188,14 +189,13 @@ export function SummaryColumn(props: ExamSummaryProps) {
 export function SummaryBar(props: ExamSummaryProps) {
   const { ref, height } = useElementSize();
   const { flow } = props;
+  // The measured height leaves out the padding and the border of the bar.
+  const barHeight = `calc(${height}px + 2 * var(--mantine-spacing-xs) + 2px)`;
+  // A focused item never ends up under the bar (§ 6.7).
+  useScrollPadding('bottom', barHeight);
   return (
     <>
-      {/* The measured height leaves out the padding and the border of the bar. */}
-      <Box
-        aria-hidden
-        h={`calc(${height}px + 2 * var(--mantine-spacing-xs) + 2px)`}
-        data-testid="summary-spacer"
-      />
+      <Box aria-hidden h={barHeight} data-testid="summary-spacer" />
       <Paper
         ref={ref}
         component="aside"

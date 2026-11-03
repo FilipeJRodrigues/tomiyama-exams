@@ -14,6 +14,8 @@
  *   notice. Other refusals stay in the dialog with the API message.
  * - Closing the dialog gives the focus back to its opener or, when a refusal (sensei changed
  *   or removed) took Aprovar/Reprovar away, to the decision area (§ 6.7).
+ * - The focus only moves when it is lost (`focusIfLost` in `focus.ts`): a focus the user put
+ *   elsewhere stays, even when "Decidido por …" or the notice closing would take it.
  * - Deleted student (RN018): no Aprovar/Reprovar, a notice says the exam cannot be decided.
  */
 import {
@@ -72,12 +74,11 @@ interface DecidedProps {
 function Decided({ exam, examiners, flow, takesFocus }: DecidedProps) {
   const settings = useSettings();
   const ref = useRef<HTMLDivElement>(null);
-  const { focusDecided, decidedFocused } = flow;
+  const { focusDecided, takeDecidedFocus } = flow;
   useEffect(() => {
-    if (!takesFocus || !focusDecided) return;
-    ref.current?.focus();
-    decidedFocused();
-  }, [takesFocus, focusDecided, decidedFocused]);
+    // Only when the focus is lost (the decision button or the dialog went with it, § 6.7).
+    if (takesFocus && focusDecided) takeDecidedFocus(ref.current);
+  }, [takesFocus, focusDecided, takeDecidedFocus]);
   const name = exam.decided_by_id
     ? deciderName(exam.decided_by_id, examiners, settings.data?.sensei)
     : undefined;
@@ -107,6 +108,7 @@ function DecideButtons({ flow }: { flow: DecisionFlow }) {
         color="green"
         leftSection={<IconCircleCheck size={18} aria-hidden />}
         style={TOUCH_TARGET}
+        data-decision-action
         onClick={() => {
           flow.ask('APPROVED');
         }}
@@ -217,6 +219,7 @@ function InProgress({ flow, layout, studentDeleted }: InProgressProps) {
         style={TOUCH_TARGET}
         aria-haspopup="dialog"
         aria-expanded={flow.panelOpened}
+        data-decision-action
         onClick={flow.openPanel}
       >
         Decidir
@@ -241,6 +244,7 @@ interface DecisionAreaProps {
  */
 export function DecisionArea({ exam, examiners, flow, layout, studentDeleted }: DecisionAreaProps) {
   const decided = exam.status !== 'IN_PROGRESS';
+  const noticeRef = useRef<HTMLDivElement>(null);
   return (
     <Stack gap="xs" ref={flow.areaRef[layout]} tabIndex={-1} data-decision-area={layout}>
       {flow.notice && layout !== 'panel' && (
@@ -251,7 +255,10 @@ export function DecisionArea({ exam, examiners, flow, layout, studentDeleted }: 
           icon={<IconAlertCircle aria-hidden />}
           withCloseButton
           closeButtonLabel="Fechar aviso"
-          onClose={flow.dismissNotice}
+          onClose={() => {
+            flow.dismissNotice(layout, noticeRef.current);
+          }}
+          ref={noticeRef}
           p="xs"
         >
           {flow.notice}
