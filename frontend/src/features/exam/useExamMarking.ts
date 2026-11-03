@@ -101,9 +101,7 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
   const api = useApi();
   const queryClient = useQueryClient();
   const key = examKey({ eventId, studentId });
-  const [pendingByExam, setPendingByExam] = useState<Readonly<Record<string, PendingMarks>>>(
-    {},
-  );
+  const [pendingByExam, setPendingByExam] = useState<Readonly<Record<string, PendingMarks>>>({});
   const [failure, setFailure] = useState<{ key: string; failure: MarkFailure } | null>(null);
   const books = useRef(new Map<string, ExamMarks>());
 

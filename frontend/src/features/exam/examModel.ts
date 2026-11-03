@@ -192,9 +192,7 @@ export function withSavedAnswer(
   answer: ExamAnswer | null,
   summary: ExamSummary | undefined,
 ): ExamSheet {
-  const items = sheet.items.map((item) =>
-    item.id === requirementId ? { ...item, answer } : item,
-  );
+  const items = sheet.items.map((item) => (item.id === requirementId ? { ...item, answer } : item));
   return { ...sheet, items, summary: summary ?? shiftSummary(sheet.summary, sheet.items, items) };
 }
 
