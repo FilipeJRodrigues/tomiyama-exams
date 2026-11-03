@@ -6,6 +6,7 @@ import type {
   AcademySettings,
   AnswerResult,
   Belt,
+  BeltInput,
   ConfirmAttendanceInput,
   DecisionInput,
   DecisionOutcome,
@@ -25,6 +26,8 @@ export const queryKeys = {
   allStudents: ['students'] as const,
   students: (filters: StudentFilters = {}) => ['students', filters] as const,
   student: (id: string) => ['student', id] as const,
+  /** Prefix of every student detail, for invalidation. */
+  anyStudent: ['student'] as const,
   events: ['events'] as const,
   eventExams: (eventId: string) => ['events', eventId, 'exams'] as const,
   /** Under `eventExams`: reloading the event's exams also reloads the open exam sheet. */
@@ -36,6 +39,11 @@ export const queryKeys = {
 
 export function listBelts(api: ApiClient): Promise<Belt[]> {
   return api.get<Belt[]>('/belts');
+}
+
+/** `PUT /belts/{id}` (examiners, RN015). */
+export function updateBelt(api: ApiClient, id: string, input: BeltInput): Promise<Belt> {
+  return api.put<Belt>(`/belts/${encodeURIComponent(id)}`, input);
 }
 
 export function listStudents(api: ApiClient, filters: StudentFilters = {}): Promise<StudentView[]> {
@@ -160,6 +168,42 @@ export function isAlreadyConfirmed(error: unknown): boolean {
 export function useBelts() {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.belts, queryFn: () => listBelts(api) });
+}
+
+export interface UpdateBeltVariables {
+  id: string;
+  input: BeltInput;
+}
+
+/**
+ * `PUT /belts/{id}` (§ 6.5, RN015). The saved belt goes straight into the cached list, in
+ * graduation order, and then the list reloads. The students reload too: their belt name
+ * (and the detail's) comes from the belts. A 404 or 409 (belt gone, name or order taken meanwhile) reloads the
+ * list, so the screen catches up with the API.
+ */
+export function useUpdateBelt() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: UpdateBeltVariables) => updateBelt(api, id, input),
+    onSuccess: (saved) => {
+      queryClient.setQueryData<Belt[]>(
+        queryKeys.belts,
+        (current) =>
+          current &&
+          current
+            .map((belt) => (belt.id === saved.id ? saved : belt))
+            .sort((a, b) => a.sort_order - b.sort_order),
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.belts });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allStudents });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.anyStudent });
+    },
+    onError: (error) => {
+      if (!(error instanceof ApiError) || ![404, 409].includes(error.status)) return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.belts });
+    },
+  });
 }
 
 /** `GET /students` with the API-computed age and eligibility. */

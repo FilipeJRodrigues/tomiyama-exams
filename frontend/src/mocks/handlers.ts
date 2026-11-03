@@ -8,13 +8,16 @@
  * RN007 summary (`get_exam_sheet`, `domain/scoring.py`), the marking of its items
  * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
  * examiners (`handlers/users.py`), the settings (`handlers/settings.py`, read only) and the
- * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010).
+ * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010). The belts screen (§ 6.5) gets
+ * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
 import { buildApiUrl } from '../api/client';
 import type {
   AcademySettings,
+  Belt,
+  BeltLevel,
   Eligibility,
   Exam,
   ExamEvent,
@@ -75,6 +78,11 @@ const MSG_INVALID_RESULT =
 const MSG_GRADUATION_CHANGED =
   'A graduação do aluno mudou desde a presença. Confira antes de decidir.';
 const NOTES_MAX = 500;
+const MSG_BELT_NOT_FOUND = 'Faixa não encontrada';
+const MSG_BELT_NAME_TAKEN = 'Já existe uma faixa com este nome';
+const MSG_BELT_ORDER_TAKEN = 'Já existe uma faixa com esta ordem';
+const BELT_LEVELS: readonly BeltLevel[] = ['BASIC', 'INTERMEDIATE'];
+const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 
 /**
  * The mock does not compute eligibility (RN001–RN004 live in the backend). A student
@@ -92,6 +100,9 @@ function unknownEligibility(): Eligibility {
 
 /** Validation error with the backend pt-BR message (answered as 400). */
 class MockValidationError extends Error {}
+
+/** Conflict with the backend pt-BR message (answered as 409). */
+class MockConflictError extends Error {}
 
 type Payload = Record<string, unknown>;
 type StudentFields = Pick<
@@ -185,6 +196,106 @@ function parseStudentFields(db: MockDb, payload: Payload): StudentFields {
   return fields;
 }
 
+interface IntBounds {
+  minimum?: number;
+  maximum?: number;
+  required?: boolean;
+}
+
+/** Like `validation.int_field` (no default: a missing optional field is `null`). */
+function intField(
+  payload: Payload,
+  field: string,
+  label: string,
+  { minimum, maximum, required = true }: IntBounds,
+): number | null {
+  const value = payload[field];
+  if (value === null || value === undefined) {
+    if (!required) return null;
+    throw new MockValidationError(`Campo obrigatório: ${label}`);
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new MockValidationError(`${label}: deve ser um número inteiro`);
+  }
+  if (minimum !== undefined && maximum !== undefined && (value < minimum || value > maximum)) {
+    throw new MockValidationError(`${label}: deve estar entre ${minimum} e ${maximum}`);
+  }
+  if (minimum !== undefined && value < minimum) {
+    throw new MockValidationError(`${label}: deve ser maior ou igual a ${minimum}`);
+  }
+  if (maximum !== undefined && value > maximum) {
+    throw new MockValidationError(`${label}: deve ser menor ou igual a ${maximum}`);
+  }
+  return value;
+}
+
+function requiredInt(payload: Payload, field: string, label: string, bounds: IntBounds): number {
+  const value = intField(payload, field, label, { ...bounds, required: true });
+  if (value === null) throw new MockValidationError(`Campo obrigatório: ${label}`);
+  return value;
+}
+
+/** Like `validation.hex_color`: `#RRGGBB`, saved in upper case. */
+function hexColor(payload: Payload, field: string, label: string, required: boolean) {
+  const value = payload[field];
+  if (value === null || value === undefined || value === '') {
+    if (required) throw new MockValidationError(`Campo obrigatório: ${label}`);
+    return null;
+  }
+  if (typeof value !== 'string' || !HEX_COLOR.test(value)) {
+    throw new MockValidationError(`${label}: use o formato #RRGGBB`);
+  }
+  return value.toUpperCase();
+}
+
+function requiredHexColor(payload: Payload, field: string, label: string): string {
+  const value = hexColor(payload, field, label, true);
+  if (value === null) throw new MockValidationError(`Campo obrigatório: ${label}`);
+  return value;
+}
+
+function levelField(payload: Payload): BeltLevel {
+  const value = payload.level;
+  if (value === null || value === undefined) {
+    throw new MockValidationError('Campo obrigatório: Nível');
+  }
+  const level = BELT_LEVELS.find((candidate) => candidate === value);
+  if (!level) throw new MockValidationError('Nível: valor inválido');
+  return level;
+}
+
+/** Same checks, in the same order, as `apply_belt_update` (RN015). */
+function applyBeltUpdate(existing: Belt, payload: Payload, belts: readonly Belt[]): Belt {
+  const updated: Belt = {
+    id: existing.id,
+    name: requiredStr(payload, 'name', 'Nome', 40),
+    kyu: intField(payload, 'kyu', 'Kyū', { minimum: 1, maximum: 11, required: false }),
+    sort_order: requiredInt(payload, 'sort_order', 'Ordem', { minimum: 0, maximum: 99 }),
+    level: levelField(payload),
+    min_age_years: requiredInt(payload, 'min_age_years', 'Idade mínima', {
+      minimum: 0,
+      maximum: 99,
+    }),
+    min_months_previous: requiredInt(payload, 'min_months_previous', 'Carência', {
+      minimum: 0,
+      maximum: 240,
+    }),
+    color_primary: requiredHexColor(payload, 'color_primary', 'Cor'),
+    color_secondary: hexColor(payload, 'color_secondary', 'Cor das pontas', false),
+  };
+  for (const other of belts) {
+    if (other.id === existing.id) continue;
+    // Python `casefold` and JS `toLocaleLowerCase` agree on the belt names in use.
+    if (other.name.toLocaleLowerCase('pt-BR') === updated.name.toLocaleLowerCase('pt-BR')) {
+      throw new MockConflictError(MSG_BELT_NAME_TAKEN);
+    }
+    if (other.sort_order === updated.sort_order) {
+      throw new MockConflictError(MSG_BELT_ORDER_TAKEN);
+    }
+  }
+  return updated;
+}
+
 async function readPayload(request: Request): Promise<Payload> {
   let body: unknown;
   try {
@@ -217,12 +328,13 @@ function findAccessible(db: MockDb, id: unknown, claims: MockClaims): MockStuden
   return item;
 }
 
-/** Run a write handler, answering validation errors with 400 like the backend. */
+/** Run a write handler, answering validation errors with 400 and conflicts with 409. */
 async function withValidation(run: () => Promise<Response>): Promise<Response> {
   try {
     return await run();
   } catch (error) {
     if (error instanceof MockValidationError) return badRequest(error.message);
+    if (error instanceof MockConflictError) return errorResponse(409, error.message);
     throw error;
   }
 }
@@ -401,6 +513,20 @@ export function createHandlers({
       if (!claimsFrom(request)) return unauthorized();
       const belts = [...db.belts].sort((a, b) => a.sort_order - b.sort_order);
       return HttpResponse.json(belts);
+    }),
+
+    http.put(url('/belts/:id'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const index = db.belts.findIndex((belt) => belt.id === params.id);
+      const existing = db.belts[index];
+      if (!existing) return errorResponse(404, MSG_BELT_NOT_FOUND);
+      return withValidation(async () => {
+        const updated = applyBeltUpdate(existing, await readPayload(request), db.belts);
+        db.belts[index] = updated;
+        return HttpResponse.json(updated);
+      });
     }),
 
     http.get(url('/students'), ({ request }) => {
