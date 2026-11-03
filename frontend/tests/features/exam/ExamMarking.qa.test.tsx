@@ -141,13 +141,30 @@ describe('marking the exam items, more cases (§ 6.4)', () => {
   });
 
   it('rn006 keeps the mark and the summary when taking it off is refused', async () => {
+    // Hold the refusal so the optimistic state is checked before it comes back (card #57:
+    // answered at once, the 503 could undo it before the check).
+    let refuse!: () => void;
+    const refused = new Promise<void>((resolve) => {
+      refuse = resolve;
+    });
     server.use(
-      http.delete(ANSWER_URL, () => HttpResponse.json({ message: BUSY }, { status: 503 })),
+      http.delete(ANSWER_URL, async () => {
+        await refused;
+        return HttpResponse.json({ message: BUSY }, { status: 503 });
+      }),
     );
     const { user } = await openHelena();
     await user.click(button('Certo: Professor'));
     expect(button('Certo: Professor')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('tab', { name: /^Teórico 0\/3$/ })).toBeInTheDocument();
+    expect(within(theoryScore()).getByText('0%')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(answerOf(PROFESSOR)?.correct).toBe(true);
 
+    await act(async () => {
+      refuse();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(await screen.findByRole('alert')).toHaveTextContent(BUSY);
     expect(button('Certo: Professor')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('tab', { name: /^Teórico 1\/3$/ })).toBeInTheDocument();
