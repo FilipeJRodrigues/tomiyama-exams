@@ -32,7 +32,6 @@ const BRANCA_CINZA = mockBelts.find((belt) => belt.name === 'Branca/Cinza')!.id;
 let db: MockDb;
 /** The items the GSI still shows: the belt as it was before the write. */
 let indexSnapshot: Requirement[] | null;
-let staleReads: number;
 
 /** `GET /requirements?belt_id=…` read from a GSI that has not caught up with the write yet. */
 function lagIndexAfterWrites() {
@@ -42,7 +41,6 @@ function lagIndexAfterWrites() {
       const params = new URL(request.url).searchParams;
       const belt = params.get('belt_id');
       const kind = params.get('kind');
-      staleReads += 1;
       const items = indexSnapshot
         .filter((item) => item.belt_id === belt && (kind === null || item.kind === kind))
         .sort((a, b) => a.sort_order - b.sort_order || (a.id < b.id ? -1 : 1));
@@ -88,7 +86,6 @@ describe('lista de requisitos logo após gravar, com o índice by_belt atrasado 
     db = createMockDb();
     server.use(...createHandlers({ baseUrl: TEST_API_URL, db }));
     indexSnapshot = null;
-    staleReads = 0;
     lagIndexAfterWrites();
   });
 
@@ -126,7 +123,13 @@ describe('lista de requisitos logo após gravar, com o índice by_belt atrasado 
     await user.click(within(dialog).getByRole('button', { name: 'Excluir' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Requisito excluído.');
-    expect(db.requirements.some((item) => item.description === 'Osoto gari')).toBe(false);
+    // The API confirmed it (204) and removed it from this belt ("Osoto gari" also exists in
+    // another belt of the mock data).
+    expect(
+      db.requirements.some(
+        (item) => item.belt_id === BRANCA_CINZA && item.description === 'Osoto gari',
+      ),
+    ).toBe(false);
     await settled(queryClient);
 
     expect(descriptions()).not.toContain('Osoto gari');

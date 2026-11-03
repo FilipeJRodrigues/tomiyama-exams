@@ -507,12 +507,29 @@ function patchRequirementLists(
   }
 }
 
+function hasBeltFilter(key: readonly unknown[]): boolean {
+  const filters = key[1] as RequirementFilters | undefined;
+  return filters?.belt_id !== undefined;
+}
+
 /**
- * After a change of the items, every requirements list reloads, and so do the exam sheets
- * in cache: their items and the RN007 totals come from the requirements (§ 6.4).
+ * After a change of the items. The lists of one belt were already fixed with the answer of
+ * the API (`patchRequirementLists`) and are only marked stale, not reloaded now:
+ * `GET /requirements?belt_id` reads the `by_belt` GSI, which may still return the list from
+ * before the write and would undo the change the API has just confirmed. They reload on the
+ * next mount or filter change. Lists without a belt filter reload now, and so do the exam
+ * sheets in cache: their items and the RN007 totals come from the requirements (§ 6.4).
  */
 function reloadRequirements(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.allRequirements,
+    predicate: (query) => hasBeltFilter(query.queryKey),
+    refetchType: 'none',
+  });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.allRequirements,
+    predicate: (query) => !hasBeltFilter(query.queryKey),
+  });
   void queryClient.invalidateQueries({ predicate: (query) => isExamSheetKey(query.queryKey) });
 }
 
