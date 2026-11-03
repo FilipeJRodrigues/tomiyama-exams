@@ -1,6 +1,6 @@
 import {
   Box,
-  Group,
+  Drawer,
   Paper,
   Progress,
   SimpleGrid,
@@ -10,15 +10,15 @@ import {
   VisuallyHidden,
 } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
-import { IconGavel } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ExamSummary as Summary, ExamView, Examiner, RequirementKind } from '../../api/types';
 import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
+import { DecisionArea, type DecisionLayout } from './ExamDecision';
+import type { DecisionFlow } from './useDecisionFlow';
 import {
   ANNOUNCE_DELAY_MS,
   REQUIREMENT_KINDS,
-  examinerName,
   percentLabel,
   percentsAnnouncement,
 } from './examModel';
@@ -76,43 +76,15 @@ function MarkingProgress({ summary }: { summary: Summary }) {
   );
 }
 
-interface DecisionAreaProps {
+interface ExamSummaryProps {
+  summary: Summary;
   exam: ExamView;
   examiners: Examiner[] | undefined;
-}
-
-/**
- * Decision area (§ 6.4). A decided exam shows who decided. The sensei's Aprovar/Reprovar and
- * the notices for the other examiners come in step 3; the certificate in card #27.
- */
-export function DecisionArea({ exam, examiners }: DecisionAreaProps) {
-  if (exam.status === 'IN_PROGRESS' || !exam.decided_by_id) return null;
-  const name = examiners ? examinerName(examiners, exam.decided_by_id) : undefined;
-  let text: string;
-  if (name) text = `Decidido por ${name}`;
-  else if (examiners) text = 'Decidido por um examinador que não está mais ativo';
-  else text = 'Decidido';
-  return (
-    <Stack gap={2} data-slot="decision">
-      <Group gap={6} wrap="nowrap" align="flex-start">
-        <IconGavel size={18} aria-hidden style={{ flex: 'none', marginTop: 2 }} />
-        <Text size="sm" fw={500}>
-          {text}
-        </Text>
-      </Group>
-      {exam.notes && (
-        <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
-          {`Observação: ${exam.notes}`}
-        </Text>
-      )}
-    </Stack>
-  );
-}
-
-interface ExamSummaryProps extends DecisionAreaProps {
-  summary: Summary;
+  flow: DecisionFlow;
   /** No mark on its way: the percentages are the API's. */
   settled?: boolean;
+  /** The student's record was deleted (RN018): the exam cannot be decided. */
+  studentDeleted?: boolean;
 }
 
 /**
@@ -143,25 +115,32 @@ function PercentAnnouncer({ summary, settled }: { summary: Summary; settled: boo
 
 /**
  * % teórico and % prático (from the API, RN007; moved at once by a click until the API
- * answers), the marking progress and the decision area.
+ * answers), the marking progress and the decision area. The phone panel repeats it without
+ * the title and the live region (the bar under it keeps those).
  */
 function SummaryContent({
   summary,
   exam,
   examiners,
-  compact,
+  flow,
+  layout,
   settled = true,
-}: ExamSummaryProps & { compact: boolean }) {
+  studentDeleted = false,
+}: ExamSummaryProps & { layout: DecisionLayout }) {
+  const compact = layout === 'bar';
+  const panel = layout === 'panel';
   return (
     <Stack gap={compact ? 'xs' : 'md'}>
-      <Title order={2} size={compact ? 'h5' : 'h4'}>
-        Resumo
-      </Title>
+      {!panel && (
+        <Title order={2} size={compact ? 'h5' : 'h4'}>
+          Resumo
+        </Title>
+      )}
       <Text size="xs" c="dimmed">
         {PERCENT_HINT}
       </Text>
-      <PercentAnnouncer summary={summary} settled={settled} />
-      <div data-testid="exam-scores">
+      {!panel && <PercentAnnouncer summary={summary} settled={settled} />}
+      <div data-testid={panel ? undefined : 'exam-scores'}>
         <SimpleGrid cols={2} spacing="sm">
           {REQUIREMENT_KINDS.map((kind) => (
             <Score key={kind} kind={kind} summary={summary} compact={compact} />
@@ -169,7 +148,13 @@ function SummaryContent({
         </SimpleGrid>
       </div>
       <MarkingProgress summary={summary} />
-      <DecisionArea exam={exam} examiners={examiners} />
+      <DecisionArea
+        exam={exam}
+        examiners={examiners}
+        flow={flow}
+        layout={layout}
+        studentDeleted={studentDeleted}
+      />
     </Stack>
   );
 }
@@ -189,17 +174,20 @@ export function SummaryColumn(props: ExamSummaryProps) {
         top: 'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-md))',
       }}
     >
-      <SummaryContent {...props} compact={false} />
+      <SummaryContent {...props} layout="column" />
     </Paper>
   );
 }
 
 /**
  * Phone and tablet: a bar fixed at the bottom (right of the side menu, under the drawer),
- * with a spacer of the same height so the last item is never covered.
+ * with a spacer of the same height so the last item is never covered. The sensei's
+ * "Decidir" opens a panel from the bottom with the same summary and Aprovar / Reprovar
+ * (§ 6.4); `Esc` closes it, but not while the confirmation dialog is open over it.
  */
 export function SummaryBar(props: ExamSummaryProps) {
   const { ref, height } = useElementSize();
+  const { flow } = props;
   return (
     <>
       {/* The measured height leaves out the padding and the border of the bar. */}
@@ -227,8 +215,22 @@ export function SummaryBar(props: ExamSummaryProps) {
           overflowY: 'auto',
         }}
       >
-        <SummaryContent {...props} compact />
+        <SummaryContent {...props} layout="bar" />
       </Paper>
+      <Drawer
+        opened={flow.panelOpened && props.exam.status === 'IN_PROGRESS' && !props.studentDeleted}
+        onClose={flow.closePanel}
+        position="bottom"
+        title="Decidir o exame"
+        closeOnEscape={flow.asking === null}
+        // "Decidir" may be gone after a refusal: the flow gives the focus back (§ 6.7).
+        returnFocus={false}
+        onExitTransitionEnd={flow.panelClosed}
+        closeButtonProps={{ 'aria-label': 'Fechar' }}
+        styles={{ content: { height: 'auto', maxHeight: '90dvh' } }}
+      >
+        <SummaryContent {...props} layout="panel" />
+      </Drawer>
     </>
   );
 }

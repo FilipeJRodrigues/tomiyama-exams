@@ -1,7 +1,7 @@
 /**
  * § 6.4 exam of a student: header, previous/next present student, tabs with counts, "Só não
  * marcados", items by category, RN007 summary, states and reload on window focus. Marking
- * (step 2) is in `ExamMarking.test.tsx`; the sensei decision (step 3) comes later.
+ * (step 2) is in `ExamMarking.test.tsx`; the sensei decision (step 3) in `ExamDecision.test.tsx`.
  */
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';

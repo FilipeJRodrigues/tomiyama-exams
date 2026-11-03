@@ -539,7 +539,17 @@ export const mockExaminers: readonly Examiner[] = [
   { id: 'mock-examiner-2', email: 'examinadora@example.com', name: null },
 ];
 
+/** The academy settings as stored (`GET /settings` adds the sensei's account). */
+export interface MockSettings {
+  academy_name: string | null;
+  sensei_user_id: string | null;
+  certificate_city: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export interface MockDb {
+  settings: MockSettings;
   belts: Belt[];
   students: MockStudent[];
   events: ExamEvent[];
@@ -555,6 +565,12 @@ export interface MockDbOptions {
    * tests).
    */
   includeShowcase?: boolean;
+  /**
+   * The sensei of the settings (RN008). By default the second examiner, so the signed-in
+   * simulated examiner sees "A decisão é do sensei …"; the browser simulated mode makes him
+   * the sensei so the whole decision can be tried. `null`: no sensei.
+   */
+  senseiId?: string | null;
 }
 
 function copy(item: MockStudent): MockStudent {
@@ -565,12 +581,22 @@ function copy(item: MockStudent): MockStudent {
   };
 }
 
-export function createMockDb({ includeShowcase = false }: MockDbOptions = {}): MockDb {
+export function createMockDb({
+  includeShowcase = false,
+  senseiId = 'mock-examiner-2',
+}: MockDbOptions = {}): MockDb {
   const students = includeShowcase
     ? [...initialMockStudents, ...showcaseMockStudents]
     : initialMockStudents;
   const exams = includeShowcase ? [...initialMockExams, ...showcaseMockExams] : initialMockExams;
   return {
+    settings: {
+      academy_name: 'Academia Simulada de Judô',
+      sensei_user_id: senseiId,
+      certificate_city: 'Cidade Simulada',
+      created_at: '2026-10-01T12:00:00+00:00',
+      updated_at: '2026-10-01T12:00:00+00:00',
+    },
     belts: mockBelts.map((belt) => ({ ...belt })),
     students: students.map(copy),
     events: initialMockEvents.map((event) => ({ ...event })),
