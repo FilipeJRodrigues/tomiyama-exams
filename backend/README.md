@@ -45,7 +45,7 @@ Precisa do [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-mode
 
 As capacidades de cada tabela e GSI ficam no mapping `DevCapacity` do template; `tests/test_template.py` falha se a soma passar de 25. Cada marcação de item (RN006) é uma transação que custa 2 WCU em `Exams`, em `Events` e em `Answers` (e mais 2 em `Requirements`, além da escrita no GSI `by_belt`, na primeira marcação do item); com 3 WCU em cada uma, o dev aguenta em média 1,5 marcação por segundo somando todos os examinadores, com folga para picos curtos (burst do DynamoDB). O free tier vale para a conta inteira na região: outra stack provisionada na mesma conta e região soma no mesmo limite.
 
-**Bucket de imagens no dev.** O CloudFormation só apaga bucket vazio. Se houver logos carregados, esvazie o bucket antes de apagar a stack dev (`aws s3 rm s3://<bucket> --recursive`; o nome está no recurso `ImagesBucket` da stack); senão a exclusão fica em `DELETE_FAILED` só nesse recurso e pode ser repetida depois de esvaziar. No prod o bucket fica (`Retain`), como as tabelas.
+**Bucket de imagens no dev.** O CloudFormation só apaga bucket vazio. Se houver logos ou assinaturas carregados, esvazie o bucket antes de apagar a stack dev (`aws s3 rm s3://<bucket> --recursive`; o nome está no recurso `ImagesBucket` da stack); senão a exclusão fica em `DELETE_FAILED` só nesse recurso e pode ser repetida depois de esvaziar. No prod o bucket fica (`Retain`), como as tabelas.
 
 Todas as funções escrevem no log group `/aws/lambda/<stack>`, um stream por função.
 
@@ -112,6 +112,10 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 | POST | /events/{id}/exams/{student_id}/decision | examinador (só o sensei decide) |
 | GET/PUT | /settings | examinador |
 | GET/PUT/DELETE | /settings/logos/{slot} | examinador |
+| GET/POST | /settings/signatures | master e sensei |
+| PUT | /settings/signatures/order | master e sensei |
+| PUT/DELETE | /settings/signatures/{id} | master e sensei |
+| GET/PUT/DELETE | /settings/signatures/{id}/image | master e sensei |
 | GET | /examiners | examinador |
 
 ### Erros comuns
@@ -158,7 +162,7 @@ O exame também guarda a **graduação de origem**, a do aluno no momento da pre
 ```
 
 - `sensei` é `null` sem sensei. `active` é `false` se a conta do sensei foi desabilitada ou saiu do grupo `admin` depois da escolha; no segundo caso (ou se a conta foi apagada), `email` e `name` vêm `null`. A tela deve pedir outro sensei.
-- As imagens (logos e assinaturas do certificado) nunca aparecem neste JSON, nem os metadados delas (RN012): os logos têm rotas próprias (veja "Imagens da academia (RN012)" abaixo), e as assinaturas terão. Os nomes, graduações e imagens que vão no certificado serão as **assinaturas do certificado** (até 3, geridas pelo master e pelo sensei; passo 5), e não campos destas configurações.
+- As imagens (logos e assinaturas do certificado) nunca aparecem neste JSON, nem os metadados delas (RN012): logos e assinaturas têm rotas próprias (veja "Imagens da academia (RN012)" e "Assinaturas do certificado (RN012)" abaixo). Os nomes, graduações e imagens que vão no certificado são as **assinaturas do certificado** (até 3, geridas só pelo master e pelo sensei), e não campos destas configurações.
 
 `PUT /settings` recebe `academy_name`, `sensei_user_id` e `certificate_city` e **substitui** os três: um campo opcional ausente, `null` ou só com espaços passa a `null`, e os textos são gravados sem espaços nas pontas. Outras chaves são ignoradas. A resposta (200) é igual à do `GET`. A gravação é um `UpdateItem` só nesses campos (e em `updated_at`; `created_at` só na primeira vez), então atributos gravados por outras rotas, como as imagens, nunca se perdem.
 
@@ -251,9 +255,80 @@ Corrida que sobra: um `PUT` e um `DELETE` do **mesmo** slot ao mesmo tempo podem
 
 O `slot` inválido é 404, e não 400, porque o caminho aponta para um recurso que não existe, como um `id` desconhecido nas outras rotas. A autorização vem antes: um responsável recebe 403 mesmo com `slot` inválido.
 
-**Bucket** (`infra/template.yaml`): bloqueio de acesso público completo (as 4 opções), criptografia SSE-S3 (AES256), `BucketOwnerEnforced` (sem ACLs), sem versionamento, política que nega qualquer acesso sem TLS (`aws:SecureTransport` `false`) e nome gerado pelo CloudFormation, passado às funções pela variável `IMAGES_BUCKET` (só nas três funções de logo). `DeletionPolicy` e `UpdateReplacePolicy` seguem as tabelas: `Retain` no prod e `Delete` no dev (veja "Bucket de imagens no dev" acima). Permissões mínimas: `PutLogoFunction` só `s3:PutObject`, `DeleteLogoFunction` só `s3:DeleteObject` e `GetLogoFunction` só `s3:GetObject`, todas restritas a `logos/*`, mais `dynamodb:UpdateItem` (envio e remoção) ou `dynamodb:GetItem` (leitura) na tabela `Settings`. Nenhuma outra função acessa o bucket.
+**Bucket** (`infra/template.yaml`): bloqueio de acesso público completo (as 4 opções), criptografia SSE-S3 (AES256), `BucketOwnerEnforced` (sem ACLs), sem versionamento, política que nega qualquer acesso sem TLS (`aws:SecureTransport` `false`) e nome gerado pelo CloudFormation, passado às funções pela variável `IMAGES_BUCKET` (só nas funções de logo e nas de assinatura que usam o S3). `DeletionPolicy` e `UpdateReplacePolicy` seguem as tabelas: `Retain` no prod e `Delete` no dev (veja "Bucket de imagens no dev" acima). Permissões mínimas: `PutLogoFunction` só `s3:PutObject`, `DeleteLogoFunction` só `s3:DeleteObject` e `GetLogoFunction` só `s3:GetObject`, todas restritas a `logos/*`, mais `dynamodb:UpdateItem` (envio e remoção) ou `dynamodb:GetItem` (leitura) na tabela `Settings`, só no item `academy` (condição `dynamodb:LeadingKeys`), então nenhuma função de logo lê as assinaturas. Além delas, só as funções de assinatura acessam o bucket, e só em `signatures/*` (veja abaixo).
 
-**Assinaturas do certificado (próxima etapa).** Vão reaproveitar a validação (`domain/images.py`: `parse_image_upload`, `ImageMeta` e a validade de 300 s), o acesso ao S3 por chave (`repository/images.py`) e os metadados no registro de configurações (`get_image_meta`, `set_image_meta` e `remove_image_meta` em `repository/settings.py`), com prefixo e permissões próprios e acesso só do master e do sensei.
+### Assinaturas do certificado (RN012)
+
+O certificado (§ 7) leva de 1 a 3 assinaturas lado a lado, na ordem configurada. Cada uma tem **nome**, **graduação** (texto livre, como "Fundador, 6º Dan (in memoriam)"), **imagem** (PNG ou JPEG de até 2 MB, validada pelos bytes como os logos) e **posição** (1 a 3, o lugar na lista). A pessoa pode não ter login. Uma assinatura é **completa** com nome, graduação e imagem; o certificado (RN011) vai exigir ao menos uma completa, e a lista já diz se há (`has_complete`, e `complete` em cada item).
+
+**Quem.** Criação, edição, remoção, ordem **e leitura** só pelo **master** (grupos `master` e `admin`) e pelo **sensei** (o `sensei_user_id` das configurações, lido a cada requisição, sem cache). Responsável, outro examinador e, sem sensei configurado, qualquer examinador que não seja o master recebem 403 "Somente o master e o sensei gerem as assinaturas". A permissão é conferida antes do corpo e do `id`. Toda gravação do sensei confere de novo, na mesma transação, que ele ainda é o sensei: um sensei trocado entre a conferência e a gravação recebe 403 e nada é gravado.
+
+| Método | Rota | Resposta |
+| --- | --- | --- |
+| GET | /settings/signatures | 200 com a lista na ordem do certificado |
+| POST | /settings/signatures | 201 com a assinatura criada, na última posição; 409 se já houver 3 |
+| PUT | /settings/signatures/order | 200 com a lista na nova ordem |
+| PUT | /settings/signatures/{id} | 200; troca nome e graduação (imagem e posição ficam) |
+| DELETE | /settings/signatures/{id} | 204; remove a assinatura **e a imagem**; as seguintes sobem uma posição (`id` já removido também é 204) |
+| PUT | /settings/signatures/{id}/image | 200 com a assinatura; envia ou troca a imagem |
+| DELETE | /settings/signatures/{id}/image | 204; remove a imagem (sem imagem também é 204) |
+| GET | /settings/signatures/{id}/image | 200 com a URL pré-assinada; 404 sem imagem |
+
+`POST` e `PUT /settings/signatures/{id}` recebem `{"name": "...", "graduation": "..."}` e substituem os dois: `name` é obrigatório (até 120 caracteres) e `graduation` é opcional (até 120; ausente, `null` ou só espaços vira `null`, e a assinatura fica incompleta). Os textos são gravados sem espaços nas pontas; outras chaves são ignoradas. A imagem vai depois, pela rota `/image`, com o mesmo corpo dos logos (`{"content_type": "image/png", "data": "<base64>"}`) e as mesmas regras e erros ("Envie PNG ou JPEG de até 2 MB").
+
+`GET /settings/signatures`:
+
+```json
+{"signatures": [
+  {"id": "<uuid>", "position": 1, "name": "Jigoro Kano",
+   "graduation": "Fundador, 6º Dan (in memoriam)",
+   "image": {"content_type": "image/png", "size": 48213, "updated_at": "…", "updated_by": "<sub>"},
+   "complete": true, "updated_at": "…", "updated_by": "<sub>"}
+ ],
+ "max_signatures": 3, "has_complete": true}
+```
+
+`image` é `null` sem imagem; a lista nunca traz o arquivo nem URL. O `POST`, o `PUT /{id}` e o `PUT /{id}/image` devolvem um item nesse mesmo formato. Para mostrar a imagem, a tela chama `GET /settings/signatures/{id}/image`, que devolve `id`, `position`, os metadados, `url` e `expires_in` (300): a URL é pré-assinada por 5 minutos, com `response-content-type` e `response-content-disposition` = `inline; filename="assinatura.png"` (ou `.jpg`) fixos, como nos logos.
+
+**Ordem.** `PUT /settings/signatures/order` recebe `{"ids": ["<uuid>", ...]}` com **todos** os ids, cada um uma vez, da posição 1 em diante. Valor que não é lista de textos, com repetidos ou com mais de 3 → 400 "Ordem inválida: envie ids com a lista de assinaturas". Ids que não são exatamente os gravados (falta um, sobra um, ou a lista mudou desde que a tela leu) → 409 "A lista de assinaturas mudou. Recarregue e tente de novo." e nada muda.
+
+**Armazenamento.** A lista é **um item** da tabela `Settings`, `id = "certificate_signatures"`, separado do registro `academy`: `signatures` (lista de mapas com `id`, `name`, `graduation`, `image`, `updated_at` e `updated_by`; a posição é o lugar na lista; `image` guarda também `key`, a chave do objeto no S3, que a API nunca devolve), `version` (número), `updated_at` e `updated_by`. Por ser outro item, o `GET /settings`, o `PUT /settings` e as rotas de logo nem carregam as assinaturas, e o IAM delas é limitado ao item `academy`. As imagens ficam no `ImagesBucket` em `signatures/{id}/{uuid}`: **uma chave nova a cada envio**, gerada pela API, e a chave da imagem atual é a registrada em `image.key`. A chave nunca vem do cliente. O `id` é um UUID gerado pela API; um `id` que não é UUID canônico é 404 "Assinatura não encontrada", então nada do caminho vira chave. Metadados com `key` ausente ou que não seja `signatures/{id}/{uuid}` da própria assinatura contam como "sem imagem".
+
+**Concorrência (limite de 3 e ordem).** Toda mudança lê o item (leitura forte), aplica a regra pura de `domain/signatures.py` (limite, existência, ordem) e grava com `TransactWriteItems`: o `Put` da lista só passa se `version` ainda for a lida (ou se o item ainda não existir) e, para o sensei, um `ConditionCheck` no item `academy` confere `sensei_user_id`. Se outra requisição gravou no meio, a gravação falha, a lista é relida e a regra roda de novo sobre ela, até 5 vezes. Assim, duas criações ao mesmo tempo com 2 assinaturas gravadas dão um 201 e um 409 "O certificado aceita no máximo 3 assinaturas"; com espaço, as duas entram (nenhuma se perde); e uma ordem enviada enquanto alguém criava ou removia dá 409. Se outras gravações vencerem as 5 vezes → 409 "As assinaturas estão sendo alteradas por outra pessoa. Tente de novo.".
+
+**Ordem das gravações da imagem** (S3 e DynamoDB não entram numa mesma transação). Como cada envio tem a sua chave, nenhuma requisição sobrescreve o objeto que outra registrou:
+
+1. envio: confere que a assinatura existe (404 antes de tocar no S3) e grava o objeto numa **chave nova** `signatures/{id}/{uuid}`;
+2. grava os metadados, com a `key`, na transação com a trava de `version` e, para o sensei, o `ConditionCheck` (o mesmo das outras gravações);
+3. se der certo, apaga a chave **anterior** registrada (a que os metadados deixaram de apontar). Se a chamada falhar, o erro é classificado (veja "Falha definitiva ou ambígua"): numa falha **definitiva** apaga **só a chave nova**, sem reler a lista; numa falha **ambígua** não apaga nada, nem depois de reler, e registra a chave nova no log como órfão possível. Nos dois casos devolve o erro original, com o status de sempre.
+
+Remoção da imagem ou da assinatura: apaga os metadados (ou a assinatura) na transação **primeiro** e depois a chave que estava registrada. Se a chamada da remoção falhar de forma **definitiva**, nada é apagado: os metadados continuam apontando para a chave. Se falhar de forma **ambígua**, a chave lida antes dela só é apagada se a releitura mostrar que os metadados já não apontam para ela (a transação foi gravada e a resposta se perdeu); se a releitura falhar, nada é apagado. `GET /{id}/image` assina a URL da chave registrada.
+
+**Falha definitiva ou ambígua.** Uma transação pode ser gravada e a chamada terminar em erro mesmo assim, e uma transação ainda em andamento no servidor pode ser gravada **depois** de qualquer releitura. Por isso `repository.signatures.is_definitive_write_failure` (função pura, testada classe por classe) separa os erros:
+
+- **definitivos** (a transação com certeza não foi gravada): os erros de regra que o repositório levanta (403 sensei trocado, 404, 409 da trava depois das 5 tentativas, 503 por throttling, 400), `ProvisionedThroughputExceededException`, `ThrottlingException`, `RequestLimitExceeded`, `ValidationException` e `TransactionCanceledException` cujos motivos são todos recusas conhecidas (`None`, `ConditionalCheckFailed`, `TransactionConflict`, `ThrottlingError`, `ProvisionedThroughputExceeded`, `ValidationError`);
+- **ambíguos** (pode ter sido gravada, agora ou depois): `InternalServerError`, `ServiceUnavailable` e qualquer outro código do DynamoDB, `TransactionCanceledException` sem motivos ou com motivo desconhecido, `ConnectionClosedError`, `ReadTimeoutError`, `EndpointConnectionError` (também depois das novas tentativas do botocore) e qualquer outra exceção.
+
+No envio, a chave nova só é apagada em falha definitiva; em falha ambígua ela fica, e vai para o log como órfão possível. Nas remoções, a chave antiga nunca é apagada em falha definitiva; em falha ambígua, só depois de uma releitura forte mostrar que nenhum metadado aponta para ela (uma remoção em andamento não faz metadados voltarem a apontar para a chave). Se a releitura falhar, nada é apagado e a chave vai para o log.
+
+**`ClientRequestToken`.** Todo `TransactWriteItems` das assinaturas leva um token, um UUID novo por tentativa de gravação (uma por `version` lida). As novas tentativas automáticas do botocore reenviam a mesma requisição, com o mesmo token: se a primeira foi gravada e a resposta se perdeu, o DynamoDB responde sucesso sem gravar de novo (o token vale 10 minutos e exige os mesmos parâmetros; outros parâmetros com o mesmo token dão `IdempotentParameterMismatchException`). Uma nova tentativa depois de a trava de `version` recusar a gravação monta outra transação, então leva um token novo.
+
+Dois envios ao mesmo tempo terminam coerentes: o que grava os metadados por último vence (a trava de `version` faz o outro reler a lista) e apaga o objeto do perdedor, que já estava registrado; o tipo nos metadados é sempre o do objeto apontado. Um envio e uma remoção ao mesmo tempo também: a remoção só apaga a chave que leu nos metadados, nunca a do envio em andamento.
+
+**O que pode sobrar.** As limpezas depois de uma transação gravada (a chave anterior no envio, a chave registrada nas remoções) não mudam a resposta: se o S3 falhar, a resposta continua 200 ou 204, a falha vai para o log com a chave, e o objeto fica **órfão, sem metadados** (invisível para a API; ocupa espaço até ser apagado à mão). O mesmo vale se a limpeza da chave nova falhar depois de uma recusa definitiva, se a releitura depois de uma remoção com falha ambígua também falhar, ou se a Lambda parar entre o S3 e a transação. Num envio com falha **ambígua** sobram a chave nova, se a transação não foi gravada, ou a anterior, se foi (gravada na hora ou mais tarde); a chave nova vai para o log. O contrário, **metadados apontando para um objeto que não existe, nunca acontece**: o objeto é gravado antes dos metadados e só é apagado quando é certo que nenhum metadado aponta nem vai apontar para ele. Repetir o `DELETE` não apaga órfãos (a chave já não está registrada em lugar nenhum).
+
+| Situação | Resposta |
+| --- | --- |
+| sem login | 401 "Faça login para continuar" |
+| responsável, outro examinador, ou examinador sem sensei configurado (exceto o master) | 403 "Somente o master e o sensei gerem as assinaturas" |
+| `id` inexistente ou que não é UUID | 404 "Assinatura não encontrada" |
+| `GET /{id}/image` sem imagem | 404 "Assinatura sem imagem" |
+| 4ª assinatura | 409 "O certificado aceita no máximo 3 assinaturas" |
+| `name` ausente ou em branco; texto longo demais | 400 "Campo obrigatório: Nome" / "Nome: máximo de 120 caracteres" / "Graduação: máximo de 120 caracteres" |
+| imagem inválida | 400 "Envie PNG ou JPEG de até 2 MB" (nada é gravado; a imagem atual fica) |
+| DynamoDB ou S3 sem capacidade, S3 lento ou fora do ar, mesmo após as novas tentativas | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+
+**Permissões** (`infra/template.yaml`), uma função por rota. Todas têm `dynamodb:GetItem` só nos itens `academy` e `certificate_signatures` (condição `dynamodb:LeadingKeys`); as que gravam têm `dynamodb:ConditionCheckItem` só em `academy` e `dynamodb:PutItem` só em `certificate_signatures`. No S3, só em `signatures/*`: `DeleteSignatureFunction` e `DeleteSignatureImageFunction` só `s3:DeleteObject`; `PutSignatureImageFunction` `s3:PutObject` e `s3:DeleteObject` (para apagar a chave nova quando a transação é recusada de forma definitiva e a anterior quando ela é trocada); `GetSignatureImageFunction` só `s3:GetObject` (é o que faz a URL funcionar). As funções de listar, criar, editar e reordenar não recebem `IMAGES_BUCKET` nem permissão no S3. Nenhuma função de logo alcança `signatures/*`, e nenhuma de assinatura alcança `logos/*`. As funções de configurações, de logo e da decisão do sensei ficam limitadas ao item `academy`; só a carga inicial (marcadores) tem acesso à tabela inteira. Sem recursos pagos novos: 8 funções Lambda e 8 rotas no mesmo HTTP API, o mesmo bucket e a mesma tabela.
 
 ### Exame do aluno e marcação (RN006, RN007)
 

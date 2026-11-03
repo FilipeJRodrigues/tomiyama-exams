@@ -1,8 +1,9 @@
 """Images bucket and logo routes in ``infra/template.yaml`` (RN012).
 
 The bucket is private (no public access, no ACLs, TLS only), encrypted with
-SSE-S3, unversioned and named by CloudFormation; only the logo functions reach
-it, each with the single S3 action it uses on ``logos/*``.
+SSE-S3, unversioned and named by CloudFormation; only the logo functions (on
+``logos/*``) and the signature functions (on ``signatures/*``) reach it, each
+with the single S3 action it uses.
 """
 
 from pathlib import Path
@@ -14,6 +15,7 @@ from cfnlint.decode import decode
 TEMPLATE = Path(__file__).resolve().parents[2] / "infra" / "template.yaml"
 LOGOS_ARN = {"Fn::Sub": "${ImagesBucket.Arn}/logos/*"}
 SETTINGS_ARN = {"Fn::GetAtt": ["SettingsTable", "Arn"]}
+ACADEMY_ONLY = {"ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["academy"]}}
 
 
 @pytest.fixture(scope="module")
@@ -104,6 +106,9 @@ def _granted(function: dict[str, Any]) -> set[tuple[str, str]]:
             assert statement["Effect"] == "Allow"
             resource = statement["Resource"]
             assert resource in (LOGOS_ARN, SETTINGS_ARN), resource
+            if resource == SETTINGS_ARN:
+                # Only the settings record, never the signatures item.
+                assert statement.get("Condition") == ACADEMY_ONLY, statement
             label = "logos/*" if resource == LOGOS_ARN else "SettingsTable"
             actions = statement["Action"]
             for action in [actions] if isinstance(actions, str) else actions:
@@ -146,11 +151,24 @@ def test_rn012_logo_routes_with_least_privilege(
     assert _granted(function) == expected
 
 
-def test_rn012_only_the_logo_functions_reach_the_bucket(template: dict[str, Any]) -> None:
-    logo_functions = {"PutLogoFunction", "DeleteLogoFunction", "GetLogoFunction"}
+# Functions allowed to reach the bucket: the logos' and, from step 2, the
+# certificate signatures' (each limited to its own prefix, checked in
+# test_template_signatures.py).
+IMAGE_FUNCTIONS = {
+    "PutLogoFunction",
+    "DeleteLogoFunction",
+    "GetLogoFunction",
+    "DeleteSignatureFunction",
+    "PutSignatureImageFunction",
+    "DeleteSignatureImageFunction",
+    "GetSignatureImageFunction",
+}
+
+
+def test_rn012_only_the_image_functions_reach_the_bucket(template: dict[str, Any]) -> None:
     assert "IMAGES_BUCKET" not in template["Globals"]["Function"]["Environment"]["Variables"]
     for name, resource in template["Resources"].items():
-        if resource["Type"] != "AWS::Serverless::Function" or name in logo_functions:
+        if resource["Type"] != "AWS::Serverless::Function" or name in IMAGE_FUNCTIONS:
             continue
         properties = resource["Properties"]
         assert "IMAGES_BUCKET" not in properties.get("Environment", {}).get("Variables", {}), name
