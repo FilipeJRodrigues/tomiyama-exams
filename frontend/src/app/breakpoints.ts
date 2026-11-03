@@ -5,3 +5,9 @@ import { em } from '@mantine/core';
  * become cards. 200% zoom at 1280 px (640 CSS px) lands here.
  */
 export const MOBILE_QUERY = `(max-width: ${em(767.98)})`;
+
+/**
+ * Exam screen (§ 6.4): from 64em (1024 px) the summary is a column at the right of the items;
+ * below it (phone, tablet with the side menu, 200% zoom) it is a bar fixed at the bottom.
+ */
+export const EXAM_SIDE_SUMMARY_QUERY = `(min-width: ${em(1024)})`;

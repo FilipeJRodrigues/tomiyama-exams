@@ -4,12 +4,26 @@
  * answer the student form with the backend messages (`domain/students.py`,
  * `domain/validation.py`): RN013, RN014 and RN018. The exam day (§ 6.3) gets the event
  * list and the attendance confirmation (`handlers/events.py`, `handlers/exams.py`,
- * `domain/exams.py`): RN005 and RN016.
+ * `domain/exams.py`): RN005 and RN016. The exam screen (§ 6.4) gets the exam sheet with the
+ * RN007 summary (`get_exam_sheet`, `domain/scoring.py`) and the examiners
+ * (`handlers/users.py`).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
 import { buildApiUrl } from '../api/client';
-import type { Eligibility, Exam, ExamEvent, ExamView, Student, StudentView } from '../api/types';
+import type {
+  Eligibility,
+  Exam,
+  ExamEvent,
+  ExamSheet,
+  ExamSheetItem,
+  ExamSummary,
+  ExamView,
+  KindSummary,
+  RequirementKind,
+  Student,
+  StudentView,
+} from '../api/types';
 import { decodeMockToken, type MockClaims } from '../auth/mockToken';
 import { EXAMINER_GROUP } from '../auth/types';
 import { ageInYears, parseIsoDate, todayIso } from '../lib/dates';
@@ -46,6 +60,7 @@ const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
 const MSG_ALREADY_CONFIRMED = 'Presença já confirmada neste evento';
 const MSG_EVENT_CLOSED = 'Evento encerrado';
 const MSG_STUDENT_INACTIVE = 'Aluno inativo não pode fazer exame';
+const MSG_EXAM_NOT_FOUND = 'Exame não encontrado';
 
 /**
  * The mock does not compute eligibility (RN001–RN004 live in the backend). A student
@@ -235,6 +250,60 @@ function examView(db: MockDb, exam: Exam): ExamView {
   return { ...exam, student_name: item?.student.full_name ?? null };
 }
 
+/**
+ * Like `scoring.score`: correct ÷ items of the kind × 100, one decimal rounded half up;
+ * unmarked items count as not correct; `null` without items of the kind (RN007).
+ */
+function kindSummary(items: readonly ExamSheetItem[], kind: RequirementKind): KindSummary {
+  const ofKind = items.filter((item) => item.kind === kind);
+  const marked = ofKind.filter((item) => item.answer !== null);
+  const correct = marked.filter((item) => item.answer?.correct).length;
+  const total = ofKind.length;
+  // Integer math first: `correct * 1000 / total` is exact whenever the result ends in .5.
+  const percent = total === 0 ? null : Math.round((correct * 1000) / total) / 10;
+  return { kind, total, marked: marked.length, correct, percent };
+}
+
+function examSummary(items: readonly ExamSheetItem[]): ExamSummary {
+  return { THEORY: kindSummary(items, 'THEORY'), PRACTICE: kindSummary(items, 'PRACTICE') };
+}
+
+/** Like `get_exam_sheet`: the exam, the event, the student, the target belt and the items. */
+function examSheet(db: MockDb, event: ExamEvent, exam: Exam): ExamSheet {
+  const item = db.students.find((candidate) => candidate.student.id === exam.student_id);
+  const items: ExamSheetItem[] = db.requirements
+    .filter((requirement) => requirement.belt_id === exam.target_belt_id)
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((requirement) => {
+      const mark = db.answers.find(
+        (candidate) => candidate.exam_id === exam.id && candidate.requirement_id === requirement.id,
+      );
+      const answer = mark
+        ? {
+            requirement_id: mark.requirement_id,
+            correct: mark.correct,
+            marked_by: mark.marked_by,
+            marked_at: mark.marked_at,
+          }
+        : null;
+      return { ...requirement, answer };
+    });
+  return {
+    exam: examView(db, exam),
+    event: { ...event },
+    student: item
+      ? {
+          id: item.student.id,
+          full_name: item.student.full_name,
+          birth_date: item.student.birth_date,
+        }
+      : null,
+    target_belt: db.belts.find((belt) => belt.id === exam.target_belt_id) ?? null,
+    items,
+    summary: examSummary(items),
+  };
+}
+
 export interface MockHandlersOptions {
   baseUrl: string;
   db?: MockDb;
@@ -397,11 +466,34 @@ export function createHandlers({
           notes: null,
           created_by: claims.sub,
           created_at: new Date().toISOString(),
+          source_belt_id: item.student.current_belt_id,
+          source_belt_since: item.student.current_belt_since,
+          source_stripes: item.student.stripes,
         };
         db.exams.push(exam);
         item.examCount += 1;
         return HttpResponse.json(examView(db, exam), { status: 201 });
       });
+    }),
+
+    http.get(url('/events/:id/exams/:studentId'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const event = db.events.find((candidate) => candidate.id === params.id);
+      if (!event) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      const exam = db.exams.find(
+        (candidate) => candidate.event_id === event.id && candidate.student_id === params.studentId,
+      );
+      if (!exam) return errorResponse(404, MSG_EXAM_NOT_FOUND);
+      return HttpResponse.json(examSheet(db, event, exam));
+    }),
+
+    http.get(url('/examiners'), ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      return HttpResponse.json(db.examiners);
     }),
   ];
 }

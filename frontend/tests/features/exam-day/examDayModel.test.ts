@@ -61,6 +61,9 @@ function exam(studentId: string): ExamView {
     notes: null,
     created_by: 'examinador',
     created_at: '2026-11-21T12:00:00+00:00',
+    source_belt_id: null,
+    source_belt_since: null,
+    source_stripes: null,
     student_name: null,
   };
 }

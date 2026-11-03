@@ -102,6 +102,13 @@ export interface Exam {
   notes: string | null;
   created_by: string;
   created_at: IsoDateTime;
+  /**
+   * The student's graduation when the attendance was confirmed (`null` only for exams
+   * confirmed before the API stored it).
+   */
+  source_belt_id: string | null;
+  source_belt_since: IsoDate | null;
+  source_stripes: number | null;
 }
 
 /**
@@ -115,6 +122,73 @@ export interface ExamView extends Exam {
 /** Body of `POST /events/{id}/exams` (attendance confirmation, RN005). */
 export interface ConfirmAttendanceInput {
   student_id: string;
+}
+
+export type RequirementKind = 'THEORY' | 'PRACTICE';
+
+/** An exam item of a belt (`GET /requirements` item). */
+export interface Requirement {
+  id: string;
+  belt_id: string;
+  kind: RequirementKind;
+  category: string;
+  description: string;
+  expected_answer: string | null;
+  sort_order: number;
+}
+
+/** The mark of one item in one exam (RN006); an item without it is "não marcado". */
+export interface ExamAnswer {
+  requirement_id: string;
+  correct: boolean;
+  /** `sub` of the examiner who marked it. */
+  marked_by: string;
+  marked_at: IsoDateTime;
+}
+
+/** Item of the exam sheet: the requirement plus its mark (`null` when not marked). */
+export interface ExamSheetItem extends Requirement {
+  answer: ExamAnswer | null;
+}
+
+/**
+ * RN007 score of one kind, always computed by the API: `percent` = correct ÷ items of the
+ * kind × 100, one decimal; `null` when the belt has no item of the kind.
+ */
+export interface KindSummary {
+  kind: RequirementKind;
+  total: number;
+  marked: number;
+  correct: number;
+  percent: number | null;
+}
+
+export type ExamSummary = Record<RequirementKind, KindSummary>;
+
+/** The few student fields the exam sheet carries. */
+export interface ExamSheetStudent {
+  id: string;
+  full_name: string;
+  birth_date: IsoDate;
+}
+
+/** `GET /events/{id}/exams/{student_id}`: everything the exam screen (§ 6.4) shows. */
+export interface ExamSheet {
+  exam: ExamView;
+  event: ExamEvent;
+  /** `null` when the student no longer exists (RN018 keeps the exam). */
+  student: ExamSheetStudent | null;
+  target_belt: Belt | null;
+  /** Every item of the target belt, in sheet order (`sort_order`). */
+  items: ExamSheetItem[];
+  summary: ExamSummary;
+}
+
+/** `GET /examiners` item: active members of the `admin` group, by name. */
+export interface Examiner {
+  id: string;
+  email: string;
+  name: string | null;
 }
 
 /** Error body returned by the backend and by API Gateway. */

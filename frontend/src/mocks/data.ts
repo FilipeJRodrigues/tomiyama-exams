@@ -2,7 +2,17 @@
  * Fictional data for the simulated mode. Belts are the seed of the backend (same ids);
  * students follow the acceptance flow (§ 9). No real person here.
  */
-import type { Belt, Eligibility, Exam, ExamEvent, Student } from '../api/types';
+import type {
+  Belt,
+  Eligibility,
+  Exam,
+  ExamAnswer,
+  ExamEvent,
+  Examiner,
+  Requirement,
+  RequirementKind,
+  Student,
+} from '../api/types';
 import { MOCK_USER_IDS } from '../auth/mockConstants';
 
 export const mockBelts: Belt[] = [
@@ -360,12 +370,16 @@ export const initialMockEvents: readonly ExamEvent[] = [
   },
 ];
 
+/** The student's graduation when the attendance was confirmed: belt, since, stripes. */
+type Source = [belt: string, since: string, stripes: number];
+
 function exam(
   eventId: string,
   studentId: string,
   target: string,
   kind: 'BELT' | 'STRIPE',
   status: Exam['status'],
+  [sourceBelt, sourceSince, sourceStripes]: Source,
 ): Exam {
   const decided = status !== 'IN_PROGRESS';
   return {
@@ -381,12 +395,22 @@ function exam(
     notes: null,
     created_by: examiner,
     created_at: decided ? '2026-03-01T13:00:00+00:00' : '2026-11-02T12:00:00+00:00',
+    source_belt_id: beltId(sourceBelt),
+    source_belt_since: sourceSince,
+    source_stripes: sourceStripes,
   };
 }
 
 /** Exams of the base students: Élida earned her stripe at the closed event. */
 export const initialMockExams: readonly Exam[] = [
-  exam(MOCK_EVENT_IDS.closed, '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e05', 'Roxa', 'STRIPE', 'APPROVED'),
+  exam(
+    MOCK_EVENT_IDS.closed,
+    '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e05',
+    'Roxa',
+    'STRIPE',
+    'APPROVED',
+    ['Verde', '2024-05-20', 0],
+  ),
 ];
 
 /** Exams of the showcase students: Gabriel at the closed event, Helena at the open one. */
@@ -397,6 +421,7 @@ export const showcaseMockExams: readonly Exam[] = [
     'Amarela/Laranja',
     'BELT',
     'APPROVED',
+    ['Amarela', '2025-01-10', 0],
   ),
   exam(
     MOCK_EVENT_IDS.open,
@@ -404,7 +429,114 @@ export const showcaseMockExams: readonly Exam[] = [
     'Marrom',
     'BELT',
     'IN_PROGRESS',
+    ['Roxa', '2025-06-30', 4],
   ),
+];
+
+/**
+ * A few items of Appendix A per belt, in sheet order (the real sheets are much longer).
+ * Amarela/Laranja has no practical item here, so its practical percentage is "—" (RN007).
+ */
+const ITEMS: Record<string, [RequirementKind, string, string, string | null][]> = {
+  'Cinza/Azul': [
+    ['PRACTICE', 'Fundamentos', 'Demonstrar formas de pegar no kimono', 'Kumikata'],
+    ['THEORY', 'Vocabulário', 'Uniforme do praticante do Judô', 'Judogui'],
+  ],
+  'Amarela/Laranja': [
+    ['THEORY', 'Vocabulário', 'Parar', 'Mate'],
+    ['THEORY', 'Histórico', 'Nome da primeira escola de Judô', 'Kodokan'],
+  ],
+  Verde: [
+    ['PRACTICE', 'Naguewaza', 'Uki goshi', null],
+    ['THEORY', 'Vocabulário', 'Peças que compõem o local de treino ou competição', 'Tatame'],
+  ],
+  Roxa: [
+    ['PRACTICE', 'Naguewaza', 'Ogoshi', null],
+    ['PRACTICE', 'Naguewaza', 'Koshi guruma', null],
+    ['THEORY', 'Vocabulário', 'Professor', 'Sensei'],
+  ],
+  Marrom: [
+    ['PRACTICE', 'Fundamentos', 'Demonstrar saudação em pé', 'Ritsurei'],
+    ['PRACTICE', 'Fundamentos', 'Demonstrar saudação ajoelhado', 'Zarei'],
+    ['PRACTICE', 'Naguewaza', 'Deashi barai', null],
+    ['PRACTICE', 'Naguewaza', 'Osoto gari', null],
+    ['THEORY', 'Vocabulário', 'Professor', 'Sensei'],
+    ['THEORY', 'Vocabulário', 'Parar', 'Mate'],
+    ['THEORY', 'Histórico', 'Nome do fundador do Judô', 'Jigoro Kano'],
+  ],
+};
+
+function hex(value: number): string {
+  return value.toString(16).padStart(6, '0');
+}
+
+/** UUID-shaped id of the `order`-th item (1-based) of a belt, fixed so tests can rely on it. */
+export function mockRequirementId(belt: string, order: number): string {
+  const sortOrder = mockBelts.find((item) => item.name === belt)?.sort_order ?? 0;
+  return `9a1e0c3b-6d2f-4e8a-8b7c-${hex(sortOrder)}${hex(order)}`;
+}
+
+export const mockRequirements: readonly Requirement[] = Object.entries(ITEMS).flatMap(
+  ([belt, items]) =>
+    items.map(([kind, category, description, expected], index) => ({
+      id: mockRequirementId(belt, index + 1),
+      belt_id: beltId(belt),
+      kind,
+      category,
+      description,
+      expected_answer: expected,
+      sort_order: index + 1,
+    })),
+);
+
+/** A mark as stored: the API answer plus the exam it belongs to. */
+export interface MockAnswer extends ExamAnswer {
+  exam_id: string;
+}
+
+function answer(examItem: Exam, belt: string, order: number, correct: boolean): MockAnswer {
+  return {
+    exam_id: examItem.id,
+    requirement_id: mockRequirementId(belt, order),
+    correct,
+    marked_by: examiner,
+    marked_at: examItem.decided_at ?? '2026-11-21T13:30:00+00:00',
+  };
+}
+
+function marks(examItem: Exam | undefined, belt: string, values: [number, boolean][]) {
+  return examItem ? values.map(([order, correct]) => answer(examItem, belt, order, correct)) : [];
+}
+
+/**
+ * Marks of the decided exams (every item) and of Helena's, in progress: 1 of 3 theory
+ * items marked and 2 of 4 practical ones.
+ */
+function initialAnswers(exams: readonly Exam[]): MockAnswer[] {
+  const of = (studentSuffix: string) =>
+    exams.find((item) => item.student_id.endsWith(studentSuffix));
+  return [
+    ...marks(of('4e05'), 'Roxa', [
+      [1, true],
+      [2, true],
+      [3, true],
+    ]),
+    ...marks(of('4e07'), 'Amarela/Laranja', [
+      [1, true],
+      [2, false],
+    ]),
+    ...marks(of('4e08'), 'Marrom', [
+      [1, true],
+      [2, false],
+      [5, true],
+    ]),
+  ];
+}
+
+/** Active examiners (`GET /examiners`), by name; the second one has no name. */
+export const mockExaminers: readonly Examiner[] = [
+  { id: examiner, email: 'examinador@example.com', name: 'Sensei Simulado' },
+  { id: 'mock-examiner-2', email: 'examinadora@example.com', name: null },
 ];
 
 export interface MockDb {
@@ -412,6 +544,9 @@ export interface MockDb {
   students: MockStudent[];
   events: ExamEvent[];
   exams: Exam[];
+  requirements: Requirement[];
+  answers: MockAnswer[];
+  examiners: Examiner[];
 }
 
 export interface MockDbOptions {
@@ -440,5 +575,8 @@ export function createMockDb({ includeShowcase = false }: MockDbOptions = {}): M
     students: students.map(copy),
     events: initialMockEvents.map((event) => ({ ...event })),
     exams: exams.map((item) => ({ ...item })),
+    requirements: mockRequirements.map((item) => ({ ...item })),
+    answers: initialAnswers(exams),
+    examiners: mockExaminers.map((item) => ({ ...item })),
   };
 }

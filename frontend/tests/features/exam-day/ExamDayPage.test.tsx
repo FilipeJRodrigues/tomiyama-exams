@@ -364,7 +364,9 @@ describe('exam day (§ 6.3)', () => {
       });
       expect(link).toHaveAttribute('href', `/dia-do-exame/${OPEN}/alunos/${HELENA}`);
       await user.click(link);
-      expect(await screen.findByRole('heading', { name: 'Exame do aluno' })).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Helena Prado' }),
+      ).toBeInTheDocument();
       expect(router.state.location.pathname).toBe(`/dia-do-exame/${OPEN}/alunos/${HELENA}`);
     });
 
