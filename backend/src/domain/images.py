@@ -1,6 +1,6 @@
 """Academy images (RN012): validation of an upload and the metadata kept about it.
 
-Shared by the logos (this step) and, later, the certificate signatures: both
+Shared by the logos and the certificate signatures (``domain.signatures``): both
 are PNG or JPEG of at most 2 MB, sent through the API as JSON with the bytes in
 base64, stored in a private S3 bucket and read through a short-lived presigned
 URL. Nothing here touches AWS.

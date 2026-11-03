@@ -1,8 +1,8 @@
 """Private S3 bucket of the academy images (RN012).
 
 The bucket name comes from ``IMAGES_BUCKET``, set by SAM only on the functions
-that use it; each one may only touch its own prefix (``logos/*``, later the
-signatures'). Objects are never public: reading goes through a presigned GET
+that use it; each one may only touch its own prefix (``logos/*`` or
+``signatures/*``). Objects are never public: reading goes through a presigned GET
 URL signed with SigV4 against the Region's endpoint.
 
 The client has short timeouts and few attempts so that a slow or unreachable

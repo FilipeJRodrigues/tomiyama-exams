@@ -62,6 +62,26 @@ def get_settings() -> AcademySettings | None:
     return _from_item(item) if item else None
 
 
+def get_sensei_user_id() -> str | None:
+    """Return only the stored ``sensei_user_id`` (None without settings or sensei).
+
+    Strongly consistent, so a sensei replaced a moment ago is already seen;
+    the projection keeps the other fields (and the logo metadata) out.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling.
+    """
+    item = get_item_or_busy(
+        table(SETTINGS_TABLE_ENV),
+        {"id": SETTINGS_ID},
+        ProjectionExpression="#sensei",
+        ExpressionAttributeNames={"#sensei": _SENSEI},
+        ConsistentRead=True,
+    )
+    value = (item or {}).get(_SENSEI)
+    return value if isinstance(value, str) and value else None
+
+
 def save_settings(settings: AcademySettings, *, keep_sensei: bool = False) -> AcademySettings:
     """Replace the text fields, creating the record on the first save.
 
