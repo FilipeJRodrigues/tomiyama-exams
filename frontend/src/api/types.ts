@@ -144,6 +144,26 @@ export interface Requirement {
   sort_order: number;
 }
 
+/**
+ * Body of `POST /requirements` and `PUT /requirements/{id}` (RN017). Without `sort_order`
+ * the POST puts the item at the end of its belt; the form always sends it on the PUT.
+ */
+export interface RequirementInput {
+  belt_id: string;
+  kind: RequirementKind;
+  category: string;
+  description: string;
+  /** Blank or `null`: no expected answer. */
+  expected_answer: string | null;
+  sort_order?: number;
+}
+
+/** Filters of `GET /requirements`; without them the API sends every item. */
+export interface RequirementFilters {
+  belt_id?: string;
+  kind?: RequirementKind;
+}
+
 /** The mark of one item in one exam (RN006); an item without it is "não marcado". */
 export interface ExamAnswer {
   requirement_id: string;

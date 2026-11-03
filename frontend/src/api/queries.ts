@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
@@ -15,6 +15,9 @@ import type {
   ExamView,
   Examiner,
   MarkAnswerInput,
+  Requirement,
+  RequirementFilters,
+  RequirementInput,
   StudentFilters,
   StudentInput,
   StudentView,
@@ -35,7 +38,15 @@ export const queryKeys = {
     ['events', eventId, 'exams', studentId] as const,
   examiners: ['examiners'] as const,
   settings: ['settings'] as const,
+  /** Prefix of every requirements list (any filter), for invalidation. */
+  allRequirements: ['requirements'] as const,
+  requirements: (filters: RequirementFilters = {}) => ['requirements', filters] as const,
 };
+
+/** Whether a query key is an exam sheet (`examSheet`): `['events', id, 'exams', studentId]`. */
+export function isExamSheetKey(key: readonly unknown[]): boolean {
+  return key.length === 4 && key[0] === 'events' && key[2] === 'exams';
+}
 
 export function listBelts(api: ApiClient): Promise<Belt[]> {
   return api.get<Belt[]>('/belts');
@@ -144,6 +155,39 @@ export function decideExam(
     `${eventExamsPath(eventId)}/${encodeURIComponent(studentId)}/decision`,
     input,
   );
+}
+
+export function listRequirements(
+  api: ApiClient,
+  filters: RequirementFilters = {},
+): Promise<Requirement[]> {
+  return api.get<Requirement[]>('/requirements', {
+    belt_id: filters.belt_id,
+    kind: filters.kind,
+  });
+}
+
+function requirementPath(id: string): string {
+  return `/requirements/${encodeURIComponent(id)}`;
+}
+
+/** `POST /requirements` (examiners, RN017). */
+export function createRequirement(api: ApiClient, input: RequirementInput): Promise<Requirement> {
+  return api.post<Requirement>('/requirements', input);
+}
+
+/** `PUT /requirements/{id}` with the same fields as the POST (RN017). */
+export function updateRequirement(
+  api: ApiClient,
+  id: string,
+  input: RequirementInput,
+): Promise<Requirement> {
+  return api.put<Requirement>(requirementPath(id), input);
+}
+
+/** `DELETE /requirements/{id}`; 409 when an exam has an answer for the item. */
+export function deleteRequirement(api: ApiClient, id: string): Promise<void> {
+  return api.delete(requirementPath(id));
 }
 
 export function getSettings(api: ApiClient): Promise<AcademySettings> {
@@ -406,6 +450,127 @@ export function useDecideExam(eventId: string, studentId: string) {
         reloadExam();
         reloadStudents();
       }
+    },
+  });
+}
+
+/**
+ * `GET /requirements` of one filter, in sheet order (`sort_order`). `enabled: false` waits
+ * (the screen needs the belts to know its default belt).
+ */
+export function useRequirements(filters: RequirementFilters, enabled = true) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.requirements(filters),
+    queryFn: () => listRequirements(api, filters),
+    enabled,
+  });
+}
+
+/** Sheet order inside a belt, as the API sends it: `sort_order`, then id. */
+export function compareRequirements(a: Requirement, b: Requirement): number {
+  if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+function matchesFilters(item: Requirement, filters: RequirementFilters): boolean {
+  return (
+    (filters.belt_id === undefined || filters.belt_id === item.belt_id) &&
+    (filters.kind === undefined || filters.kind === item.kind)
+  );
+}
+
+/**
+ * Puts a saved item (or the removal of a deleted one) straight into every cached list of
+ * one belt, so the screen shows it at once: the item leaves the lists whose filter it no
+ * longer matches. Lists without a belt filter are only reloaded (their order also depends
+ * on the belts).
+ */
+function patchRequirementLists(
+  queryClient: QueryClient,
+  id: string,
+  saved: Requirement | null,
+): void {
+  const lists = queryClient.getQueriesData<Requirement[]>({
+    queryKey: queryKeys.allRequirements,
+  });
+  for (const [key, data] of lists) {
+    const filters = key[1] as RequirementFilters | undefined;
+    if (data === undefined || filters?.belt_id === undefined) continue;
+    const others = data.filter((item) => item.id !== id);
+    const next =
+      saved && matchesFilters(saved, filters)
+        ? [...others, saved].sort(compareRequirements)
+        : others;
+    queryClient.setQueryData<Requirement[]>(key, next);
+  }
+}
+
+/**
+ * After a change of the items, every requirements list reloads, and so do the exam sheets
+ * in cache: their items and the RN007 totals come from the requirements (§ 6.4).
+ */
+function reloadRequirements(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+  void queryClient.invalidateQueries({ predicate: (query) => isExamSheetKey(query.queryKey) });
+}
+
+/** A 404 or 409 means the list is behind the API (item gone, answers registered meanwhile). */
+function reloadOnConflict(queryClient: QueryClient, error: unknown): void {
+  if (!(error instanceof ApiError) || ![404, 409].includes(error.status)) return;
+  void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+}
+
+/** `POST /requirements` (§ 6.5, RN017). */
+export function useCreateRequirement() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RequirementInput) => createRequirement(api, input),
+    onSuccess: (saved) => {
+      patchRequirementLists(queryClient, saved.id, saved);
+      reloadRequirements(queryClient);
+    },
+  });
+}
+
+export interface UpdateRequirementVariables {
+  id: string;
+  input: RequirementInput;
+}
+
+/**
+ * `PUT /requirements/{id}` (§ 6.5, RN017). 409 when the item has answers and the belt or
+ * the kind changes; the message of the API is shown as is.
+ */
+export function useUpdateRequirement() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: UpdateRequirementVariables) => updateRequirement(api, id, input),
+    onSuccess: (saved) => {
+      patchRequirementLists(queryClient, saved.id, saved);
+      reloadRequirements(queryClient);
+    },
+    onError: (error) => {
+      reloadOnConflict(queryClient, error);
+    },
+  });
+}
+
+/** `DELETE /requirements/{id}` (§ 6.5); 409 when an exam has an answer for the item. */
+export function useDeleteRequirement() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteRequirement(api, id),
+    onSuccess: (_result, id) => {
+      patchRequirementLists(queryClient, id, null);
+      reloadRequirements(queryClient);
+    },
+    onError: (error) => {
+      reloadOnConflict(queryClient, error);
     },
   });
 }
