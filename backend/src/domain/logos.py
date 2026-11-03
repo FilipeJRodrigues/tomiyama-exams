@@ -10,6 +10,9 @@ from domain.errors import NotFoundError
 LOGO_SLOTS = ("primary", "secondary")
 # Prefix of every logo object; the functions' IAM policies are limited to it.
 LOGO_KEY_PREFIX = "logos/"
+# Fixed file name the browser sees (``logo.png``/``logo.jpg``), whatever the
+# name of the file the examiner sent.
+LOGO_FILENAME = "logo"
 
 MSG_LOGO_NOT_FOUND = "Logo não encontrado"
 

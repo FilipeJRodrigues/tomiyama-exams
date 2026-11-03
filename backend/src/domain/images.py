@@ -26,6 +26,9 @@ _SIGNATURES = {
     JPEG: b"\xff\xd8\xff",
 }
 
+# Extension of the fixed file name the browser sees for each type.
+_EXTENSIONS = {PNG: "png", JPEG: "jpg"}
+
 # 2 MB = 2 MiB, counted on the decoded bytes.
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 # Longest base64 text that can decode to MAX_IMAGE_BYTES (4 chars per 3 bytes,
@@ -71,8 +74,14 @@ class ImageMeta:
 
     @classmethod
     def from_dict(cls, value: Any) -> "ImageMeta | None":
-        """Rebuild the metadata from a stored map; None if absent or malformed."""
+        """Rebuild the metadata from a stored map; None if absent or malformed.
+
+        A type other than PNG or JPEG counts as malformed: it would be served
+        as the response's ``Content-Type``.
+        """
         if not isinstance(value, dict):
+            return None
+        if value.get("content_type") not in CONTENT_TYPES:
             return None
         try:
             return cls(
@@ -120,6 +129,30 @@ def parse_image_upload(payload: dict[str, Any]) -> ImageUpload:
         raise ValidationError(MSG_INVALID_IMAGE) from exc
     if not decoded or len(decoded) > MAX_IMAGE_BYTES:
         raise ValidationError(MSG_INVALID_IMAGE)
-    if detect_content_type(decoded) != content_type:
+    detected = detect_content_type(decoded)
+    if detected is None or detected != content_type:
         raise ValidationError(MSG_INVALID_IMAGE)
-    return ImageUpload(content_type=content_type, data=decoded)
+    # The stored type is the one read from the bytes, never the client's text.
+    return ImageUpload(content_type=detected, data=decoded)
+
+
+def content_disposition(content_type: str, basename: str) -> str:
+    """Return the ``Content-Disposition`` an image is stored and served with.
+
+    Always ``inline`` (shown, never downloaded as another kind of file) with a
+    fixed file name chosen by the code, e.g. ``inline; filename="logo.png"``;
+    nothing typed by the user goes into the header.
+
+    Args:
+        content_type: ``image/png`` or ``image/jpeg``.
+        basename: Fixed name without extension (lowercase letters only).
+
+    Raises:
+        ValueError: If the type or the name is not one of the expected values
+            (a programming error, not user input).
+    """
+    if content_type not in _EXTENSIONS:
+        raise ValueError(f"unexpected image type: {content_type!r}")
+    if not basename.isascii() or not basename.isalpha() or not basename.islower():
+        raise ValueError(f"unsafe file name: {basename!r}")
+    return f'inline; filename="{basename}.{_EXTENSIONS[content_type]}"'
