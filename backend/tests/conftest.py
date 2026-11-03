@@ -1,4 +1,4 @@
-"""Shared fixtures: mocked AWS (moto), tables that mirror infra/template.yaml, and API events."""
+"""Shared fixtures: mocked AWS (moto) mirroring infra/template.yaml, and API events."""
 
 import json
 import os
@@ -21,11 +21,13 @@ os.environ["REQUIREMENTS_TABLE"] = "test-requirements"
 os.environ["SETTINGS_TABLE"] = "test-settings"
 os.environ["EVENTS_TABLE"] = "test-events"
 os.environ["ANSWERS_TABLE"] = "test-answers"
+os.environ["IMAGES_BUCKET"] = "test-academy-images"
 
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
 from domain.students import Student  # noqa: E402
 from domain.users import ADMIN_GROUP, GUARDIAN_GROUP, MASTER_GROUP, User  # noqa: E402
 from repository import belts as belt_repo  # noqa: E402
+from repository import images as image_repo  # noqa: E402
 from repository import tables  # noqa: E402
 from repository import users as user_repo  # noqa: E402
 
@@ -130,14 +132,28 @@ def _create_tables() -> None:
 
 @pytest.fixture
 def aws() -> Iterator[None]:
-    """Mocked AWS account with empty tables."""
+    """Mocked AWS account with empty tables (the images bucket: ``images_bucket``)."""
     with mock_aws():
         tables.reset_cache()
         user_repo.reset_cache()
+        image_repo.reset_cache()
         _create_tables()
         yield
     tables.reset_cache()
     user_repo.reset_cache()
+    image_repo.reset_cache()
+
+
+@pytest.fixture
+def images_bucket(aws: None) -> str:
+    """Mocked AWS account with the empty private images bucket (``IMAGES_BUCKET``)."""
+    region = os.environ.get("AWS_REGION") or os.environ["AWS_DEFAULT_REGION"]
+    options: dict[str, Any] = {}
+    if region != "us-east-1":
+        options["CreateBucketConfiguration"] = {"LocationConstraint": region}
+    name = os.environ["IMAGES_BUCKET"]
+    boto3.client("s3", region_name=region).create_bucket(Bucket=name, **options)
+    return name
 
 
 @pytest.fixture
