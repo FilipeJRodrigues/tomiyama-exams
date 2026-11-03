@@ -1,5 +1,6 @@
 import { Navigate, type RouteObject } from 'react-router';
 
+import { BeltsPage } from '../features/belts/BeltsPage';
 import { ExamDayPage } from '../features/exam-day/ExamDayPage';
 import { ExamPage } from '../features/exam/ExamPage';
 import { LoginPage } from '../features/auth/LoginPage';
@@ -35,7 +36,7 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
               children: [
                 { path: paths.examDay, element: <ExamDayPage /> },
                 { path: paths.exam, element: <ExamPage /> },
-                { path: paths.belts, element: <PlaceholderPage title="Faixas" /> },
+                { path: paths.belts, element: <BeltsPage /> },
                 { path: paths.requirements, element: <PlaceholderPage title="Requisitos" /> },
                 { path: paths.events, element: <PlaceholderPage title="Eventos" /> },
                 { path: paths.academy, element: <PlaceholderPage title="Academia" /> },

@@ -23,6 +23,13 @@ export interface Belt {
   color_secondary: string | null;
 }
 
+/**
+ * Body of `PUT /belts/{id}` (RN015): every editable field, always. Belts are never created
+ * or deleted through the API. The API checks the ranges, the `#RRGGBB` colors and that name
+ * and order are unique (409).
+ */
+export type BeltInput = Omit<Belt, 'id'>;
+
 /** Eligibility computed by the API on the reference date (never computed here). */
 export interface Eligibility {
   eligible: boolean;

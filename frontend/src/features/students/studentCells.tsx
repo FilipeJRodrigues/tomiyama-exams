@@ -13,7 +13,7 @@ import { beltLabel, type StudentStatus } from './studentText';
  * Belt color sample, decorative only (the name is always written next to it). The border
  * keeps the white belt visible on a white page.
  */
-function BeltSwatch({ belt }: { belt: Belt | undefined }) {
+export function BeltSwatch({ belt }: { belt: Belt | undefined }) {
   if (!belt) return null;
   const background = belt.color_secondary
     ? `linear-gradient(to right, ${belt.color_primary} 50%, ${belt.color_secondary} 50%)`
