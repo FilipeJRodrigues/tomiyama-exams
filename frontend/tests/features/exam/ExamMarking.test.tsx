@@ -414,6 +414,41 @@ describe('marking the exam items (§ 6.4)', () => {
       expect(within(theoryScore()).getByText('marcados 3 de 3')).toBeInTheDocument();
     });
 
+    it('rn006 ends as saved, with a warning, when a mark of the series is refused', async () => {
+      // Certo (held) goes through, the newer Errado is refused: the screen shows what was saved.
+      let releaseFirst: () => void = () => undefined;
+      const first = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let calls = 0;
+      server.use(
+        http.put(ANSWER_URL, async () => {
+          calls += 1;
+          if (calls === 1) {
+            await first;
+            return undefined;
+          }
+          return HttpResponse.json(
+            { message: 'Sistema ocupado no momento. Tente de novo em instantes.' },
+            { status: 503 },
+          );
+        }),
+      );
+      const { user } = await openHelena();
+      await user.click(button('Certo: Parar'));
+      await user.click(button('Errado: Parar'));
+      expect(button('Errado: Parar')).toHaveAttribute('aria-pressed', 'true');
+      releaseFirst();
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Sistema ocupado no momento. Tente de novo em instantes.',
+      );
+      expect(answerOf(PARAR)?.correct).toBe(true);
+      expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'true');
+      expect(button('Errado: Parar')).toHaveAttribute('aria-pressed', 'false');
+      expect(within(theoryScore()).getByText('66,7%')).toBeInTheDocument();
+    });
+
     it('rn006 rolls back only the refused item', async () => {
       server.use(
         http.put(ANSWER_URL, ({ params }) =>
@@ -498,6 +533,36 @@ describe('marking the exam items (§ 6.4)', () => {
     });
   });
 
+  describe('leaving the screen', () => {
+    it('rn006 saves a mark on its way on the exam it was made on', async () => {
+      const held = holdWrites();
+      const { user } = await openHelena();
+      await user.click(button('Certo: Parar'));
+      const trail = screen.getByRole('navigation', { name: 'Caminho' });
+      await user.click(within(trail).getByRole('link', { name: 'Dia do exame' }));
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { level: 1, name: 'Helena Prado' }),
+        ).not.toBeInTheDocument();
+      });
+
+      await release(held[0]);
+      await waitFor(() => {
+        expect(answerOf(PARAR)?.correct).toBe(true);
+      });
+      // Nothing of Helena's exam spills over the exam day.
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+      await user.click(await screen.findByRole('link', { name: /Helena Prado/ }));
+      await screen.findByRole('heading', { level: 1, name: 'Helena Prado' });
+      expect(await screen.findByRole('button', { name: 'Certo: Parar' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(within(theoryScore()).getByText('66,7%')).toBeInTheDocument();
+    });
+  });
+
   describe('keyboard', () => {
     it('rn006 reaches the buttons with Tab and marks with Space and Enter', async () => {
       const { user } = await openHelena();
@@ -506,6 +571,10 @@ describe('marking the exam items (§ 6.4)', () => {
       expect(button('Errado: Professor')).toHaveFocus();
       await user.tab();
       expect(button('Certo: Parar')).toHaveFocus();
+
+      // Visible focus ring on keyboard focus (theme `focusRing: 'auto'`, § 6.7).
+      expect(button('Certo: Parar')).toHaveClass('mantine-focus-auto');
+      expect(button('Certo: Parar')).not.toHaveStyle({ outline: 'none' });
 
       await user.keyboard(' ');
       expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'true');
