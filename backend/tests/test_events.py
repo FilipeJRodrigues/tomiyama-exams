@@ -1,5 +1,6 @@
 """Exam events: RN016 (examiner-only management, delete blocked by exams)."""
 
+import base64
 import os
 from typing import Any
 
@@ -236,3 +237,20 @@ def test_rn016_invalid_json_body(aws: None) -> None:
     event = api_event(EXAMINER)
     event["body"] = "not json"
     assert handlers.create_event(event, None)["statusCode"] == 400
+
+
+@pytest.mark.parametrize(
+    "raw_body",
+    ["@@not-base64@@", base64.b64encode(b"\x89PNG\r\n\x1a\n\xff\xfe").decode("ascii")],
+    ids=["invalid-base64", "not-utf8"],
+)
+def test_rn016_undecodable_body_is_400(aws: None, raw_body: str) -> None:
+    event = api_event(EXAMINER)
+    event["body"] = raw_body
+    event["isBase64Encoded"] = True
+    response = handlers.create_event(event, None)
+    assert response["statusCode"] == 400
+    assert response_json(response) == {
+        "message": "Corpo da requisição inválido: envie um objeto JSON"
+    }
+    assert event_repo.list_all() == []
