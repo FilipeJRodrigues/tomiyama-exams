@@ -1,7 +1,7 @@
 /**
- * § 6.4 exam of a student, step 1 (read-only): header, previous/next present student, tabs
- * with counts, "Só não marcados", items by category, RN007 summary, states and reload on
- * window focus. Marking (step 2) and the sensei decision (step 3) come later.
+ * § 6.4 exam of a student: header, previous/next present student, tabs with counts, "Só não
+ * marcados", items by category, RN007 summary, states and reload on window focus. Marking
+ * (step 2) is in `ExamMarking.test.tsx`; the sensei decision (step 3) comes later.
  */
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
@@ -69,10 +69,21 @@ function category(name: RegExp) {
   return screen.getByRole('region', { name });
 }
 
+/**
+ * Text of each item and its mark: the read-only text, or the pressed Certo/Errado button
+ * ("Não marcado" when none is) while the exam takes marks.
+ */
 function itemTexts(section: HTMLElement): string[] {
   return within(section)
     .getAllByRole('listitem')
-    .map((item) => item.textContent.trim());
+    .map((item) => {
+      const buttons = within(item).queryAllByRole('button');
+      if (buttons.length === 0) return item.textContent.trim();
+      const group = within(item).getByRole('group');
+      const text = item.textContent.replace(group.textContent, '').trim();
+      const pressed = buttons.find((button) => button.getAttribute('aria-pressed') === 'true');
+      return `${text}${pressed?.textContent ?? 'Não marcado'}`;
+    });
 }
 
 function scores() {
@@ -358,7 +369,8 @@ describe('exam of a student (§ 6.4)', () => {
         'Acertos ÷ itens do tipo; item não marcado conta como não acertado.',
       );
       const live = scores();
-      expect(live).toHaveAttribute('aria-live', 'polite');
+      // The numbers are read out by a separate, quieter live region (ExamMarking.test.tsx).
+      expect(screen.getByTestId('percent-live')).toHaveAttribute('aria-live', 'polite');
       expect(within(live).getByText('33,3%')).toBeInTheDocument();
       expect(within(live).getByText('marcados 1 de 3')).toBeInTheDocument();
       expect(within(live).getByText('25%')).toBeInTheDocument();

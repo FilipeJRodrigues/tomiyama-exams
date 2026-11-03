@@ -5,8 +5,9 @@
  * `domain/validation.py`): RN013, RN014 and RN018. The exam day (§ 6.3) gets the event
  * list and the attendance confirmation (`handlers/events.py`, `handlers/exams.py`,
  * `domain/exams.py`): RN005 and RN016. The exam screen (§ 6.4) gets the exam sheet with the
- * RN007 summary (`get_exam_sheet`, `domain/scoring.py`) and the examiners
- * (`handlers/users.py`).
+ * RN007 summary (`get_exam_sheet`, `domain/scoring.py`), the marking of its items
+ * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
+ * examiners (`handlers/users.py`).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
@@ -61,6 +62,10 @@ const MSG_ALREADY_CONFIRMED = 'Presença já confirmada neste evento';
 const MSG_EVENT_CLOSED = 'Evento encerrado';
 const MSG_STUDENT_INACTIVE = 'Aluno inativo não pode fazer exame';
 const MSG_EXAM_NOT_FOUND = 'Exame não encontrado';
+const MSG_REQUIREMENT_NOT_FOUND = 'Requisito não encontrado';
+const MSG_INVALID_CORRECT = 'Marcação inválida: envie correct como true (certo) ou false (errado)';
+const MSG_EXAM_DECIDED = 'Exame já decidido';
+const MSG_ITEM_NOT_IN_BELT = 'Item não pertence à faixa do exame';
 
 /**
  * The mock does not compute eligibility (RN001–RN004 live in the backend). A student
@@ -304,6 +309,34 @@ function examSheet(db: MockDb, event: ExamEvent, exam: Exam): ExamSheet {
   };
 }
 
+type MarkingContext =
+  { error: Response } | { error: null; event: ExamEvent; exam: Exam; requirementId: string };
+
+/** Like `_marking_context`: 404 for the event, the exam, then the requirement. */
+function markingContext(
+  db: MockDb,
+  params: Record<string, string | readonly string[] | undefined>,
+): MarkingContext {
+  const event = db.events.find((candidate) => candidate.id === params.id);
+  if (!event) return { error: errorResponse(404, MSG_EVENT_NOT_FOUND) };
+  const exam = db.exams.find(
+    (candidate) => candidate.event_id === event.id && candidate.student_id === params.studentId,
+  );
+  if (!exam) return { error: errorResponse(404, MSG_EXAM_NOT_FOUND) };
+  const requirement = db.requirements.find((candidate) => candidate.id === params.requirementId);
+  if (!requirement) return { error: errorResponse(404, MSG_REQUIREMENT_NOT_FOUND) };
+  return { error: null, event, exam, requirementId: requirement.id };
+}
+
+/** Like `ensure_can_mark`: decided exam (RN010), closed event (RN016), item of another belt. */
+function markingRefusal(db: MockDb, event: ExamEvent, exam: Exam, requirementId: string) {
+  if (exam.status !== 'IN_PROGRESS') return errorResponse(409, MSG_EXAM_DECIDED);
+  if (event.status !== 'OPEN') return badRequest(MSG_EVENT_CLOSED);
+  const requirement = db.requirements.find((candidate) => candidate.id === requirementId);
+  if (requirement?.belt_id !== exam.target_belt_id) return badRequest(MSG_ITEM_NOT_IN_BELT);
+  return null;
+}
+
 export interface MockHandlersOptions {
   baseUrl: string;
   db?: MockDb;
@@ -488,6 +521,53 @@ export function createHandlers({
       if (!exam) return errorResponse(404, MSG_EXAM_NOT_FOUND);
       return HttpResponse.json(examSheet(db, event, exam));
     }),
+
+    // RN006: mark (replacing any mark) and unmark, with the summary after the write (RN007).
+    http.put(url('/events/:id/exams/:studentId/answers/:requirementId'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const context = markingContext(db, params);
+      if (context.error) return context.error;
+      const { event, exam, requirementId } = context;
+      return withValidation(async () => {
+        const correct = (await readPayload(request)).correct;
+        if (typeof correct !== 'boolean') return badRequest(MSG_INVALID_CORRECT);
+        const refusal = markingRefusal(db, event, exam, requirementId);
+        if (refusal) return refusal;
+        const answer = {
+          requirement_id: requirementId,
+          correct,
+          marked_by: claims.sub,
+          marked_at: new Date().toISOString(),
+        };
+        db.answers = [
+          ...db.answers.filter(
+            (item) => !(item.exam_id === exam.id && item.requirement_id === requirementId),
+          ),
+          { exam_id: exam.id, ...answer },
+        ];
+        return HttpResponse.json({ answer, summary: examSheet(db, event, exam).summary });
+      });
+    }),
+
+    http.delete(
+      url('/events/:id/exams/:studentId/answers/:requirementId'),
+      ({ request, params }) => {
+        const claims = claimsFrom(request);
+        if (!claims) return unauthorized();
+        if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+        const context = markingContext(db, params);
+        if (context.error) return context.error;
+        const { event, exam, requirementId } = context;
+        const refusal = markingRefusal(db, event, exam, requirementId);
+        if (refusal) return refusal;
+        db.answers = db.answers.filter(
+          (item) => !(item.exam_id === exam.id && item.requirement_id === requirementId),
+        );
+        return HttpResponse.json({ answer: null, summary: examSheet(db, event, exam).summary });
+      },
+    ),
 
     http.get(url('/examiners'), ({ request }) => {
       const claims = claimsFrom(request);

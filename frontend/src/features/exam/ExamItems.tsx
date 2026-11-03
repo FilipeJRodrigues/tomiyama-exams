@@ -1,5 +1,21 @@
-import { Card, Group, Stack, Switch, Tabs, Text, Title, VisuallyHidden } from '@mantine/core';
-import { IconCircleCheck, IconCircleDashed, IconCircleX } from '@tabler/icons-react';
+import {
+  Button,
+  Card,
+  Group,
+  Stack,
+  Switch,
+  Tabs,
+  Text,
+  Title,
+  VisuallyHidden,
+} from '@mantine/core';
+import {
+  IconCircleCheck,
+  IconCircleCheckFilled,
+  IconCircleDashed,
+  IconCircleX,
+  IconCircleXFilled,
+} from '@tabler/icons-react';
 import { useId, type ReactNode } from 'react';
 
 import type { ExamSheetItem, ExamSummary, RequirementKind } from '../../api/types';
@@ -10,6 +26,8 @@ import {
   groupByCategory,
   isRequirementKind,
   itemsOfKind,
+  markState,
+  nextMarkState,
   type CategoryGroup,
   type MarkState,
 } from './examModel';
@@ -49,7 +67,68 @@ export function MarkText({ state }: { state: MarkState }) {
   );
 }
 
-/** What goes at the right of each item: the read-only mark now, Certo/Errado in step 2. */
+type MarkChoice = 'correct' | 'wrong';
+
+const CHOICES: readonly MarkChoice[] = ['correct', 'wrong'];
+
+/** Mantine color of the pressed button; its text uses the contrast-checked light color. */
+const CHOICE_COLORS: Record<MarkChoice, string> = { correct: 'green', wrong: 'red' };
+
+const CHOICE_ICONS = {
+  correct: { off: IconCircleCheck, on: IconCircleCheckFilled },
+  wrong: { off: IconCircleX, on: IconCircleXFilled },
+} as const;
+
+interface MarkButtonsProps {
+  item: ExamSheetItem;
+  onMark: (item: ExamSheetItem, state: MarkState) => void;
+}
+
+/**
+ * Certo / Errado of one item (§ 6.4, RN006), at least 44 px tall. The pressed one has
+ * `aria-pressed`, a filled icon, a border and a tinted background, so the state never
+ * depends on color alone (§ 6.7); clicking it again takes the mark off. The accessible
+ * name starts with the visible text and names the item ("Certo: Osoto gari").
+ */
+export function MarkButtons({ item, onMark }: MarkButtonsProps) {
+  const state = markState(item);
+  return (
+    <Group gap="xs" wrap="nowrap" role="group" aria-label={`Marcação: ${item.description}`}>
+      {CHOICES.map((choice) => {
+        const pressed = state === choice;
+        const Icon = CHOICE_ICONS[choice][pressed ? 'on' : 'off'];
+        const color = CHOICE_COLORS[choice];
+        return (
+          <Button
+            key={choice}
+            variant={pressed ? 'light' : 'default'}
+            color={pressed ? color : undefined}
+            aria-pressed={pressed}
+            aria-label={`${MARK_LABELS[choice]}: ${item.description}`}
+            data-choice={choice}
+            leftSection={<Icon size={20} aria-hidden />}
+            onClick={() => {
+              onMark(item, nextMarkState(state, choice));
+            }}
+            style={{
+              ...TOUCH_TARGET,
+              minWidth: 104,
+              borderWidth: 2,
+              borderStyle: 'solid',
+              borderColor: pressed
+                ? `var(--mantine-color-${color}-light-color)`
+                : 'var(--mantine-color-default-border)',
+            }}
+          >
+            {MARK_LABELS[choice]}
+          </Button>
+        );
+      })}
+    </Group>
+  );
+}
+
+/** What goes at the right of each item: the read-only mark or the Certo/Errado buttons. */
 export type RenderMark = (item: ExamSheetItem) => ReactNode;
 
 function ExamItem({ item, renderMark }: { item: ExamSheetItem; renderMark: RenderMark }) {
@@ -108,16 +187,18 @@ function KindPanel({
   items,
   kind,
   onlyUnmarked,
+  keep,
   renderMark,
 }: {
   items: ExamSheetItem[];
   kind: RequirementKind;
   onlyUnmarked: boolean;
+  keep: ReadonlySet<string>;
   renderMark: RenderMark;
 }) {
   const ofKind = itemsOfKind(items, kind);
   if (ofKind.length === 0) return <Text>{NO_ITEMS[kind]}</Text>;
-  const groups = groupByCategory(ofKind, onlyUnmarked);
+  const groups = groupByCategory(ofKind, onlyUnmarked, keep);
   if (groups.length === 0) return <Text>{ALL_MARKED[kind]}</Text>;
   return (
     <Stack gap="lg">
@@ -135,8 +216,12 @@ interface ExamItemsProps {
   onKindChange: (kind: RequirementKind) => void;
   onlyUnmarked: boolean;
   onOnlyUnmarkedChange: (value: boolean) => void;
+  /** Marked items still shown under "Só não marcados" (see `groupByCategory`). */
+  keep?: ReadonlySet<string>;
   renderMark: RenderMark;
 }
+
+const KEEP_NONE: ReadonlySet<string> = new Set();
 
 /**
  * Teórico and Prático tabs with "marked/total" (from the API summary), the "Só não marcados"
@@ -149,6 +234,7 @@ export function ExamItems({
   onKindChange,
   onlyUnmarked,
   onOnlyUnmarkedChange,
+  keep = KEEP_NONE,
   renderMark,
 }: ExamItemsProps) {
   return (
@@ -185,6 +271,7 @@ export function ExamItems({
             items={items}
             kind={value}
             onlyUnmarked={onlyUnmarked}
+            keep={keep}
             renderMark={renderMark}
           />
         </Tabs.Panel>
