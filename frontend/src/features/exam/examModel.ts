@@ -20,6 +20,7 @@ import type {
 import { paths } from '../../app/navigation';
 import { ageInYears, parseIsoDate } from '../../lib/dates';
 import { formatPercent } from '../../lib/format';
+import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
 import { EVENT_PARAM } from '../exam-day/examDayModel';
 import { ageLabel } from '../students/studentText';
 
@@ -151,15 +152,15 @@ export function shiftSummary(
 ): ExamSummary {
   const next: ExamSummary = { THEORY: { ...summary.THEORY }, PRACTICE: { ...summary.PRACTICE } };
   let changed = false;
-  before.forEach((item, index) => {
+  for (const [index, item] of before.entries()) {
     const from = markState(item);
     const to = markState(after[index] ?? item);
-    if (from === to) return;
+    if (from === to) continue;
     changed = true;
     const score = next[item.kind];
     score.marked += Number(to !== 'unmarked') - Number(from !== 'unmarked');
     score.correct += Number(to === 'correct') - Number(from === 'correct');
-  });
+  }
   if (!changed) return summary;
   for (const kind of REQUIREMENT_KINDS) {
     const score = next[kind];
@@ -264,6 +265,19 @@ export function groupByCategory(
     marked: markedCount(all),
     total: all.length,
   })).filter((group) => group.items.length > 0);
+}
+
+/** Quiet time after the last change before the percentages are read out (§ 6.7). */
+export const ANNOUNCE_DELAY_MS = 1000;
+
+/** `Teórico 66,7%, Prático 25%` for the live region; "sem itens" instead of "—". */
+export function percentsAnnouncement(summary: ExamSummary): string {
+  return REQUIREMENT_KINDS.map((kind) => {
+    const label = REQUIREMENT_KIND_LABELS[kind];
+    return summary[kind].percent === null
+      ? `${label} sem itens`
+      : `${label} ${percentLabel(summary[kind])}`;
+  }).join(', ');
 }
 
 /** `72,5%`, or `—` when the belt has no item of the kind (RN007). */

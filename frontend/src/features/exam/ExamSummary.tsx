@@ -15,7 +15,13 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { ExamSummary as Summary, ExamView, Examiner, RequirementKind } from '../../api/types';
 import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
-import { REQUIREMENT_KINDS, examinerName, percentLabel } from './examModel';
+import {
+  ANNOUNCE_DELAY_MS,
+  REQUIREMENT_KINDS,
+  examinerName,
+  percentLabel,
+  percentsAnnouncement,
+} from './examModel';
 
 /** § 6.7: the percentages are computed data; the hint explains how. */
 const PERCENT_HINT = 'Acertos ÷ itens do tipo; item não marcado conta como não acertado.';
@@ -107,20 +113,6 @@ interface ExamSummaryProps extends DecisionAreaProps {
   summary: Summary;
   /** No mark on its way: the percentages are the API's. */
   settled?: boolean;
-}
-
-/** Quiet time after the last change before the percentages are read out. */
-export const ANNOUNCE_DELAY_MS = 1000;
-
-function spokenPercent(kind: RequirementKind, summary: Summary): string {
-  const { percent } = summary[kind];
-  const label = REQUIREMENT_KIND_LABELS[kind];
-  return percent === null ? `${label} sem itens` : `${label} ${percentLabel(summary[kind])}`;
-}
-
-/** `Teórico 66,7%, Prático 25%`. */
-export function percentsAnnouncement(summary: Summary): string {
-  return REQUIREMENT_KINDS.map((kind) => spokenPercent(kind, summary)).join(', ');
 }
 
 /**
