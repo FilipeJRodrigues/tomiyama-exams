@@ -83,10 +83,16 @@ def _from_item(item: dict[str, Any]) -> ExamAnswer:
 
 
 def list_by_exam(exam_id: str) -> dict[str, ExamAnswer]:
-    """Return the answers of an exam indexed by requirement id (follows pagination)."""
+    """Return the answers of an exam indexed by requirement id (follows pagination).
+
+    Strongly consistent on every page: the summary returned right after a mark
+    (RN007) and the exam sheet (RN006) must include a mark another examiner
+    wrote milliseconds before. Costs 1 RCU per 4 KB instead of 0.5.
+    """
     items = paginate(
         table(ANSWERS_TABLE_ENV).query,
         KeyConditionExpression=Key("exam_id").eq(exam_id),
+        ConsistentRead=True,
     )
     answers = (_from_item(item) for item in items)
     return {answer.requirement_id: answer for answer in answers}
