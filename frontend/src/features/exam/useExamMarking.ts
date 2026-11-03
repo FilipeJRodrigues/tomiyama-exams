@@ -9,7 +9,8 @@
  * - Each answer is written into the cached exam (`withSavedAnswer`). Its summary is the
  *   source of truth when no other item was on its way meanwhile; otherwise the exam reloads
  *   once every mark has landed.
- * - A refusal puts the item back as the API has it and keeps the message for the screen;
+ * - A refusal puts the item back as the API has it and keeps the message for the screen,
+ *   until the same item is saved (the notice is about the failure, not the current state);
  *   a decided exam or closed event (and the other `reloadsExam` cases) reloads the exam, so
  *   the screen turns read-only.
  * - While a mark is on its way the reload on window focus waits, and a reload already on its
@@ -33,6 +34,8 @@ import {
 
 /** A mark the API refused, for the notice. */
 export interface MarkFailure {
+  /** Id of the item: a later save of it takes the notice away. */
+  itemId: string;
   /** Description of the item, to say which one. */
   item: string;
   message: string;
@@ -163,11 +166,14 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
           setPending(k, item.id, undefined);
           setFailure({
             key: k,
-            failure: { item: item.description, message: errorMessage(error) },
+            failure: { itemId: item.id, item: item.description, message: errorMessage(error) },
           });
           if (reloadsExam(error)) marks.reloadWhenIdle = true;
           break;
         }
+        setFailure((current) =>
+          current?.key === k && current.failure.itemId === item.id ? null : current,
+        );
         await holdReload(exam, marks);
         const summary = marks.overlapped ? undefined : result.summary;
         queryClient.setQueryData<ExamSheet>(

@@ -1,7 +1,7 @@
 import { Alert, Box, Button, Group, Stack, Text, Title } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconAlertCircle, IconArrowLeft, IconLock, IconUserOff } from '@tabler/icons-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { ApiError } from '../../api/client';
@@ -113,6 +113,26 @@ function MarkFailureNotice({ failure, onClose }: { failure: MarkFailure; onClose
   );
 }
 
+/**
+ * When the exam turns read-only while shown (409 "Exame já decidido", 400 "Evento encerrado"),
+ * the Certo/Errado button that had the focus is gone and the focus falls on the page body.
+ * Then it goes to the exam title (§ 6.7), not to the notice: the notice is an alert, already
+ * announced, and focusing it would make the screen reader read it twice. A focus elsewhere
+ * (the trail, Próximo) is left alone.
+ */
+function useReadOnlyFocus(readOnly: boolean) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const wasReadOnly = useRef(readOnly);
+  useEffect(() => {
+    const turned = readOnly && !wasReadOnly.current;
+    wasReadOnly.current = readOnly;
+    if (!turned) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) titleRef.current?.focus();
+  }, [readOnly]);
+  return titleRef;
+}
+
 interface ExamContentProps {
   sheet: ExamSheet;
   kind: RequirementKind;
@@ -150,10 +170,11 @@ function ExamContent({
   const renderMark: RenderMark = onMark
     ? (item) => <MarkButtons item={item} onMark={onMark} />
     : renderReadOnlyMark;
+  const titleRef = useReadOnlyFocus(onMark === undefined);
 
   const main = (
     <Stack gap="md">
-      <ExamHeader sheet={sheet} belts={belts.data} />
+      <ExamHeader sheet={sheet} belts={belts.data} titleRef={titleRef} />
       <Notices sheet={sheet} />
       {failure && <MarkFailureNotice failure={failure} onClose={onDismissFailure} />}
       <ExamItems

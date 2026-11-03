@@ -1,5 +1,6 @@
 import { Anchor, Badge, Breadcrumbs, Button, Group, Stack, Text, Title } from '@mantine/core';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import type { Ref } from 'react';
 import { Link } from 'react-router';
 
 import { useEventExams } from '../../api/queries';
@@ -103,17 +104,19 @@ export function ResultBadge({ status }: { status: ExamStatus }) {
 interface ExamHeaderProps {
   sheet: ExamSheet;
   belts: Belt[] | undefined;
+  /** The title (focusable by script only), to take the focus when the screen turns read-only. */
+  titleRef?: Ref<HTMLHeadingElement>;
 }
 
 /** Student name and result, then age, exam (`Faixa X` / `Grau na faixa X (rumo à Y)`) and event. */
-export function ExamHeader({ sheet, belts }: ExamHeaderProps) {
+export function ExamHeader({ sheet, belts, titleRef }: ExamHeaderProps) {
   const name = sheet.student?.full_name ?? sheet.exam.student_name ?? DELETED_STUDENT;
   const age = examAgeLabel(sheet.student, sheet.event);
   const { event } = sheet;
   return (
     <Stack gap={4}>
       <Group gap="sm" align="center">
-        <Title order={1} size="h2">
+        <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
           {name}
         </Title>
         <ResultBadge status={sheet.exam.status} />
