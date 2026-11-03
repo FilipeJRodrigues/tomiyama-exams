@@ -46,14 +46,30 @@ def paginate(operation: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
     Args:
         operation: ``table.scan`` or ``table.query``.
         **kwargs: Arguments forwarded to the operation.
+
+    Raises:
+        ServiceUnavailableError: If a page kept throttling after botocore's retries (503).
+        ClientError: Any other DynamoDB error, unchanged.
     """
     while True:
-        response = operation(**kwargs)
+        try:
+            response = operation(**kwargs)
+        except ClientError as exc:
+            raise_if_throttled(exc, _describe(operation, kwargs))
+            raise
         yield from response.get("Items", [])
         last_key = response.get("LastEvaluatedKey")
         if not last_key:
             return
         kwargs["ExclusiveStartKey"] = last_key
+
+
+def _describe(operation: Any, kwargs: dict[str, Any]) -> str:
+    """Describe a scan or query for the log, e.g. ``Query on Exams (index by_student)``."""
+    name = getattr(operation, "__name__", "operation").capitalize()
+    owner = getattr(getattr(operation, "__self__", None), "name", "table")
+    index = kwargs.get("IndexName")
+    return f"{name} on {owner}" + (f" (index {index})" if index else "")
 
 
 def replace_fields(item: dict[str, Any], key_names: tuple[str, ...] = ("id",)) -> dict[str, Any]:
