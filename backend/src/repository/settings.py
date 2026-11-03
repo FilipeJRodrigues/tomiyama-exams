@@ -4,7 +4,7 @@ The same table keeps markers such as the initial-data load
 (``repository.requirements.SEED_MARKER_ID``) under other ids.
 
 Saving uses ``UpdateItem`` only on the model's text fields, so attributes kept
-by other writers (the images of the next step) are never lost.
+by other writers (the image metadata, RN012) are never lost.
 
 Only the admin master changes the sensei: for anyone else the write carries a
 condition that the stored ``sensei_user_id`` equals the one sent, so a change
@@ -17,8 +17,15 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from domain.errors import ForbiddenError
+from domain.images import ImageMeta
 from domain.settings import MSG_ONLY_MASTER_CHOOSES_SENSEI, SETTINGS_ID, AcademySettings
-from repository.tables import SETTINGS_TABLE_ENV, raise_if_throttled, replace_fields, table
+from repository.tables import (
+    SETTINGS_TABLE_ENV,
+    get_item_or_busy,
+    raise_if_throttled,
+    replace_fields,
+    table,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +60,26 @@ def get_settings() -> AcademySettings | None:
         _raise_busy(exc)
         raise
     return _from_item(item) if item else None
+
+
+def get_sensei_user_id() -> str | None:
+    """Return only the stored ``sensei_user_id`` (None without settings or sensei).
+
+    Strongly consistent, so a sensei replaced a moment ago is already seen;
+    the projection keeps the other fields (and the logo metadata) out.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling.
+    """
+    item = get_item_or_busy(
+        table(SETTINGS_TABLE_ENV),
+        {"id": SETTINGS_ID},
+        ProjectionExpression="#sensei",
+        ExpressionAttributeNames={"#sensei": _SENSEI},
+        ConsistentRead=True,
+    )
+    value = (item or {}).get(_SENSEI)
+    return value if isinstance(value, str) and value else None
 
 
 def save_settings(settings: AcademySettings, *, keep_sensei: bool = False) -> AcademySettings:
@@ -98,3 +125,65 @@ def save_settings(settings: AcademySettings, *, keep_sensei: bool = False) -> Ac
         _raise_busy(exc)
         raise
     return _from_item(response["Attributes"])
+
+
+# --- image metadata (RN012) -------------------------------------------------------
+# The images themselves live in S3 (repository.images); the settings record keeps
+# only a map per image (content type, size, when and by whom), so the screen
+# knows whether there is one. Each call touches a single attribute of the record
+# with ``UpdateItem``/projected ``GetItem``, keeping the other fields intact.
+
+
+def get_image_meta(attribute: str) -> ImageMeta | None:
+    """Return the metadata kept in ``attribute`` of the settings record, or None.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling.
+    """
+    item = get_item_or_busy(
+        table(SETTINGS_TABLE_ENV),
+        {"id": SETTINGS_ID},
+        ProjectionExpression="#image",
+        ExpressionAttributeNames={"#image": attribute},
+    )
+    return ImageMeta.from_dict((item or {}).get(attribute))
+
+
+def set_image_meta(attribute: str, meta: ImageMeta) -> None:
+    """Write the metadata into ``attribute``, creating the record if needed.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling.
+    """
+    try:
+        table(SETTINGS_TABLE_ENV).update_item(
+            Key={"id": SETTINGS_ID},
+            UpdateExpression="SET #image = :meta",
+            ExpressionAttributeNames={"#image": attribute},
+            ExpressionAttributeValues={":meta": meta.to_dict()},
+        )
+    except ClientError as exc:
+        _raise_busy(exc)
+        raise
+
+
+def remove_image_meta(attribute: str) -> None:
+    """Remove ``attribute`` from the settings record (no-op if absent).
+
+    The condition keeps a removal from creating an empty settings record.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling.
+    """
+    try:
+        table(SETTINGS_TABLE_ENV).update_item(
+            Key={"id": SETTINGS_ID},
+            UpdateExpression="REMOVE #image",
+            ConditionExpression="attribute_exists(id)",
+            ExpressionAttributeNames={"#image": attribute},
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return
+        _raise_busy(exc)
+        raise

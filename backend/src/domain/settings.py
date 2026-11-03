@@ -1,8 +1,9 @@
 """Academy settings (§ 3.7): a single record with the academy data and the sensei.
 
-The images (logos and, from step 5, the certificate signatures) live in the
-same record but never in this model nor in its JSON; they have their own
-routes (RN012). Saving the text fields keeps them untouched.
+The logo metadata lives in the same record and the certificate signatures in
+another item of the table (``domain.signatures.SIGNATURES_ID``); neither is in
+this model nor in its JSON, they have their own routes (RN012). Saving the
+text fields keeps them untouched.
 
 The sensei is one of the active examiners (Cognito group ``admin``, account
 enabled) and is the only one who decides exams (RN008). Only the admin master

@@ -49,6 +49,12 @@ class ConflictError(DomainError):
     status_code = 409
 
 
+class PayloadTooLargeError(DomainError):
+    """Request body above the size the API accepts (413)."""
+
+    status_code = 413
+
+
 class ServiceUnavailableError(DomainError):
     """Temporary lack of capacity; the same request may succeed later (503)."""
 
