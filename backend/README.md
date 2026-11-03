@@ -114,6 +114,17 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 | GET/PUT/DELETE | /settings/logos/{slot} | examinador |
 | GET | /examiners | examinador |
 
+### Erros comuns
+
+Valem para todas as rotas que recebem corpo (`POST` e `PUT`), com ou sem `isBase64Encoded`, e saem no mesmo formato `{"message": ...}` das outras respostas:
+
+| Situação | Resposta |
+| --- | --- |
+| corpo ausente, que não é UTF-8 nem base64 válido (como uma imagem crua), JSON malformado ou aninhado demais, inteiro com mais de 4300 dígitos, `NaN`/`Infinity`/`-Infinity`, número que estoura para infinito (como `1e999`) ou JSON que não é um objeto | 400 "Corpo da requisição inválido: envie um objeto JSON" |
+| corpo acima de 3 MiB (3.145.728 bytes em UTF-8; com `isBase64Encoded`, o texto base64 é conferido antes de decodificar) | 413 "Corpo da requisição grande demais" |
+
+O teto de 3 MiB cabe o maior corpo legítimo, o envio de um logo de 2 MB (cerca de 2,8 MB de JSON, por causa do base64), e fica abaixo do limite de 6 MB da Lambda. O tamanho é conferido antes da leitura do JSON, e nada é gravado.
+
 `GET /students` aceita os filtros `active=true|false`, `belt_id` e `reference_date=AAAA-MM-DD`. O último é a data da elegibilidade; sem ele, vale a data de hoje.
 
 `PUT /students/{id}` recebe todos os campos do `POST`. Enquanto o aluno tiver um exame em andamento (RN005), a troca de faixa (`current_belt_id`), da data da faixa (`current_belt_since`) ou dos graus (`stripes`) é recusada com 409 "Não é possível alterar a graduação com exame em andamento. Decida o exame primeiro." e nada é gravado, para examinadores e responsáveis. Nome, nascimento, registro e ativo continuam editáveis, e reenviar a mesma graduação (como o formulário faz) é aceito. Quando a graduação enviada é a mesma da leitura, a gravação não toca nos campos da graduação: só os outros campos são gravados, então uma aprovação do sensei entre a leitura e a gravação não é desfeita (RN009). A resposta (200) traz o aluno como ficou gravado (`ReturnValues=ALL_NEW`), já com a graduação da aprovação nesse caso. Quando a graduação enviada é diferente da lida, a gravação usa uma trava otimista: o `UpdateItem` só grava se `current_belt_id`, `current_belt_since` e `stripes` ainda forem os da leitura. Se mudaram no meio do caminho (outra edição ou uma aprovação do sensei, RN009), a resposta é 409 "Os dados do aluno mudaram. Tente de novo." e nada é gravado; o aluno apagado, a trava do RN013 e o exame em andamento continuam respondendo 404, 403 e 409 como abaixo. Limite de capacidade do DynamoDB que persistiu, na leitura do aluno, do marcador ou na gravação → 503 "Sistema ocupado no momento. Tente de novo em instantes." (vale também para `GET` e `DELETE /students/{id}`). Depois da decisão do sensei a graduação volta a ser editável. A condição está na própria gravação (`UpdateItem` condicionado a `exam_in_progress_id` ausente, só quando a graduação muda), então uma presença confirmada no meio da edição também barra a troca. **Precedência para o responsável:** a trava do RN013 (403 "Somente examinadores alteram a graduação após o primeiro exame") vem antes, porque continua valendo depois da decisão; como todo aluno com exame em andamento já tem exame, o responsável que tenta trocar a graduação recebe sempre o 403. Aluno apagado no meio do caminho → 404.
@@ -192,7 +203,8 @@ Os logos ficam num bucket S3 **privado** (`ImagesBucket`), nunca no DynamoDB nem
 - `content_type`: `image/png` ou `image/jpeg`, exatamente assim.
 - A Lambda decodifica e confere a **assinatura binária** do arquivo: PNG começa com `89 50 4E 47 0D 0A 1A 0A` e JPEG com `FF D8 FF`. O tipo real vem dos bytes; se não bater com o `content_type`, o envio é recusado. GIF, PDF, SVG e o resto são recusados.
 - Tamanho: até 2 MB (2 × 1024 × 1024 = 2.097.152 bytes) **depois de decodificar**; exatamente 2 MB é aceito. Um `data` maior que o base64 de 2 MB (2.796.204 caracteres) é recusado antes de decodificar.
-- Só depois da validação o arquivo é gravado no S3, na chave fixa do slot (`logos/primary` ou `logos/secondary`), com o `Content-Type` validado. Trocar o logo é sobrescrever a mesma chave (sem versionamento).
+- Só depois da validação o arquivo é gravado no S3, na chave fixa do slot (`logos/primary` ou `logos/secondary`). Trocar o logo é sobrescrever a mesma chave (sem versionamento).
+- Cabeçalhos do objeto: `Content-Type` é o tipo **detectado pelos bytes** (`image/png` ou `image/jpeg`), nunca o cabeçalho `Content-Type` da requisição nem outro texto do cliente; `Content-Disposition` é sempre `inline; filename="logo.png"` (ou `logo.jpg`), um nome fixo escolhido pelo código, sem nada do nome do arquivo enviado. Assim o navegador mostra a imagem e não a trata como página, script ou download de outro tipo.
 - Por que pela API e não por upload direto com URL pré-assinada de `PUT`: assim o arquivo é validado (tipo real e tamanho) antes de entrar no bucket, e nada inválido chega a ser gravado. O corpo de até ~2,8 MB cabe nos limites do HTTP API (10 MB) e da Lambda (6 MB); um corpo acima de 6 MB é barrado pela AWS antes da função. O timeout (10 s) e a memória (256 MB) padrão bastam para decodificar e gravar 2 MB.
 
 A resposta do `PUT` (200) traz os metadados, os mesmos gravados nas configurações:
@@ -209,6 +221,10 @@ A resposta do `PUT` (200) traz os metadados, os mesmos gravados nas configuraç�
  "expires_in": 300, "content_type": "image/png", "size": 48213,
  "updated_at": "…", "updated_by": "<sub>"}
 ```
+
+A URL fixa os cabeçalhos da resposta com os mesmos valores do envio (`response-content-type` = o `content_type` dos metadados e `response-content-disposition` = `inline; filename="logo.png"` ou `logo.jpg`). Esses parâmetros entram na assinatura, então trocá-los invalida a URL, e a resposta não depende dos metadados gravados no objeto. Metadados com `content_type` diferente de PNG e JPEG contam como "sem logo" (404).
+
+**Sem `X-Content-Type-Options: nosniff`.** O S3 não deixa definir esse cabeçalho na resposta de um objeto: no `PutObject` só valem `Cache-Control`, `Content-Disposition`, `Content-Encoding`, `Content-Language`, `Content-Type`, `Expires` e metadados `x-amz-meta-*`, e na URL pré-assinada só as seis sobreposições `response-*` correspondentes (conferido no modelo do S3 do botocore). Um `x-amz-meta-*` não teria efeito no navegador, por isso não é usado. O `nosniff` só seria possível servindo os logos por CloudFront com *response headers policy*, que a stack não usa. A proteção que fica é o tipo validado pelos bytes, o `Content-Type` e o `Content-Disposition: inline` fixos na URL, e o uso da URL só em `<img src>` (que nunca executa o arquivo).
 
 A URL serve para `<img src>`, que não precisa de CORS; para mostrar o logo de novo depois de 5 minutos, a tela chama o `GET` outra vez. Como `GET /settings` não traz os logos, a aba Academia chama `GET /settings/logos/primary` e `/secondary` e trata 404 como espaço vazio. A assinatura é SigV4 contra o endpoint da região (o endpoint global pode redirecionar um bucket novo e quebrar a assinatura) e é feita localmente na Lambda, sem chamada ao S3; a URL vale enquanto o papel da função puder ler `logos/*` e as credenciais da função não expirarem.
 
@@ -229,6 +245,9 @@ Corrida que sobra: um `PUT` e um `DELETE` do **mesmo** slot ao mesmo tempo podem
 | `content_type` ausente ou diferente de `image/png`/`image/jpeg`; `data` ausente, vazio, que não é texto ou base64 inválido; bytes que não são PNG nem JPEG, ou de tipo diferente do declarado; mais de 2 MB | 400 "Envie PNG ou JPEG de até 2 MB" (nada é gravado; o logo atual fica) |
 | corpo que não é um objeto JSON | 400 "Corpo da requisição inválido: envie um objeto JSON" |
 | DynamoDB ou S3 (`SlowDown`) sem capacidade, mesmo após as novas tentativas | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+| S3 lento ou fora do ar (timeout de conexão ou de leitura, conexão recusada ou derrubada) | 503 "Sistema ocupado no momento. Tente de novo em instantes." (no envio, nada é gravado; na remoção, como no `SlowDown` acima) |
+
+**Timeouts do cliente S3.** O padrão do boto3 (60 s para conectar e 60 s para ler) passa do `Timeout` de 10 s das funções, e a Lambda seria encerrada no meio, com 500 genérico do API Gateway. Por isso o cliente (`repository/images.py`) usa `connect_timeout` de 1 s, `read_timeout` de 2 s (por operação de socket, não para o corpo inteiro) e no máximo 2 tentativas no modo `standard`. O pior caso é 2 × (1 + 2) s mais até 1 s de espera entre as tentativas, ou seja, 7 s, o que deixa folga para a gravação no DynamoDB. Um teste confere essa conta contra o `Timeout` do template. Esgotadas as tentativas, timeout ou falha de conexão viram 503. A assinatura da URL do `GET` é local e não faz chamada de rede.
 
 O `slot` inválido é 404, e não 400, porque o caminho aponta para um recurso que não existe, como um `id` desconhecido nas outras rotas. A autorização vem antes: um responsável recebe 403 mesmo com `slot` inválido.
 
