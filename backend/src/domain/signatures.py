@@ -39,6 +39,8 @@ MAX_NAME = 120
 MAX_GRADUATION = 120
 
 # Prefix of every signature image; the functions' IAM policies are limited to it.
+# Each upload gets its own key ``signatures/{id}/{uuid}`` (``new_image_key``),
+# chosen by the API, never by the client; the list records the current one.
 SIGNATURE_KEY_PREFIX = "signatures/"
 # Fixed file name the browser sees (``assinatura.png``/``assinatura.jpg``).
 SIGNATURE_FILENAME = "assinatura"
@@ -57,12 +59,15 @@ class Signature:
     """One certificate signature.
 
     Attributes:
-        id: Random UUID, also the image's S3 key (``signatures/{id}``).
+        id: Random UUID; its images live under ``signatures/{id}/``.
         name: Name printed under the line.
         graduation: Graduation printed under the name; None until filled in.
         image: Metadata of the image in S3; None without image.
         updated_at: Last change of the name, graduation or image.
         updated_by: ``sub`` of who made that change.
+        image_key: S3 key of the current image (``signatures/{id}/{uuid}``),
+            stored as ``key`` in the ``image`` map; None exactly when
+            ``image`` is None.
     """
 
     id: str
@@ -71,6 +76,11 @@ class Signature:
     image: ImageMeta | None
     updated_at: str
     updated_by: str
+    image_key: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.image is None) != (self.image_key is None):
+            raise ValueError("image and image_key go together")
 
     @property
     def complete(self) -> bool:
@@ -88,19 +98,30 @@ class Signature:
         if self.graduation is not None:
             item["graduation"] = self.graduation
         if self.image is not None:
-            item["image"] = self.image.to_dict()
+            item["image"] = {**self.image.to_dict(), "key": self.image_key}
         return item
 
     @classmethod
     def from_item(cls, item: dict[str, Any]) -> "Signature":
-        """Rebuild a signature from its stored map."""
+        """Rebuild a signature from its stored map.
+
+        Image metadata without a valid key of this signature counts as no
+        image: the API never points at an object it did not register.
+        """
+        signature_id = str(item["id"])
+        raw_image = item.get("image")
+        image = ImageMeta.from_dict(raw_image)
+        key = raw_image.get("key") if isinstance(raw_image, dict) else None
+        if image is None or not is_image_key(signature_id, key):
+            image, key = None, None
         return cls(
-            id=str(item["id"]),
+            id=signature_id,
             name=str(item["name"]),
             graduation=item.get("graduation"),
-            image=ImageMeta.from_dict(item.get("image")),
+            image=image,
             updated_at=str(item["updated_at"]),
             updated_by=str(item["updated_by"]),
+            image_key=key,
         )
 
 
@@ -250,21 +271,26 @@ def set_image(
     signature_id: str,
     image: ImageMeta | None,
     *,
+    image_key: str | None,
     now_iso: str,
     user_sub: str,
 ) -> Signatures:
-    """Set (or, with None, clear) the image metadata of a signature.
+    """Set (or, with None and None, clear) the image metadata and key of a signature.
 
     Clearing a signature that has no image returns the list unchanged.
 
     Raises:
         NotFoundError: If the signature does not exist (anymore).
+        ValueError: If only one of ``image`` and ``image_key`` is given, or the
+            key is not one of this signature (a programming error).
     """
     current = find(signatures, signature_id)
+    if image_key is not None and not is_image_key(signature_id, image_key):
+        raise ValueError(f"unexpected image key: {image_key!r}")
     if image is None and current.image is None:
         return signatures
     return tuple(
-        replace(item, image=image, updated_at=now_iso, updated_by=user_sub)
+        replace(item, image=image, image_key=image_key, updated_at=now_iso, updated_by=user_sub)
         if item.id == signature_id
         else item
         for item in signatures
@@ -338,6 +364,40 @@ def list_view(signatures: Sequence[Signature]) -> dict[str, Any]:
     }
 
 
-def signature_key(signature_id: str) -> str:
-    """Return the S3 key of the signature's image, e.g. ``signatures/<uuid>``."""
-    return f"{SIGNATURE_KEY_PREFIX}{signature_id}"
+# --- image keys -------------------------------------------------------------------------
+
+
+def _image_prefix(signature_id: str) -> str:
+    return f"{SIGNATURE_KEY_PREFIX}{signature_id}/"
+
+
+def new_image_key(signature_id: str) -> str:
+    """Return a fresh S3 key for one upload, ``signatures/{id}/{uuid}``.
+
+    A new key on every upload: two uploads (or an upload and a removal) at the
+    same time never write over each other's object, so the key recorded in
+    the list always names the bytes its metadata describes.
+    """
+    return f"{_image_prefix(signature_id)}{uuid.uuid4()}"
+
+
+def is_image_key(signature_id: str, key: Any) -> bool:
+    """Whether ``key`` is an image key of this signature (``signatures/{id}/{uuid}``)."""
+    if not isinstance(key, str) or not key.startswith(_image_prefix(signature_id)):
+        return False
+    suffix = key[len(_image_prefix(signature_id)) :]
+    try:
+        return str(uuid.UUID(suffix)) == suffix
+    except ValueError:
+        return False
+
+
+def image_key_of(signatures: Iterable[Signature], signature_id: str) -> str | None:
+    """Return the key recorded for the signature's image (None without image or signature)."""
+    found = next((item for item in signatures if item.id == signature_id), None)
+    return found.image_key if found is not None else None
+
+
+def references_key(signatures: Iterable[Signature], key: str) -> bool:
+    """Whether any signature's image metadata point to ``key`` (it must not be deleted)."""
+    return any(item.image_key == key for item in signatures)

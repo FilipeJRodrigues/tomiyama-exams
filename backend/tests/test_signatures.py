@@ -2,23 +2,43 @@
 
 Up to 3 in an ordered list; each with name, graduation, image (PNG or JPEG of
 at most 2 MB, validated like the logos) and position. "Complete" = name,
-graduation and image. Images in the private bucket under ``signatures/``.
+graduation and image. Images in the private bucket under ``signatures/``, one
+key per upload (``signatures/{id}/{uuid}``) recorded in the metadata.
 """
 
 import base64
+import json
+import logging
 import os
+import re
+import uuid
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import boto3
 import pytest
-from botocore.exceptions import ClientError, ConnectTimeoutError
-from conftest import EXAMINER, GUARDIAN, MASTER, api_event, response_json
+from botocore.awsrequest import AWSResponse
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
+from conftest import (
+    EXAMINER,
+    GUARDIAN,
+    MASTER,
+    api_event,
+    read_signature_image,
+    response_json,
+    signature_object_keys,
+)
 
 from domain import dates
 from domain import signatures as rules
-from domain.errors import ConflictError
+from domain.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from domain.images import MAX_IMAGE_BYTES, MSG_INVALID_IMAGE, ImageMeta
 from domain.settings import SETTINGS_ID
 from domain.signatures import SIGNATURES_ID
@@ -124,6 +144,23 @@ def _s3_object(key: str) -> dict[str, Any] | None:
         "content_type": response["ContentType"],
         "disposition": response.get("ContentDisposition"),
     }
+
+
+def _image_key(signature_id: str) -> str | None:
+    """Return the key recorded in the stored ``image`` map (None without image)."""
+    for entry in (_stored_list() or {}).get("signatures", []):
+        if entry["id"] == signature_id:
+            image = entry.get("image")
+            return image["key"] if image else None
+    return None
+
+
+def _assert_upload_key(signature_id: str, key: str | None) -> str:
+    assert key is not None
+    match = re.fullmatch(rf"signatures/{signature_id}/([0-9a-f-]{{36}})", key)
+    assert match is not None, key
+    assert str(uuid.UUID(match.group(1))) == match.group(1)
+    return key
 
 
 def _bucket_keys() -> list[str]:
@@ -569,6 +606,7 @@ def test_rn012_complete_rule_is_pure() -> None:
             image=image,
             updated_at=NOW,
             updated_by="x",
+            image_key=rules.new_image_key(UNKNOWN_ID) if image is not None else None,
         )
 
     assert signature("6º Dan", meta).complete is True
@@ -576,6 +614,50 @@ def test_rn012_complete_rule_is_pure() -> None:
     assert signature("6º Dan", None).complete is False
     assert rules.has_complete([]) is False
     assert rules.has_complete([signature(None, meta), signature("1º Dan", meta)]) is True
+
+
+def test_rn012_image_keys_are_per_upload_and_of_their_signature() -> None:
+    first, second = rules.new_image_key(UNKNOWN_ID), rules.new_image_key(UNKNOWN_ID)
+
+    assert first != second
+    assert rules.is_image_key(UNKNOWN_ID, first)
+    other = "11111111-1111-4111-8111-111111111111"
+    for key in [
+        f"signatures/{UNKNOWN_ID}",
+        f"signatures/{UNKNOWN_ID}/",
+        f"signatures/{UNKNOWN_ID}/nao-uuid",
+        f"signatures/{UNKNOWN_ID}/AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+        f"signatures/{UNKNOWN_ID}/{other}/x",
+        f"signatures/{other}/{other}",
+        "logos/primary",
+        None,
+    ]:
+        assert not rules.is_image_key(UNKNOWN_ID, key), key
+
+
+def test_rn012_image_metadata_without_a_valid_key_count_as_no_image() -> None:
+    meta = {"content_type": "image/png", "size": 1, "updated_at": NOW, "updated_by": "x"}
+    base = {"id": UNKNOWN_ID, "name": "n", "graduation": "g", "updated_at": NOW, "updated_by": "x"}
+    other = "11111111-1111-4111-8111-111111111111"
+
+    for image in [meta, {**meta, "key": f"signatures/{other}/{other}"}, {**meta, "key": 1}]:
+        loaded = rules.Signature.from_item({**base, "image": image})
+        assert (loaded.image, loaded.image_key, loaded.complete) == (None, None, False)
+
+    key = rules.new_image_key(UNKNOWN_ID)
+    loaded = rules.Signature.from_item({**base, "image": {**meta, "key": key}})
+    assert loaded.image_key == key and loaded.complete is True
+    assert loaded.to_item()["image"]["key"] == key
+    with pytest.raises(ValueError, match="go together"):
+        rules.Signature(
+            id=UNKNOWN_ID,
+            name="n",
+            graduation="g",
+            image=None,
+            updated_at=NOW,
+            updated_by="x",
+            image_key=key,
+        )
 
 
 def test_rn012_adding_to_a_full_list_is_refused_by_the_rule() -> None:
@@ -614,12 +696,13 @@ def test_rn012_image_is_stored_under_its_own_key(
         "updated_by": SENSEI.sub,
     }
     assert body["complete"] is True
-    assert _s3_object(f"signatures/{signature_id}") == {
+    key = _assert_upload_key(signature_id, _image_key(signature_id))
+    assert _s3_object(key) == {
         "body": data,
         "content_type": content_type,
         "disposition": f'inline; filename="{filename}"',
     }
-    assert _bucket_keys() == [f"signatures/{signature_id}"]
+    assert _bucket_keys() == [key]
     # Only metadata in DynamoDB, never the bytes.
     assert base64.b64encode(data).decode() not in str(_stored_list())
 
@@ -648,11 +731,13 @@ def test_rn012_invalid_signature_image_is_400_and_keeps_the_current(
 ) -> None:
     signature_id = _with_image()
     before = _stored_list()
+    before_keys = _bucket_keys()
 
     _assert_status(_put_image(signature_id, body), 400, MSG_INVALID_IMAGE)
 
     assert _stored_list() == before
-    assert _s3_object(f"signatures/{signature_id}")["body"] == PNG_BYTES  # type: ignore[index]
+    assert _bucket_keys() == before_keys
+    assert _s3_object(_image_key(signature_id) or "")["body"] == PNG_BYTES  # type: ignore[index]
 
 
 def test_rn012_image_for_unknown_signature_writes_nothing(academy: str) -> None:
@@ -662,13 +747,116 @@ def test_rn012_image_for_unknown_signature_writes_nothing(academy: str) -> None:
     assert _stored_list() is None
 
 
-def test_rn012_replacing_the_image_overwrites_the_same_key(academy: str) -> None:
+def test_rn012_replacing_the_image_uses_a_new_key_and_removes_the_previous(
+    academy: str,
+) -> None:
     signature_id = _with_image()
+    previous = _image_key(signature_id)
 
     assert _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"))["statusCode"] == 200
 
-    assert _bucket_keys() == [f"signatures/{signature_id}"]
-    assert _s3_object(f"signatures/{signature_id}")["content_type"] == "image/jpeg"  # type: ignore[index]
+    key = _assert_upload_key(signature_id, _image_key(signature_id))
+    assert key != previous
+    assert _bucket_keys() == [key]
+    assert _s3_object(key) == {
+        "body": JPEG_BYTES,
+        "content_type": "image/jpeg",
+        "disposition": 'inline; filename="assinatura.jpg"',
+    }
+    item = response_json(_list())["signatures"][0]
+    assert item["image"]["content_type"] == "image/jpeg"
+    # The S3 key stays inside the API: the screen never sees it.
+    assert "key" not in item["image"]
+
+
+def test_rn012_failed_cleanup_of_the_previous_key_keeps_the_200(
+    academy: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    signature_id = _with_image()
+    previous = _image_key(signature_id)
+
+    def refuse_delete(key: str) -> None:
+        raise signature_repo.ServiceUnavailableError(MSG_BUSY)
+
+    monkeypatch.setattr(image_repo, "delete_image", refuse_delete)
+    with caplog.at_level(logging.ERROR):
+        response = _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"))
+
+    assert response["statusCode"] == 200, response["body"]
+    key = _image_key(signature_id)
+    assert key is not None and previous is not None and key != previous
+    # The metadata point to the new object; the previous one is an orphan
+    # without metadata, logged.
+    assert read_signature_image(academy, signature_id) == (JPEG_BYTES, "image/jpeg")
+    assert sorted(_bucket_keys()) == sorted([previous, key])
+    assert previous in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "message"),
+    [
+        (ForbiddenError(MSG_FORBIDDEN), 403, MSG_FORBIDDEN),
+        (NotFoundError(MSG_NOT_FOUND), 404, MSG_NOT_FOUND),
+        (signature_repo.StaleListError(), 409, rules.MSG_SIGNATURES_BUSY),
+        (signature_repo.ServiceUnavailableError(MSG_BUSY), 503, MSG_BUSY),
+    ],
+    ids=["403", "404", "409", "503"],
+)
+def test_rn012_failed_transaction_deletes_only_the_new_key(
+    academy: str,
+    monkeypatch: pytest.MonkeyPatch,
+    no_backoff: None,
+    error: Exception,
+    status: int,
+    message: str,
+) -> None:
+    signature_id = _with_image()
+    before = _stored_list()
+    before_keys = _bucket_keys()
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise error
+
+    monkeypatch.setattr(signature_repo, "_write", fail)
+
+    response = _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"), SENSEI)
+
+    _assert_status(response, status, message)
+    assert _stored_list() == before
+    assert _bucket_keys() == before_keys
+    assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+
+
+def test_rn012_two_uploads_at_the_same_time_end_coherent(
+    academy: str, monkeypatch: pytest.MonkeyPatch, no_backoff: None
+) -> None:
+    # The JPEG upload runs whole between the PNG upload's S3 write and its
+    # transaction: the PNG transaction re-reads the list, wins and deletes the
+    # JPEG object it replaced.
+    signature_id = _with_image()
+    first = _image_key(signature_id)
+    real_put = image_repo.put_image
+    calls: list[str] = []
+
+    def put_then_other_upload(key: str, *args: Any, **kwargs: Any) -> None:
+        real_put(key, *args, **kwargs)
+        calls.append(key)
+        if len(calls) == 1:
+            other = _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"), SENSEI)
+            assert other["statusCode"] == 200, other["body"]
+
+    monkeypatch.setattr(image_repo, "put_image", put_then_other_upload)
+
+    response = _put_image(signature_id, _image(PNG_BYTES, "image/png"))
+
+    assert response["statusCode"] == 200, response["body"]
+    assert len(calls) == 2 and first not in calls
+    winner = _image_key(signature_id)
+    assert winner == calls[0]
+    listed = response_json(_list())["signatures"][0]
+    assert listed["image"]["content_type"] == "image/png"
+    assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+    assert signature_object_keys(academy, signature_id) == [winner]
 
 
 def test_rn012_get_image_returns_a_presigned_url(academy: str, frozen_now: str) -> None:
@@ -691,7 +879,7 @@ def test_rn012_get_image_returns_a_presigned_url(academy: str, frozen_now: str) 
     }
     query = parse_qs(url.query)
     assert url.netloc.startswith(f"{os.environ['IMAGES_BUCKET']}.s3.")
-    assert url.path == f"/signatures/{signature_id}"
+    assert url.path == f"/{_assert_upload_key(signature_id, _image_key(signature_id))}"
     assert query["X-Amz-Expires"] == ["300"]
     assert query["response-content-type"] == ["image/png"]
     assert query["response-content-disposition"] == ['inline; filename="assinatura.png"']
@@ -724,15 +912,28 @@ def test_rn012_delete_image_removes_metadata_and_object(academy: str) -> None:
     assert _delete_image(signature_id)["statusCode"] == 204
 
 
-def test_rn012_delete_image_cleans_an_object_left_without_metadata(academy: str) -> None:
-    signature_id = _created_id()
-    boto3.client("s3").put_object(
-        Bucket=os.environ["IMAGES_BUCKET"], Key=f"signatures/{signature_id}", Body=PNG_BYTES
-    )
+def test_rn012_get_image_points_to_the_registered_key(academy: str) -> None:
+    signature_id = _with_image()
+    assert _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"))["statusCode"] == 200
+    key = _image_key(signature_id)
+
+    body = response_json(_get_image(signature_id))
+
+    assert urlparse(body["url"]).path == f"/{key}"
+    assert body["content_type"] == "image/jpeg"
+    assert _s3_object(key or "")["body"] == JPEG_BYTES  # type: ignore[index]
+
+
+def test_rn012_delete_image_deletes_only_the_registered_key(academy: str) -> None:
+    # Another object of the signature (an upload not recorded yet) is not touched.
+    signature_id = _with_image()
+    in_flight = rules.new_image_key(signature_id)
+    boto3.client("s3").put_object(Bucket=os.environ["IMAGES_BUCKET"], Key=in_flight, Body=PNG_BYTES)
 
     assert _delete_image(signature_id)["statusCode"] == 204
 
-    assert _bucket_keys() == []
+    assert _bucket_keys() == [in_flight]
+    assert _image_key(signature_id) is None
 
 
 def test_rn012_image_upload_racing_a_removal_leaves_no_object(
@@ -764,22 +965,20 @@ def test_rn012_removing_a_signature_removes_its_image(academy: str) -> None:
 
     assert _delete(gone, SENSEI)["statusCode"] == 204
 
-    assert _bucket_keys() == [f"signatures/{keep}"]
+    assert _bucket_keys() == [_image_key(keep)]
     assert [item["id"] for item in response_json(_list())["signatures"]] == [keep]
     _assert_status(_get_image(gone), 404, MSG_NOT_FOUND)
 
 
-def test_rn012_removal_is_idempotent_and_cleans_a_leftover_image(academy: str) -> None:
-    # A removal whose S3 call failed is completed by repeating it.
-    boto3.client("s3").put_object(
-        Bucket=os.environ["IMAGES_BUCKET"], Key=f"signatures/{UNKNOWN_ID}", Body=PNG_BYTES
-    )
+def test_rn012_removal_is_idempotent(academy: str) -> None:
+    signature_id = _with_image()
 
-    assert _delete(UNKNOWN_ID)["statusCode"] == 204
+    assert _delete(signature_id)["statusCode"] == 204
+    assert _delete(signature_id)["statusCode"] == 204
     assert _delete(UNKNOWN_ID)["statusCode"] == 204
 
     assert _bucket_keys() == []
-    assert _stored_list() is None
+    assert _names() == []
 
 
 def test_rn012_malformed_id_on_removal_is_404(academy: str) -> None:
@@ -887,30 +1086,35 @@ def test_rn012_s3_failure_on_upload_is_503_and_writes_no_metadata(
     assert _stored_list() == before
 
 
-def test_rn012_s3_failure_on_removal_is_503_and_a_retry_completes_it(
-    academy: str, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("route", ["delete", "delete-image"])
+def test_rn012_s3_failure_after_a_removal_keeps_the_204_and_leaves_only_an_orphan(
+    academy: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, route: str
 ) -> None:
-    # Metadata first: the signature is gone from the API; the object is left
-    # behind until the DELETE is repeated.
+    # Metadata first: the image is gone from the API; the object is left
+    # behind without metadata (logged), never metadata without the object.
     signature_id = _with_image()
+    key = _image_key(signature_id)
+    assert key is not None
     real_client = image_repo._client
     monkeypatch.setattr(
         image_repo, "_client", lambda: _ThrottledS3(ConnectTimeoutError(endpoint_url="x"))
     )
 
-    _assert_status(_delete(signature_id), 503, MSG_BUSY)
+    with caplog.at_level(logging.ERROR):
+        response = ROUTES[route](MASTER, signature_id)
 
+    assert response["statusCode"] == 204, response.get("body")
     monkeypatch.setattr(image_repo, "_client", real_client)
-    assert _names() == []
-    assert _bucket_keys() == [f"signatures/{signature_id}"]
-    assert _delete(signature_id)["statusCode"] == 204
-    assert _bucket_keys() == []
+    assert _image_key(signature_id) is None
+    assert _bucket_keys() == [key]
+    assert key in caplog.text
+    assert ROUTES[route](MASTER, signature_id)["statusCode"] == 204
 
 
 def test_rn012_settings_throttled_on_image_metadata_is_503_after_the_object(
     academy: str, monkeypatch: pytest.MonkeyPatch, no_backoff: None
 ) -> None:
-    # S3 first, metadata after: the object is written but invisible until resent.
+    # S3 first, metadata after: the transaction fails and the new object is dropped.
     signature_id = _created_id()
     monkeypatch.setattr(
         signature_repo,
@@ -923,6 +1127,416 @@ def test_rn012_settings_throttled_on_image_metadata_is_503_after_the_object(
     _assert_status(_put_image(signature_id), 503, MSG_BUSY)
 
     monkeypatch.undo()
+    assert _bucket_keys() == []
     _assert_status(_get_image(signature_id), 404, MSG_NO_IMAGE)
     assert _put_image(signature_id)["statusCode"] == 200
     assert _get_image(signature_id)["statusCode"] == 200
+
+
+# --- lost answers: re-read before the cleanup, ClientRequestToken (RN012) -----------------
+
+
+def _signatures_client() -> Any:
+    return signature_repo.table(signature_repo.SETTINGS_TABLE_ENV).meta.client
+
+
+def _record_transactions(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Record the arguments of every signatures transaction (the real call still runs)."""
+    client = _signatures_client()
+    real = client.transact_write_items
+    calls: list[dict[str, Any]] = []
+
+    def record(**kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(client, "transact_write_items", record)
+    return calls
+
+
+def _lose_the_answer(monkeypatch: pytest.MonkeyPatch, commit: bool = True) -> list[bool]:
+    """The next transactions commit (or not) and answer InternalServerError.
+
+    Returns a list that gets one entry per transaction sent.
+    """
+    client = _signatures_client()
+    real = client.transact_write_items
+    sent: list[bool] = []
+
+    def lose(**kwargs: Any) -> Any:
+        sent.append(True)
+        if commit:
+            real(**kwargs)
+        raise _client_error("InternalServerError")
+
+    monkeypatch.setattr(client, "transact_write_items", lose)
+    return sent
+
+
+def _fail_rereads(monkeypatch: pytest.MonkeyPatch, sent: list[bool]) -> None:
+    """``get_signatures`` fails once a transaction was sent (the re-read fails)."""
+    real_get = signature_repo.get_signatures
+
+    def get() -> Any:
+        if sent:
+            raise signature_repo.ServiceUnavailableError(MSG_BUSY)
+        return real_get()
+
+    monkeypatch.setattr(signature_repo, "get_signatures", get)
+
+
+def test_rn012_every_transaction_sends_its_own_client_request_token(
+    academy: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _record_transactions(monkeypatch)
+    signature_id = _created_id()
+    assert _put_image(signature_id)["statusCode"] == 200
+    assert _delete_image(signature_id)["statusCode"] == 204
+
+    tokens = [call.get("ClientRequestToken") for call in calls]
+    assert len(tokens) == 3
+    assert all(isinstance(token, str) and str(uuid.UUID(token)) == token for token in tokens)
+    assert len(set(tokens)) == 3
+
+
+def test_rn012_new_version_attempt_uses_a_new_token(
+    academy: str, monkeypatch: pytest.MonkeyPatch, no_backoff: None
+) -> None:
+    client = _signatures_client()
+    real = client.transact_write_items
+    tokens: list[str] = []
+
+    def stale_once(**kwargs: Any) -> Any:
+        tokens.append(kwargs["ClientRequestToken"])
+        if len(tokens) == 1:
+            raise _client_error("TransactionCanceledException", ["ConditionalCheckFailed"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(client, "transact_write_items", stale_once)
+
+    assert _create()["statusCode"] == 201
+    assert len(tokens) == 2 and tokens[0] != tokens[1]
+
+
+class _RawBody:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def stream(self, **kwargs: Any) -> Any:
+        yield self.body
+
+
+def test_rn012_botocore_retries_resend_the_same_token(
+    academy: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The first HTTP try commits (moto still runs) but answers 500, as if the
+    # answer were lost; botocore resends the same request, with the same
+    # token, which DynamoDB answers as a success without writing again. moto
+    # ignores the token (its retry fails the version check and the change is
+    # re-applied with a new token), so only the tokens are checked here.
+    events = _signatures_client().meta.events
+    bodies: list[str] = []
+
+    def first_try_fails(request: Any, **kwargs: Any) -> Any:
+        body = request.body
+        bodies.append(body.decode() if isinstance(body, bytes) else body)
+        if len(bodies) > 1:
+            return None  # moto's answer is used
+        error = b'{"__type":"com.amazonaws.dynamodb.v20120810#InternalServerError","message":"x"}'
+        headers = {"Content-Type": "application/x-amz-json-1.0"}
+        return AWSResponse(request.url, 500, headers, _RawBody(error))
+
+    events.register_first("before-send.dynamodb.TransactWriteItems", first_try_fails)
+    try:
+        _create()
+    finally:
+        events.unregister("before-send.dynamodb.TransactWriteItems", first_try_fails)
+
+    tokens = [json.loads(body)["ClientRequestToken"] for body in bodies]
+    assert len(tokens) >= 2
+    assert tokens[0] == tokens[1]  # botocore's retry of the same write
+    assert all(token != tokens[0] for token in tokens[2:])  # a new version attempt
+
+
+# --- definitive x ambiguous failures (RN012) ---------------------------------------------
+
+DEFINITIVE_FAILURES = {
+    "403-sensei": ForbiddenError(MSG_FORBIDDEN),
+    "404": NotFoundError(MSG_NOT_FOUND),
+    "409": ConflictError(rules.MSG_SIGNATURES_BUSY),
+    "400": ValidationError("x"),
+    "503": signature_repo.ServiceUnavailableError(MSG_BUSY),
+    "stale": signature_repo.StaleListError(),
+    "throttling": _client_error("ThrottlingException"),
+    "provisioned": _client_error("ProvisionedThroughputExceededException"),
+    "request-limit": _client_error("RequestLimitExceeded"),
+    "validation": _client_error("ValidationException"),
+    "cancel-condition": _client_error(
+        "TransactionCanceledException", ["None", "ConditionalCheckFailed"]
+    ),
+    "cancel-sensei": _client_error("TransactionCanceledException", ["ConditionalCheckFailed"]),
+    "cancel-conflict": _client_error("TransactionCanceledException", ["TransactionConflict"]),
+    "cancel-throttled": _client_error("TransactionCanceledException", ["None", "ThrottlingError"]),
+    "cancel-provisioned": _client_error(
+        "TransactionCanceledException", ["ProvisionedThroughputExceeded"]
+    ),
+    "cancel-validation": _client_error("TransactionCanceledException", ["ValidationError"]),
+}
+
+AMBIGUOUS_FAILURES = {
+    "internal-server-error": _client_error("InternalServerError"),
+    "service-unavailable": _client_error("ServiceUnavailable"),
+    "unknown-code": _client_error("TransactionInProgressException"),
+    "cancel-without-reasons": _client_error("TransactionCanceledException"),
+    "cancel-unknown-reason": _client_error("TransactionCanceledException", ["None", "Other"]),
+    "connection-closed": ConnectionClosedError(endpoint_url="https://dynamodb.example"),
+    "read-timeout": ReadTimeoutError(endpoint_url="https://dynamodb.example"),
+    "endpoint-connection": EndpointConnectionError(endpoint_url="https://dynamodb.example"),
+    "unknown-exception": RuntimeError("boom"),
+}
+
+
+@pytest.mark.parametrize("error", DEFINITIVE_FAILURES.values(), ids=DEFINITIVE_FAILURES.keys())
+def test_rn012_definitive_write_failures_are_classified(error: Exception) -> None:
+    assert signature_repo.is_definitive_write_failure(error) is True
+
+
+@pytest.mark.parametrize("error", AMBIGUOUS_FAILURES.values(), ids=AMBIGUOUS_FAILURES.keys())
+def test_rn012_ambiguous_write_failures_are_classified(error: Exception) -> None:
+    assert signature_repo.is_definitive_write_failure(error) is False
+
+
+def _fail_transactions(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, commit: bool = False
+) -> list[bool]:
+    """The next transactions commit (or not) and then raise ``error``."""
+    client = _signatures_client()
+    real = client.transact_write_items
+    sent: list[bool] = []
+
+    def fail(**kwargs: Any) -> Any:
+        sent.append(True)
+        if commit:
+            real(**kwargs)
+        raise error
+
+    monkeypatch.setattr(client, "transact_write_items", fail)
+    return sent
+
+
+def _count_reads_after_send(monkeypatch: pytest.MonkeyPatch, sent: list[bool]) -> list[bool]:
+    """Record the list reads made once a transaction was sent (the re-reads)."""
+    real_get = signature_repo.get_signatures
+    rereads: list[bool] = []
+
+    def get() -> Any:
+        if sent:
+            rereads.append(True)
+        return real_get()
+
+    monkeypatch.setattr(signature_repo, "get_signatures", get)
+    return rereads
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (_client_error("TransactionCanceledException", ["ConditionalCheckFailed", "None"]), 403),
+        (_client_error("ThrottlingException"), 503),
+        (_client_error("TransactionCanceledException", ["None", "ThrottlingError"]), 503),
+        (_client_error("ValidationException"), 500),
+    ],
+    ids=["sensei-replaced", "throttled", "reason-throttled", "validation"],
+)
+def test_rn012_upload_refused_definitively_deletes_the_new_key_without_rereading(
+    academy: str, monkeypatch: pytest.MonkeyPatch, error: ClientError, status: int
+) -> None:
+    signature_id = _with_image()
+    before = _stored_list()
+    before_keys = _bucket_keys()
+    sent = _fail_transactions(monkeypatch, error)
+    rereads = _count_reads_after_send(monkeypatch, sent)
+
+    response = _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"), SENSEI)
+
+    assert response["statusCode"] == status, response.get("body")
+    assert rereads == []
+    monkeypatch.undo()
+    assert _stored_list() == before
+    assert _bucket_keys() == before_keys
+    assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+
+
+@pytest.mark.parametrize("commit", [True, False], ids=["recorded", "not-recorded"])
+@pytest.mark.parametrize("error", AMBIGUOUS_FAILURES.values(), ids=AMBIGUOUS_FAILURES.keys())
+def test_rn012_upload_failed_ambiguously_never_deletes_the_new_key(
+    academy: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+    commit: bool,
+) -> None:
+    # A transaction still in flight may commit after any re-read, so the new
+    # key is kept even when the list does not point to it (yet): an orphan is
+    # acceptable, metadata pointing to a deleted object are not.
+    signature_id = _with_image()
+    previous = _image_key(signature_id)
+    before = _stored_list()
+    sent = _fail_transactions(monkeypatch, error, commit=commit)
+    rereads = _count_reads_after_send(monkeypatch, sent)
+
+    with caplog.at_level(logging.ERROR):
+        response = _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"))
+
+    assert response["statusCode"] in (500, 503), response.get("body")
+    assert rereads == []
+    monkeypatch.undo()
+    new_key = next(key for key in _bucket_keys() if key != previous)
+    assert sorted(_bucket_keys()) == sorted([previous, new_key])
+    assert new_key in caplog.text
+    if commit:
+        assert _image_key(signature_id) == new_key
+        assert read_signature_image(academy, signature_id) == (JPEG_BYTES, "image/jpeg")
+    else:
+        assert _stored_list() == before
+        assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+
+
+def test_rn012_upload_recorded_after_an_ambiguous_failure_points_to_an_existing_object(
+    academy: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The transaction was still in flight when the call failed and commits
+    # after the handler answered: the object it records must still exist.
+    signature_id = _created_id()
+    pending: list[dict[str, Any]] = []
+    client = _signatures_client()
+    real = client.transact_write_items
+
+    def send_and_time_out(**kwargs: Any) -> Any:
+        pending.append(kwargs)
+        raise ReadTimeoutError(endpoint_url="https://dynamodb.example")
+
+    monkeypatch.setattr(client, "transact_write_items", send_and_time_out)
+    response = _put_image(signature_id, _image(JPEG_BYTES, "image/jpeg"))
+    monkeypatch.undo()
+    assert response["statusCode"] == 500, response.get("body")
+
+    real(**pending[0])  # DynamoDB applies it only now
+
+    assert read_signature_image(academy, signature_id) == (JPEG_BYTES, "image/jpeg")
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (_client_error("TransactionCanceledException", ["ConditionalCheckFailed", "None"]), 403),
+        (_client_error("ThrottlingException"), 503),
+        (_client_error("ValidationException"), 500),
+    ],
+    ids=["sensei-replaced", "throttled", "validation"],
+)
+@pytest.mark.parametrize("route", ["delete", "delete-image"])
+def test_rn012_removal_refused_definitively_keeps_the_image_without_rereading(
+    academy: str, monkeypatch: pytest.MonkeyPatch, error: ClientError, status: int, route: str
+) -> None:
+    signature_id = _with_image()
+    before = _stored_list()
+    key = _image_key(signature_id)
+    sent = _fail_transactions(monkeypatch, error)
+    rereads = _count_reads_after_send(monkeypatch, sent)
+
+    response = ROUTES[route](SENSEI, signature_id)
+
+    assert response["statusCode"] == status, response.get("body")
+    assert rereads == []
+    monkeypatch.undo()
+    assert _stored_list() == before
+    assert _bucket_keys() == [key]
+    assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+
+
+@pytest.mark.parametrize("commit", [True, False], ids=["recorded", "not-recorded"])
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConnectionClosedError(endpoint_url="https://dynamodb.example"),
+        ReadTimeoutError(endpoint_url="https://dynamodb.example"),
+        EndpointConnectionError(endpoint_url="https://dynamodb.example"),
+        _client_error("ServiceUnavailable"),
+        RuntimeError("boom"),
+    ],
+    ids=["connection-closed", "read-timeout", "endpoint-connection", "5xx", "unknown"],
+)
+@pytest.mark.parametrize("route", ["delete", "delete-image"])
+def test_rn012_removal_failed_ambiguously_deletes_the_key_only_if_unreferenced(
+    academy: str, monkeypatch: pytest.MonkeyPatch, error: Exception, route: str, commit: bool
+) -> None:
+    signature_id = _with_image()
+    key = _image_key(signature_id)
+    _fail_transactions(monkeypatch, error, commit=commit)
+
+    response = ROUTES[route](MASTER, signature_id)
+
+    assert response["statusCode"] == 500, response.get("body")
+    monkeypatch.undo()
+    if commit:
+        assert _image_key(signature_id) is None
+        assert _bucket_keys() == []
+    else:
+        assert _bucket_keys() == [key]
+        assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+
+
+@pytest.mark.parametrize("route", ["delete", "delete-image"])
+def test_rn012_removal_with_lost_answer_deletes_the_old_key(
+    academy: str, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    signature_id = _with_image()
+    _lose_the_answer(monkeypatch)
+
+    response = ROUTES[route](MASTER, signature_id)
+
+    assert response["statusCode"] == 500, response.get("body")
+    monkeypatch.undo()
+    assert _image_key(signature_id) is None
+    assert _bucket_keys() == []
+
+
+@pytest.mark.parametrize("route", ["delete", "delete-image"])
+def test_rn012_removal_not_recorded_keeps_the_image(
+    academy: str, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    signature_id = _with_image()
+    before = _stored_list()
+    _lose_the_answer(monkeypatch, commit=False)
+
+    response = ROUTES[route](MASTER, signature_id)
+
+    assert response["statusCode"] == 500, response.get("body")
+    monkeypatch.undo()
+    assert _stored_list() == before
+    assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")
+
+
+@pytest.mark.parametrize("commit", [True, False], ids=["recorded", "not-recorded"])
+@pytest.mark.parametrize("route", ["delete", "delete-image"])
+def test_rn012_removal_failure_with_failed_reread_deletes_nothing(
+    academy: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    route: str,
+    commit: bool,
+) -> None:
+    signature_id = _with_image()
+    key = _image_key(signature_id)
+    _fail_rereads(monkeypatch, _lose_the_answer(monkeypatch, commit=commit))
+
+    with caplog.at_level(logging.ERROR):
+        response = ROUTES[route](MASTER, signature_id)
+
+    assert response["statusCode"] == 500, response.get("body")
+    monkeypatch.undo()
+    assert _bucket_keys() == [key]
+    assert key is not None and key in caplog.text
+    if not commit:
+        assert read_signature_image(academy, signature_id) == (PNG_BYTES, "image/png")

@@ -13,12 +13,26 @@ them as sensei: a sensei replaced between the permission check and the write
 writes nothing. The master skips that check.
 
 The images live in S3 (``repository.images``); the list keeps only their
-metadata.
+metadata and the key of each one (``image.key``). ``apply_signatures`` also
+returns the list it wrote over, so the caller knows which key stopped being
+referenced and may delete it.
+
+Every ``TransactWriteItems`` carries a ``ClientRequestToken``, a new UUID per
+write attempt (one per version read). botocore resends the same request on its
+own retries, so the token is the same there: if DynamoDB committed the
+transaction and the answer was lost, the retry is idempotent (DynamoDB answers
+success without writing again, for 10 minutes and the same parameters). A new
+attempt after a stale version builds a different write, so it gets a new token.
+
+``is_definitive_write_failure`` tells the caller whether a failed write surely
+wrote nothing (it may then delete the object it uploaded) or may have been
+recorded, now or later (it must keep every object the metadata may point to).
 """
 
 import logging
 import random
 import time
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -27,6 +41,7 @@ from botocore.exceptions import ClientError
 from domain.errors import (
     MSG_SERVICE_BUSY,
     ConflictError,
+    DomainError,
     ForbiddenError,
     ServiceUnavailableError,
 )
@@ -56,6 +71,43 @@ _THROTTLED_REASONS = frozenset({"ThrottlingError", "ProvisionedThroughputExceede
 
 class StaleListError(Exception):
     """The list changed between the read and the write (another request won)."""
+
+
+# Error codes DynamoDB answers only when it did not apply the request.
+_REFUSED_CODES = THROTTLING_ERRORS | {"ValidationException"}
+# Cancellation reasons of a transaction that was refused as a whole.
+_REFUSED_REASONS = frozenset(
+    {"None", _CONDITION_FAILED, _CONFLICT, "ValidationError"} | _THROTTLED_REASONS
+)
+
+
+def is_definitive_write_failure(exc: BaseException) -> bool:
+    """Tell whether a failed ``apply_signatures`` surely wrote nothing.
+
+    Definitive (True): the domain errors this module raises (403 sensei
+    replaced, 404, 409 after the attempts, 503 throttling, 400 validation),
+    ``StaleListError``, throttling and ``ValidationException`` answers, and a
+    ``TransactionCanceledException`` whose reasons are all known refusals
+    (condition failed, conflict, throttling, validation). None of them is
+    raised after a send whose outcome is unknown: ambiguous errors propagate
+    unchanged.
+
+    Ambiguous (False), the transaction may have been recorded:
+    ``InternalServerError``, ``ServiceUnavailable`` and other DynamoDB codes,
+    connection errors (closed, read timeout, endpoint unreachable, also after
+    botocore's retries) and any other exception.
+    """
+    if isinstance(exc, DomainError | StaleListError):
+        return True
+    if not isinstance(exc, ClientError):
+        return False
+    code = exc.response.get("Error", {}).get("Code")
+    if code in _REFUSED_CODES:
+        return True
+    if code != _CANCELLED:
+        return False
+    reasons = [reason.get("Code") for reason in exc.response.get("CancellationReasons") or []]
+    return bool(reasons) and all(reason in _REFUSED_REASONS for reason in reasons)
 
 
 def get_signatures() -> SignatureList:
@@ -134,8 +186,13 @@ def _write(
     items = _transaction(
         current, signatures, sensei_check=sensei_check, now_iso=now_iso, user_sub=user_sub
     )
+    # One token per logical write: botocore's retries reuse it (idempotent if
+    # the first try committed); the next version attempt builds a new one.
+    token = str(uuid.uuid4())
     try:
-        table(SETTINGS_TABLE_ENV).meta.client.transact_write_items(TransactItems=items)
+        table(SETTINGS_TABLE_ENV).meta.client.transact_write_items(
+            TransactItems=items, ClientRequestToken=token
+        )
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         if code in THROTTLING_ERRORS:
@@ -162,6 +219,23 @@ def update_signatures(
 ) -> Signatures:
     """Apply ``change`` to the stored list and write the result atomically.
 
+    Same as ``apply_signatures``, returning only the list as written.
+    """
+    _, written = apply_signatures(
+        change, sensei_check=sensei_check, now_iso=now_iso, user_sub=user_sub
+    )
+    return written
+
+
+def apply_signatures(
+    change: Callable[[Signatures], Signatures],
+    *,
+    sensei_check: str | None,
+    now_iso: str,
+    user_sub: str,
+) -> tuple[Signatures, Signatures]:
+    """Apply ``change`` to the stored list and write the result atomically.
+
     ``change`` runs on a fresh read on every attempt, so its rules (limit of 3,
     signature exists, order matches the stored ids) are always checked against
     the list that is actually written over. A change that returns the list
@@ -176,7 +250,8 @@ def update_signatures(
         user_sub: Who writes.
 
     Returns:
-        The list as written.
+        ``(before, after)``: the list the write replaced (read in the attempt
+        that succeeded) and the list as written; equal when nothing changed.
 
     Raises:
         DomainError: Whatever ``change`` raised on the fresh list.
@@ -188,12 +263,12 @@ def update_signatures(
         current = get_signatures()
         signatures = change(current.signatures)
         if signatures == current.signatures:
-            return signatures
+            return current.signatures, signatures
         try:
             _write(
                 current, signatures, sensei_check=sensei_check, now_iso=now_iso, user_sub=user_sub
             )
-            return signatures
+            return current.signatures, signatures
         except StaleListError:
             logger.info("Signatures changed meanwhile; retry %d", attempt + 1)
             if attempt + 1 < _MAX_ATTEMPTS:

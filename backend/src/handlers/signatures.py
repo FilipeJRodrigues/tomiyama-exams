@@ -13,10 +13,31 @@ Who may call them is checked on every request against the sensei stored in the
 settings (never cached), before the body or the id is looked at; every write
 checks it again in its own transaction.
 
-Order of the image writes, as for the logos: the upload writes S3 first and
-the metadata after; the removals delete the metadata first and the object
-after. A failure halfway leaves at most an object without metadata, invisible
-to the API and overwritten or deleted by the next upload or removal.
+Image writes. Every upload goes to a new key ``signatures/{id}/{uuid}`` chosen
+here (never by the client), so no request ever writes over the object another
+one registered:
+
+1. the upload writes the object at the new key;
+2. then the metadata, with that key, in the transaction that checks the list
+   version and the sensei;
+3. if the transaction succeeds, the key it replaced is deleted. If the call
+   fails, ``signature_repo.is_definitive_write_failure`` decides: a definitive
+   failure (403, 404, 409, 503 throttling, validation: nothing was written)
+   deletes the new key; an ambiguous one (``InternalServerError``, 5xx,
+   connection lost after sending, anything unknown) never deletes it, not even
+   after a re-read, because a transaction still in flight may commit later.
+   The key is only logged as a possible orphan.
+
+The removals (of the image or of the signature) delete the metadata in the
+transaction first and the recorded key after. If the removal fails
+definitively, the metadata still point to the key read before it, so nothing
+is deleted. If it fails ambiguously, that key is deleted only if a strong
+re-read shows the metadata no longer point to it (the transaction committed
+and the answer was lost); if the re-read fails too, nothing is deleted.
+
+The cleanups never change the response: a failure is logged and leaves an
+object without metadata (invisible to the API). Orphans may be left; metadata
+never point to a missing object.
 """
 
 import logging
@@ -61,6 +82,57 @@ def _authorize(event: Event) -> tuple[User, str | None]:
 
 def _signature_id(event: Event) -> str:
     return rules.parse_signature_id((event.get("pathParameters") or {}).get("id"))
+
+
+def _discard(key: str | None, reason: str) -> None:
+    """Delete an object no longer (or never) referenced; a failure is only logged.
+
+    The object left behind has no metadata, so the API never shows it.
+    """
+    if key is None:
+        return
+    try:
+        image_repo.delete_image(key)
+    except Exception:
+        logger.exception("Signature image %s left behind (%s)", key, reason)
+
+
+def _keep_possible_orphan(key: str, reason: str) -> None:
+    """Log a key kept after an ambiguous failure: it may be recorded, or an orphan."""
+    logger.error(
+        "Signature image %s kept, possible orphan: the write may be recorded (%s)", key, reason
+    )
+
+
+def _discard_unless_referenced(key: str | None, reason: str) -> None:
+    """After an ambiguous removal failure, delete ``key`` only if no metadata point to it.
+
+    The failed call may have committed, so the list is re-read (strongly
+    consistent) first. If the re-read fails too, the object is kept: an orphan
+    is acceptable, metadata pointing to a deleted object are not. A removal
+    cannot make metadata point to ``key`` later, so a commit still in flight
+    is harmless here.
+    """
+    if key is None:
+        return
+    try:
+        current = signature_repo.get_signatures().signatures
+    except Exception:
+        logger.exception(
+            "Signature image %s kept: list not re-read after a failure (%s)", key, reason
+        )
+        return
+    if rules.references_key(current, key):
+        logger.warning("Signature image %s kept: still referenced (%s)", key, reason)
+        return
+    _discard(key, reason)
+
+
+def _after_failed_removal(exc: Exception, seen: str | None, reason: str) -> None:
+    """Clean up after a removal that raised: never the key metadata may still point to."""
+    if signature_repo.is_definitive_write_failure(exc):
+        return  # nothing written: the metadata still point to ``seen``
+    _discard_unless_referenced(seen, f"{reason}: {type(exc).__name__}")
 
 
 def _view_of(signatures: rules.Signatures, signature_id: str) -> dict[str, Any]:
@@ -143,15 +215,20 @@ def delete_signature(event: Event, context: Any) -> Response:
     """Remove a signature and its image; an id already gone also answers 204."""
     user, sensei_check = _authorize(event)
     signature_id = _signature_id(event)
-    signature_repo.update_signatures(
-        lambda current: rules.remove(current, signature_id),
-        sensei_check=sensei_check,
-        now_iso=dates.utc_now_iso(),
-        user_sub=user.sub,
-    )
-    # Always, even when the signature was already gone: a removal whose S3
-    # call failed is completed by repeating it.
-    image_repo.delete_image(rules.signature_key(signature_id))
+    # The key as read now, to clean up if the call fails after committing.
+    seen = rules.image_key_of(signature_repo.get_signatures().signatures, signature_id)
+    try:
+        before, _ = signature_repo.apply_signatures(
+            lambda current: rules.remove(current, signature_id),
+            sensei_check=sensei_check,
+            now_iso=dates.utc_now_iso(),
+            user_sub=user.sub,
+        )
+    except Exception as exc:
+        _after_failed_removal(exc, seen, "signature removal failed")
+        raise
+    # Metadata first, then the key they recorded (None if already gone).
+    _discard(rules.image_key_of(before, signature_id), "signature removed")
     logger.info("Signature %s removed by %s", signature_id, user.sub)
     return no_content()
 
@@ -164,7 +241,7 @@ def put_signature_image(event: Event, context: Any) -> Response:
     image = image_rules.parse_image_upload(json_body(event))
     # Nothing goes to S3 for a signature that does not exist.
     rules.find(signature_repo.get_signatures().signatures, signature_id)
-    key = rules.signature_key(signature_id)
+    key = rules.new_image_key(signature_id)
     disposition = image_rules.content_disposition(image.content_type, rules.SIGNATURE_FILENAME)
     image_repo.put_image(key, image, disposition)
     now = dates.utc_now_iso()
@@ -172,18 +249,26 @@ def put_signature_image(event: Event, context: Any) -> Response:
         content_type=image.content_type, size=image.size, updated_at=now, updated_by=user.sub
     )
     try:
-        stored = signature_repo.update_signatures(
+        before, stored = signature_repo.apply_signatures(
             lambda current: rules.set_image(
-                current, signature_id, meta, now_iso=now, user_sub=user.sub
+                current, signature_id, meta, image_key=key, now_iso=now, user_sub=user.sub
             ),
             sensei_check=sensei_check,
             now_iso=now,
             user_sub=user.sub,
         )
-    except NotFoundError:
-        # Removed between the check and the write: drop the object just sent.
-        image_repo.delete_image(key)
+    except Exception as exc:
+        # Refused for sure (signature removed, sensei replaced, list busy,
+        # throttled...): nothing points to the object just sent. Otherwise the
+        # transaction may be recorded, now or later: keep it. Keep the error.
+        if signature_repo.is_definitive_write_failure(exc):
+            _discard(key, "upload refused")
+        else:
+            _keep_possible_orphan(key, f"upload failed: {type(exc).__name__}")
         raise
+    previous = rules.image_key_of(before, signature_id)
+    if previous != key:
+        _discard(previous, "image replaced")
     logger.info("Signature %s image replaced by %s (%d bytes)", signature_id, user.sub, image.size)
     return json_response(200, _view_of(stored, signature_id))
 
@@ -194,15 +279,22 @@ def delete_signature_image(event: Event, context: Any) -> Response:
     user, sensei_check = _authorize(event)
     signature_id = _signature_id(event)
     now = dates.utc_now_iso()
-    signature_repo.update_signatures(
-        lambda current: rules.set_image(
-            current, signature_id, None, now_iso=now, user_sub=user.sub
-        ),
-        sensei_check=sensei_check,
-        now_iso=now,
-        user_sub=user.sub,
-    )
-    image_repo.delete_image(rules.signature_key(signature_id))
+    # The key as read now, to clean up if the call fails after committing.
+    seen = rules.image_key_of(signature_repo.get_signatures().signatures, signature_id)
+    try:
+        before, _ = signature_repo.apply_signatures(
+            lambda current: rules.set_image(
+                current, signature_id, None, image_key=None, now_iso=now, user_sub=user.sub
+            ),
+            sensei_check=sensei_check,
+            now_iso=now,
+            user_sub=user.sub,
+        )
+    except Exception as exc:
+        _after_failed_removal(exc, seen, "image removal failed")
+        raise
+    # Metadata first, then the key they recorded (None if there was no image).
+    _discard(rules.image_key_of(before, signature_id), "image removed")
     logger.info("Signature %s image removed by %s", signature_id, user.sub)
     return no_content()
 
@@ -214,11 +306,11 @@ def get_signature_image(event: Event, context: Any) -> Response:
     signature_id = _signature_id(event)
     signatures = signature_repo.get_signatures().signatures
     signature = rules.find(signatures, signature_id)
-    if signature.image is None:
+    if signature.image is None or signature.image_key is None:
         raise NotFoundError(rules.MSG_SIGNATURE_IMAGE_NOT_FOUND)
     meta = signature.image
     url = image_repo.presigned_get_url(
-        rules.signature_key(signature_id),
+        signature.image_key,
         PRESIGNED_URL_SECONDS,
         meta.content_type,
         image_rules.content_disposition(meta.content_type, rules.SIGNATURE_FILENAME),

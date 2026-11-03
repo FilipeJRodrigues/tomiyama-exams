@@ -1280,8 +1280,9 @@ Resources:
             Path: /settings/signatures/{id}
             Method: DELETE
 
-  # DeleteObject only drops the object just sent when the signature was
-  # removed between the check and the metadata write.
+  # Every upload goes to a new key signatures/{id}/{uuid} chosen by the API.
+  # DeleteObject drops that key when the metadata transaction fails, and the
+  # previously recorded key once the new one is recorded.
   PutSignatureImageFunction:
     Type: AWS::Serverless::Function
     Properties:
