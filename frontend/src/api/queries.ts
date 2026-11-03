@@ -533,6 +533,35 @@ function reloadRequirements(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ predicate: (query) => isExamSheetKey(query.queryKey) });
 }
 
+/**
+ * Applies a confirmed write (201/200/204) to the lists of one belt. A `GET` of those lists
+ * still in flight was asked before the write and would overwrite the patch when it answers,
+ * so it is cancelled first and the patch waits for the cancellation (which restores the
+ * previous state asynchronously). A cancelled list that had no data yet is fetched again,
+ * so it does not stay loading.
+ */
+async function applyConfirmedWrite(
+  queryClient: QueryClient,
+  id: string,
+  saved: Requirement | null,
+): Promise<void> {
+  const filters = {
+    queryKey: queryKeys.allRequirements,
+    predicate: (query: { queryKey: readonly unknown[] }) => hasBeltFilter(query.queryKey),
+  };
+  const withoutData = queryClient
+    .getQueryCache()
+    .findAll(filters)
+    .filter((query) => query.state.fetchStatus === 'fetching' && query.state.data === undefined)
+    .map((query) => query.queryKey);
+  await queryClient.cancelQueries(filters);
+  patchRequirementLists(queryClient, id, saved);
+  reloadRequirements(queryClient);
+  for (const queryKey of withoutData) {
+    void queryClient.refetchQueries({ queryKey, exact: true, type: 'active' });
+  }
+}
+
 /** A 404 or 409 means the list is behind the API (item gone, answers registered meanwhile). */
 function reloadOnConflict(queryClient: QueryClient, error: unknown): void {
   if (!(error instanceof ApiError) || ![404, 409].includes(error.status)) return;
@@ -545,10 +574,7 @@ export function useCreateRequirement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: RequirementInput) => createRequirement(api, input),
-    onSuccess: (saved) => {
-      patchRequirementLists(queryClient, saved.id, saved);
-      reloadRequirements(queryClient);
-    },
+    onSuccess: (saved) => applyConfirmedWrite(queryClient, saved.id, saved),
   });
 }
 
@@ -566,10 +592,7 @@ export function useUpdateRequirement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: UpdateRequirementVariables) => updateRequirement(api, id, input),
-    onSuccess: (saved) => {
-      patchRequirementLists(queryClient, saved.id, saved);
-      reloadRequirements(queryClient);
-    },
+    onSuccess: (saved) => applyConfirmedWrite(queryClient, saved.id, saved),
     onError: (error) => {
       reloadOnConflict(queryClient, error);
     },
@@ -582,10 +605,7 @@ export function useDeleteRequirement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteRequirement(api, id),
-    onSuccess: (_result, id) => {
-      patchRequirementLists(queryClient, id, null);
-      reloadRequirements(queryClient);
-    },
+    onSuccess: (_result, id) => applyConfirmedWrite(queryClient, id, null),
     onError: (error) => {
       reloadOnConflict(queryClient, error);
     },

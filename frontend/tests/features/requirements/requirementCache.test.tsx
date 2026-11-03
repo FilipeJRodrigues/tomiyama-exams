@@ -4,6 +4,7 @@
  */
 import { QueryClient } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { http } from 'msw';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -112,5 +113,38 @@ describe('requirements cache (§ 6.5 → § 6.4)', () => {
       );
     });
     expect(db.requirements.some((candidate) => candidate.id === osoto)).toBe(false);
+  });
+
+  it('a list still loading for the first time when a write is confirmed loads again, not stuck', async () => {
+    // The first read of the list is held (and later cancelled by the write).
+    let held = true;
+    server.use(
+      http.get(`${TEST_API_URL}/requirements`, async () => {
+        if (!held) return undefined;
+        held = false;
+        await new Promise(() => {});
+        return undefined;
+      }),
+    );
+    const { result } = await renderHooks();
+    await waitFor(() => {
+      expect(held).toBe(false);
+    });
+    expect(result.current.practice.data).toBeUndefined();
+
+    await act(async () => {
+      await result.current.create.mutateAsync({
+        belt_id: MARROM,
+        kind: 'PRACTICE',
+        category: 'Naguewaza',
+        description: 'Harai goshi',
+        expected_answer: null,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.practice.isSuccess).toBe(true);
+    });
+    expect(result.current.practice.isError).toBe(false);
+    expect(result.current.practice.data?.map((item) => item.description)).toContain('Harai goshi');
   });
 });
