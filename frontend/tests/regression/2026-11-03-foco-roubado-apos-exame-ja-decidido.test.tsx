@@ -89,7 +89,8 @@ describe('rn010 foco depois do 409 "Exame já decidido" (§ 6.7)', () => {
 
     // The user moves on before the exam reloads.
     const trail = within(screen.getByRole('navigation', { name: 'Caminho' }));
-    const dayLink = trail.getAllByRole('link')[0];
+    const [dayLink] = trail.getAllByRole('link');
+    if (dayLink === undefined) throw new Error('O caminho deveria ter um link para o dia.');
     dayLink.focus();
     holdReload = false;
     releases.forEach((release) => {
