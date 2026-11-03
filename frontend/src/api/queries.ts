@@ -6,7 +6,9 @@ import type {
   Belt,
   ConfirmAttendanceInput,
   ExamEvent,
+  ExamSheet,
   ExamView,
+  Examiner,
   StudentFilters,
   StudentInput,
   StudentView,
@@ -20,6 +22,10 @@ export const queryKeys = {
   student: (id: string) => ['student', id] as const,
   events: ['events'] as const,
   eventExams: (eventId: string) => ['events', eventId, 'exams'] as const,
+  /** Under `eventExams`: reloading the event's exams also reloads the open exam sheet. */
+  examSheet: (eventId: string, studentId: string) =>
+    ['events', eventId, 'exams', studentId] as const,
+  examiners: ['examiners'] as const,
 };
 
 export function listBelts(api: ApiClient): Promise<Belt[]> {
@@ -77,6 +83,18 @@ export function confirmAttendance(
 ): Promise<ExamView> {
   const body: ConfirmAttendanceInput = { student_id: studentId };
   return api.post<ExamView>(eventExamsPath(eventId), body);
+}
+
+export function getExamSheet(
+  api: ApiClient,
+  eventId: string,
+  studentId: string,
+): Promise<ExamSheet> {
+  return api.get<ExamSheet>(`${eventExamsPath(eventId)}/${encodeURIComponent(studentId)}`);
+}
+
+export function listExaminers(api: ApiClient): Promise<Examiner[]> {
+  return api.get<Examiner[]>('/examiners');
 }
 
 /** 409 message of a repeated confirmation (RN005), also when another examiner was first. */
@@ -173,6 +191,26 @@ export function useEventExams(eventId: string) {
     queryKey: queryKeys.eventExams(eventId),
     queryFn: () => listEventExams(api, eventId),
   });
+}
+
+/**
+ * `GET /events/{id}/exams/{student_id}` (§ 6.4): the exam, its items with the marks and the
+ * RN007 summary. Reloaded whenever the window gets the focus back, so two examiners on the
+ * same exam see each other's marks (set here explicitly, not only as the app default).
+ */
+export function useExamSheet(eventId: string, studentId: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.examSheet(eventId, studentId),
+    queryFn: () => getExamSheet(api, eventId, studentId),
+    refetchOnWindowFocus: 'always',
+  });
+}
+
+/** `GET /examiners`: active examiners, to show who decided an exam. */
+export function useExaminers() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.examiners, queryFn: () => listExaminers(api) });
 }
 
 /**

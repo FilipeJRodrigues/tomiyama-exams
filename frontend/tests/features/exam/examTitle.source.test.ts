@@ -1,0 +1,56 @@
+import { describe, expect, it } from 'vitest';
+
+import type { Belt, ExamView } from '../../../src/api/types';
+import { examTitle } from '../../../src/features/exam/examModel';
+import { mockBelts } from '../../../src/mocks/data';
+
+/** Faixas fora de ordem na lista e com ordens espaçadas (RN015 permite). */
+const belts: Belt[] = [...mockBelts]
+  .sort((a, b) => a.sort_order - b.sort_order)
+  .map((belt, index) => ({ ...belt, sort_order: index * 10 }))
+  .reverse();
+
+function belt(name: string): Belt {
+  const found = belts.find((candidate) => candidate.name === name);
+  if (!found) throw new Error(name);
+  return found;
+}
+
+function stripeExam(sourceBeltId: string | null): ExamView {
+  return {
+    id: 'exame-1',
+    event_id: 'e1',
+    student_id: 'a1',
+    student_name: 'Élida Ramos',
+    target_belt_id: belt('Roxa').id,
+    kind: 'STRIPE',
+    status: 'IN_PROGRESS',
+    decided_by_id: null,
+    decided_at: null,
+    notes: null,
+    created_by: 'x',
+    created_at: '2026-11-21T12:00:00+00:00',
+    source_belt_id: sourceBeltId,
+    source_belt_since: null,
+    source_stripes: null,
+  };
+}
+
+describe('rn004 examTitle: faixa de origem do exame de grau', () => {
+  it('a faixa de origem vale mais que a ordem das faixas', () => {
+    const sheet = { exam: stripeExam(belt('Amarela').id), target_belt: belt('Roxa') };
+    expect(examTitle(sheet, belts)).toBe('Grau na faixa Amarela (rumo à Roxa)');
+  });
+
+  it('faixa de origem fora da lista cai na faixa anterior pela ordem, com a lista desordenada', () => {
+    const sheet = { exam: stripeExam('faixa-removida'), target_belt: belt('Roxa') };
+    expect(examTitle(sheet, belts)).toBe('Grau na faixa Verde (rumo à Roxa)');
+  });
+
+  it('faixa-alvo sem faixa anterior fica sem a faixa atual', () => {
+    const lowest = [...belts].sort((a, b) => a.sort_order - b.sort_order)[0];
+    if (!lowest) throw new Error('sem faixas');
+    const sheet = { exam: stripeExam(null), target_belt: lowest };
+    expect(examTitle(sheet, belts)).toBe(`Grau (rumo à ${lowest.name})`);
+  });
+});
