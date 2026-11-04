@@ -389,6 +389,120 @@ describe('new tries of a refused mark (§ 6.4, RN006)', () => {
     });
   });
 
+  describe('reload after the last try', () => {
+    const TIMEOUT = 'Endpoint request timed out';
+
+    it('rn006 reloads the exam once, as a refused try may have been saved (3 × 504)', async () => {
+      const saved = db.answers.find((item) => item.exam_id === examOf(HELENA).id)!;
+      let landed = false;
+      // The first try reaches the table, but its answer is lost to the gateway timeout.
+      server.use(
+        http.put(ANSWER_URL, ({ params }) => {
+          if (params.requirementId !== PARAR) return undefined;
+          if (!landed) {
+            landed = true;
+            db.answers.push({ ...saved, requirement_id: PARAR, correct: true });
+          }
+          return HttpResponse.json({ message: TIMEOUT }, { status: 504 });
+        }),
+      );
+      const { user } = await openHelena();
+      const reads = sheetReads;
+      await user.click(button('Certo: Parar'));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Não foi possível salvar a marcação de "Parar"');
+      await waitFor(() => {
+        expect(sheetReads).toBe(reads + 1);
+      });
+      // The reload brings what the API has: Parar saved, with its summary.
+      await waitFor(() => {
+        expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'true');
+      });
+      expect(screen.getByRole('tab', { name: /^Teórico 2\/3$/ })).toBeInTheDocument();
+      expect(within(theoryScore()).getByText('66,7%')).toBeInTheDocument();
+      // The notice and its "Tentar de novo" stay after the reload.
+      expect(
+        within(screen.getByRole('alert')).getByRole('button', { name: 'Tentar de novo: Parar' }),
+      ).toBeInTheDocument();
+      await settleAWhile();
+      expect(sheetReads).toBe(reads + 1);
+    });
+
+    it('rn006 reloads only once no other mark of the exam is on its way', async () => {
+      holdRetryWaits();
+      let openGate: (() => void) | null = null;
+      const gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      server.use(
+        http.put(ANSWER_URL, async ({ params }) => {
+          if (params.requirementId === PARAR) {
+            return HttpResponse.json({ message: TIMEOUT }, { status: 504 });
+          }
+          // Nome do fundador waits until the test lets it through to the mock API.
+          await gate;
+          return undefined;
+        }),
+      );
+      const { user } = await openHelena();
+      const reads = sheetReads;
+      await user.click(button('Certo: Parar'));
+      const first = await waitAskedFor(0);
+      await user.click(button('Errado: Nome do fundador do Judô'));
+
+      act(() => {
+        first.release();
+      });
+      const second = await waitAskedFor(1);
+      act(() => {
+        second.release();
+      });
+      const alert = await screen.findByRole('alert');
+      expect(
+        within(alert).getByRole('button', { name: 'Tentar de novo: Parar' }),
+      ).toBeInTheDocument();
+      await settleAWhile();
+      // Nome do fundador is still on its way: no reload yet.
+      expect(sheetReads).toBe(reads);
+
+      act(() => {
+        openGate!();
+      });
+      await waitFor(() => {
+        expect(sheetReads).toBe(reads + 1);
+      });
+      await waitFor(() => {
+        expect(button('Errado: Nome do fundador do Judô')).toHaveAttribute('aria-pressed', 'true');
+      });
+      expect(
+        within(screen.getByRole('alert')).getByRole('button', { name: 'Tentar de novo: Parar' }),
+      ).toBeInTheDocument();
+      await settleAWhile();
+      expect(sheetReads).toBe(reads + 1);
+    });
+
+    it.each([
+      [['network', 'busy', 'busy'], 1],
+      [['timeout', 'conflict', 'conflict'], 1],
+      [['busy', 'throttled', 'busy'], 1],
+      // A transaction conflict was cancelled whole: nothing of it reached the table.
+      [['conflict', 'conflict', 'conflict'], 0],
+    ] as const)('rn006 after %j reloads the exam %i time(s)', async (refusals, reloads) => {
+      outcomes = [...refusals];
+      const { user } = await openHelena();
+      const reads = sheetReads;
+      await user.click(button('Certo: Parar'));
+      await screen.findByRole('alert');
+      await waitFor(() => {
+        expect(sheetReads).toBe(reads + reloads);
+      });
+      await settleAWhile();
+      expect(sheetReads).toBe(reads + reloads);
+      expect(screen.getByRole('button', { name: 'Tentar de novo: Parar' })).toBeInTheDocument();
+    });
+  });
+
   describe('a final refusal', () => {
     it.each([
       ['decided', 'Exame já decidido'],

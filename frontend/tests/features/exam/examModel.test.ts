@@ -12,6 +12,7 @@ import {
   isTransientMarkError,
   markState,
   markedCount,
+  mayHaveSavedMark,
   neighbors,
   percentLabel,
   reloadsExam,
@@ -215,6 +216,27 @@ describe('exam model (§ 6.4)', () => {
       expect(isTransientMarkError(new TypeError('Failed to fetch'))).toBe(true);
       expect(isTransientMarkError(new Error('No current user'))).toBe(true);
       expect(isTransientMarkError(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
+    });
+  });
+
+  describe('mayHaveSavedMark (rn006 recarga depois da última tentativa)', () => {
+    it.each([
+      [NETWORK_ERROR_STATUS, 'Não foi possível falar com o servidor. Verifique a conexão.'],
+      [429, 'Muitas requisições. Aguarde um instante e tente de novo.'],
+      [503, 'Sistema ocupado no momento. Tente de novo em instantes.'],
+      [504, 'O servidor demorou para responder. Tente de novo.'],
+    ])('rn006 a refused mark after %i "%s" may have been saved', (status, message) => {
+      expect(mayHaveSavedMark(new ApiError(status, message))).toBe(true);
+    });
+
+    it('rn006 a transaction conflict and a final refusal were not saved', () => {
+      expect(
+        mayHaveSavedMark(new ApiError(409, 'Outra marcação está em andamento. Tente de novo.')),
+      ).toBe(false);
+      expect(mayHaveSavedMark(new ApiError(409, 'Exame já decidido'))).toBe(false);
+      expect(mayHaveSavedMark(new ApiError(403, 'Esta área é dos examinadores'))).toBe(false);
+      expect(mayHaveSavedMark(new TypeError('Failed to fetch'))).toBe(true);
+      expect(mayHaveSavedMark(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
     });
   });
 });

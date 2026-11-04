@@ -15,16 +15,19 @@
  *   item still has one request at a time. Leaving the screen cancels the wait.
  * - A refusal that stays puts the item back as the API has it and keeps the message for the
  *   screen, until the same item is saved (the notice is about the failure, not the current
- *   state). After passing refusals the notice offers "Tentar de novo", which sends the last
- *   mark wanted for the item again; a new click on the item takes that offer away. A decided
- *   exam or closed event (and the other `reloadsExam` cases) reloads the exam, so the screen
- *   turns read-only.
+ *   state). Each exam keeps its own notice: a refusal, a save, a dismiss or a click in one
+ *   exam never touches the notice of another (the tries of an exam may end after the examiner
+ *   moved to the next student). After passing refusals the notice offers "Tentar de novo",
+ *   which sends the last mark wanted for the item again; a new click on the item takes that
+ *   offer away. When one of those refusals may have been saved anyway (`mayHaveSavedMark`:
+ *   504, network…), the exam also reloads once nothing is on its way. A decided exam or closed
+ *   event (and the other `reloadsExam` cases) reloads the exam, so the screen turns read-only.
  * - While a mark is on its way the reload on window focus waits, and a reload already on its
  *   way is cancelled: either would bring a sheet older than the mark. The exam reloads once
  *   every mark has landed.
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { errorMessage, type ApiClient } from '../../api/client';
 import { useApi } from '../../api/context';
@@ -33,6 +36,7 @@ import type { AnswerResult, ExamSheet, ExamSheetItem } from '../../api/types';
 import {
   answerState,
   isTransientMarkError,
+  mayHaveSavedMark,
   reloadsExam,
   withSavedAnswer,
   type MarkState,
@@ -107,7 +111,7 @@ export interface ExamMarking {
   pending: PendingMarks;
   /** Some mark of this exam is on its way. */
   busy: boolean;
-  /** Last refused mark of this exam, until dismissed or replaced. */
+  /** Last refused mark of this exam, until dismissed or replaced by another of this exam. */
   failure: MarkFailure | null;
   dismissFailure: () => void;
   /** "Tentar de novo": take the notice away and send `failure.retry` again. */
@@ -118,10 +122,19 @@ export interface ExamMarking {
   canReloadOnFocus: () => boolean;
 }
 
-/** The notice of one exam: shown only while that exam is on the screen. */
-interface ExamFailure {
-  key: string;
-  failure: MarkFailure;
+type FailureUpdate = (current: MarkFailure | undefined) => MarkFailure | undefined;
+
+function withFailure(
+  all: Readonly<Record<string, MarkFailure>>,
+  key: string,
+  update: FailureUpdate,
+): Readonly<Record<string, MarkFailure>> {
+  const current = all[key];
+  const next = update(current);
+  if (next === current) return all;
+  const others = Object.entries(all).filter(([other]) => other !== key);
+  if (next !== undefined) others.push([key, next]);
+  return Object.fromEntries(others);
 }
 
 export function useExamMarking(eventId: string, studentId: string): ExamMarking {
@@ -129,7 +142,8 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
   const queryClient = useQueryClient();
   const key = examKey({ eventId, studentId });
   const [pendingByExam, setPendingByExam] = useState<Readonly<Record<string, PendingMarks>>>({});
-  const [failure, setFailure] = useState<ExamFailure | null>(null);
+  // The notice of each exam, by exam key: shown only while that exam is on the screen.
+  const [failures, setFailures] = useState<Readonly<Record<string, MarkFailure>>>({});
   const books = useRef(new Map<string, ExamMarks>());
   // Aborted when the screen leaves: a wait before a new try ends there, and the answers that
   // still come back no longer touch the screen state.
@@ -157,9 +171,10 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
     setPendingByExam((all) => withPending(all, exam, itemId, state));
   }, []);
 
-  const updateFailure = useCallback((update: SetStateAction<ExamFailure | null>) => {
+  /** Change the notice of one exam only. */
+  const updateFailure = useCallback((exam: string, update: FailureUpdate) => {
     if (alive.current.signal.aborted) return;
-    setFailure(update);
+    setFailures((all) => withFailure(all, exam, update));
   }, []);
 
   /** Cancel a reload on its way (it may predate the mark); reload later instead. */
@@ -204,6 +219,8 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
       let state = marks.wanted.get(item.id);
       // Refusals in a row of the current mark; a saved mark starts over.
       let refused = 0;
+      // One of those refusals may have been saved anyway (504, network…): reload at the end.
+      let unsure = false;
       while (state !== undefined) {
         await holdReload(exam, marks);
         let result: AnswerResult;
@@ -211,6 +228,7 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
           result = await sendMark(api, exam, item.id, state);
         } catch (error) {
           const transient = isTransientMarkError(error);
+          if (mayHaveSavedMark(error)) unsure = true;
           const delay = transient ? MARK_RETRY_DELAYS_MS[refused] : undefined;
           if (delay !== undefined) {
             refused += 1;
@@ -227,22 +245,20 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
           const last = marks.wanted.get(item.id) ?? state;
           marks.wanted.delete(item.id);
           setPending(k, item.id, undefined);
-          updateFailure({
-            key: k,
-            failure: {
-              itemId: item.id,
-              item: item.description,
-              message: errorMessage(error),
-              retry: transient ? last : undefined,
-            },
-          });
-          if (reloadsExam(error)) marks.reloadWhenIdle = true;
+          updateFailure(k, () => ({
+            itemId: item.id,
+            item: item.description,
+            message: errorMessage(error),
+            retry: transient ? last : undefined,
+          }));
+          // After a refusal that may have been saved, the cache may be behind the API: the
+          // exam reloads once nothing is on its way.
+          if (unsure || reloadsExam(error)) marks.reloadWhenIdle = true;
           break;
         }
         refused = 0;
-        updateFailure((current) =>
-          current?.key === k && current.failure.itemId === item.id ? null : current,
-        );
+        unsure = false;
+        updateFailure(k, (current) => (current?.itemId === item.id ? undefined : current));
         await holdReload(exam, marks);
         const summary = marks.overlapped ? undefined : result.summary;
         queryClient.setQueryData<ExamSheet>(
@@ -271,9 +287,9 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
       marks.wanted.set(item.id, state);
       setPending(k, item.id, state);
       // The new click is what counts: "Tentar de novo" of this item has nothing left to send.
-      updateFailure((current) =>
-        current?.key === k && current.failure.itemId === item.id && current.failure.retry
-          ? { key: k, failure: { ...current.failure, retry: undefined } }
+      updateFailure(k, (current) =>
+        current?.itemId === item.id && current.retry !== undefined
+          ? { ...current, retry: undefined }
           : current,
       );
       if (!marks.sending.has(item.id)) void send(exam, item);
@@ -289,16 +305,16 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
   }, [key]);
 
   const dismissFailure = useCallback(() => {
-    setFailure(null);
-  }, []);
+    updateFailure(key, () => undefined);
+  }, [key, updateFailure]);
 
-  const shown = failure?.key === key ? failure.failure : null;
+  const shown = failures[key] ?? null;
 
   const retryFailure = useCallback(() => {
     if (shown?.retry === undefined) return;
-    setFailure(null);
+    updateFailure(key, () => undefined);
     mark({ id: shown.itemId, description: shown.item }, shown.retry);
-  }, [mark, shown]);
+  }, [key, mark, shown, updateFailure]);
 
   const pending = pendingByExam[key] ?? {};
   return {

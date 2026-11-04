@@ -246,6 +246,16 @@ export function isTransientMarkError(error: unknown): boolean {
   return TRANSIENT_STATUSES.has(error.status);
 }
 
+/**
+ * A passing refusal after which the mark may still have been saved, so the cached exam may
+ * be behind the API (§ 6.4, RN006): every `isTransientMarkError` except the 409 of a
+ * transaction conflict, whose transaction was cancelled whole (nothing written).
+ */
+export function mayHaveSavedMark(error: unknown): boolean {
+  if (!isTransientMarkError(error)) return false;
+  return !(error instanceof ApiError && error.status === 409);
+}
+
 export const MARK_LABELS: Record<MarkState, string> = {
   correct: 'Certo',
   wrong: 'Errado',
