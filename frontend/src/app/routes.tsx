@@ -1,12 +1,13 @@
 import { Navigate, type RouteObject } from 'react-router';
 
+import { AcademyPage } from '../features/academy/AcademyPage';
 import { BeltsPage } from '../features/belts/BeltsPage';
 import { ExamDayPage } from '../features/exam-day/ExamDayPage';
 import { EventsPage } from '../features/events/EventsPage';
 import { ExamPage } from '../features/exam/ExamPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { SignUpPage } from '../features/auth/SignUpPage';
-import { NotFoundPage, PlaceholderPage } from '../features/placeholder/PlaceholderPage';
+import { NotFoundPage } from '../features/placeholder/PlaceholderPage';
 import { RequirementsPage } from '../features/requirements/RequirementsPage';
 import { StudentCreatePage } from '../features/students/StudentCreatePage';
 import { StudentEditPage } from '../features/students/StudentEditPage';
@@ -41,7 +42,7 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
                 { path: paths.belts, element: <BeltsPage /> },
                 { path: paths.requirements, element: <RequirementsPage /> },
                 { path: paths.events, element: <EventsPage /> },
-                { path: paths.academy, element: <PlaceholderPage title="Academia" /> },
+                { path: paths.academy, element: <AcademyPage /> },
               ],
             },
             { path: '*', element: <NotFoundPage /> },

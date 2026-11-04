@@ -6,6 +6,15 @@ export const MOCK_USER_IDS: Record<Role, string> = {
   guardian: 'mock-guardian',
 };
 
+/**
+ * E-mail that signs in as the admin master (groups `admin` and `master`) when the simulated
+ * profile is "Examinador"; any other e-mail is a plain examiner.
+ */
+export const MOCK_MASTER_EMAIL = 'master@example.com';
+
+/** Fixed id of the simulated admin master. */
+export const MOCK_MASTER_ID = 'mock-master';
+
 /** Password that simulates the first login with a temporary password. */
 export const MOCK_TEMPORARY_PASSWORD = 'temporaria';
 

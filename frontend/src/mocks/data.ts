@@ -13,7 +13,7 @@ import type {
   RequirementKind,
   Student,
 } from '../api/types';
-import { MOCK_USER_IDS } from '../auth/mockConstants';
+import { MOCK_MASTER_EMAIL, MOCK_MASTER_ID, MOCK_USER_IDS } from '../auth/mockConstants';
 
 export const mockBelts: Belt[] = [
   {
@@ -547,10 +547,14 @@ function initialAnswers(exams: readonly Exam[]): MockAnswer[] {
   ];
 }
 
-/** Active examiners (`GET /examiners`), by name; the second one has no name. */
+/**
+ * Active examiners (`GET /examiners`); the second one has no name and the third is the
+ * simulated admin master (`MOCK_MASTER_EMAIL`), who is listed like any examiner.
+ */
 export const mockExaminers: readonly Examiner[] = [
   { id: examiner, email: 'examinador@example.com', name: 'Sensei Simulado' },
   { id: 'mock-examiner-2', email: 'examinadora@example.com', name: null },
+  { id: MOCK_MASTER_ID, email: MOCK_MASTER_EMAIL, name: 'Master Simulado' },
 ];
 
 /** The academy settings as stored (`GET /settings` adds the sensei's account). */

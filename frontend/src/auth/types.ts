@@ -3,12 +3,19 @@ export type Role = 'examiner' | 'guardian';
 
 export const EXAMINER_GROUP = 'admin';
 export const GUARDIAN_GROUP = 'responsavel';
+/** Admin master: an examiner (`admin`) also in this group; chooses the sensei (§ 2). */
+export const MASTER_GROUP = 'master';
 
 export interface AuthUser {
   /** Cognito `sub`; owner id of the students the user registers. */
   id: string;
   email: string;
   role: Role;
+  /**
+   * Admin master (groups `master` and `admin`): the only one who chooses the sensei (§ 6.6).
+   * The screens only hide what he alone may do; the API checks it again.
+   */
+  isMaster: boolean;
 }
 
 /** What the login screen does next. */
@@ -69,4 +76,12 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export function roleFromGroups(groups: readonly string[]): Role {
   return groups.includes(EXAMINER_GROUP) ? 'examiner' : 'guardian';
+}
+
+/**
+ * Whether the groups make an admin master: `master` and `admin` together, as the API reads
+ * them (`backend/README.md`). Someone only in `master` is neither master nor examiner.
+ */
+export function isMasterFromGroups(groups: readonly string[]): boolean {
+  return groups.includes(MASTER_GROUP) && groups.includes(EXAMINER_GROUP);
 }

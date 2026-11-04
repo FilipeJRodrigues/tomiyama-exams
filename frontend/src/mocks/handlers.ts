@@ -7,7 +7,7 @@
  * `domain/exams.py`): RN005 and RN016. The exam screen (§ 6.4) gets the exam sheet with the
  * RN007 summary (`get_exam_sheet`, `domain/scoring.py`), the marking of its items
  * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
- * examiners (`handlers/users.py`), the settings (`handlers/settings.py`, read only) and the
+ * examiners (`handlers/users.py`), the settings (`handlers/settings.py`) and the
  * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010). The belts screen (§ 6.5) gets
  * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015), the
  * requirements CRUD (`handlers/requirements.py`, `build_requirement` in
@@ -36,7 +36,7 @@ import type {
   StudentView,
 } from '../api/types';
 import { decodeMockToken, type MockClaims } from '../auth/mockToken';
-import { EXAMINER_GROUP } from '../auth/types';
+import { EXAMINER_GROUP, isMasterFromGroups } from '../auth/types';
 import { ageInYears, parseIsoDate, todayIso } from '../lib/dates';
 import { foldText } from '../lib/text';
 import { createMockDb, type MockDb, type MockStudent } from './data';
@@ -82,6 +82,11 @@ const MSG_EXAM_DECIDED = 'Exame já decidido';
 const MSG_ITEM_NOT_IN_BELT = 'Item não pertence à faixa do exame';
 const MSG_NO_SENSEI = 'Defina o sensei nas configurações da academia';
 const MSG_SENSEI_ONLY = 'Somente o sensei pode decidir o exame';
+const MSG_SENSEI_NOT_ACTIVE_EXAMINER = 'O sensei precisa ser um examinador ativo';
+const MSG_ONLY_MASTER_CHOOSES_SENSEI = 'Somente o administrador master escolhe o sensei';
+const SETTINGS_MAX_ACADEMY_NAME = 255;
+const SETTINGS_MAX_CERTIFICATE_CITY = 80;
+const SETTINGS_MAX_SENSEI_USER_ID = 128;
 const MSG_INVALID_RESULT =
   'Resultado inválido: envie result como APPROVED (aprovado) ou FAILED (reprovado)';
 const MSG_GRADUATION_CHANGED =
@@ -618,6 +623,25 @@ function settingsView(db: MockDb): AcademySettings {
   };
 }
 
+/** Like `parse_settings`: every field replaced; optional ones blank or `null` become `null`. */
+function parseSettings(payload: Payload) {
+  return {
+    academy_name: requiredStr(
+      payload,
+      'academy_name',
+      'Nome da academia',
+      SETTINGS_MAX_ACADEMY_NAME,
+    ),
+    sensei_user_id: optionalStr(payload, 'sensei_user_id', 'Sensei', SETTINGS_MAX_SENSEI_USER_ID),
+    certificate_city: optionalStr(
+      payload,
+      'certificate_city',
+      'Cidade do certificado',
+      SETTINGS_MAX_CERTIFICATE_CITY,
+    ),
+  };
+}
+
 /** Optional note up to 500 characters, trimmed; blank means none. */
 function decisionNotes(payload: Payload): string | null {
   const value = payload.notes;
@@ -1052,6 +1076,32 @@ export function createHandlers({
       if (!claims) return unauthorized();
       if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
       return HttpResponse.json(settingsView(db));
+    }),
+
+    // Like `update_settings`: only the master (groups `master` and `admin`) changes the
+    // sensei, who must be an active examiner; anyone else resends the stored one, unchecked.
+    http.put(url('/settings'), async ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      return withValidation(async () => {
+        const fields = parseSettings(await readPayload(request));
+        if (isMasterFromGroups(claims['cognito:groups'])) {
+          const id = fields.sensei_user_id;
+          if (id !== null && !db.examiners.some((examiner) => examiner.id === id)) {
+            return badRequest(MSG_SENSEI_NOT_ACTIVE_EXAMINER);
+          }
+        } else if (fields.sensei_user_id !== db.settings.sensei_user_id) {
+          return errorResponse(403, MSG_ONLY_MASTER_CHOOSES_SENSEI);
+        }
+        const now = utcNowIso();
+        db.settings = {
+          ...fields,
+          created_at: db.settings.created_at ?? now,
+          updated_at: now,
+        };
+        return HttpResponse.json(settingsView(db));
+      });
     }),
 
     http.get(url('/examiners'), ({ request }) => {

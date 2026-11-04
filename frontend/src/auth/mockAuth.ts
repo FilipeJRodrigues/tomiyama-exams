@@ -2,6 +2,8 @@ import { normalizeEmail } from './email';
 import {
   MOCK_EXISTING_EMAIL,
   MOCK_EXPIRED_CODE,
+  MOCK_MASTER_EMAIL,
+  MOCK_MASTER_ID,
   MOCK_SIGN_UP_CODE,
   MOCK_TEMPORARY_PASSWORD,
   MOCK_USER_IDS,
@@ -11,6 +13,7 @@ import {
   AuthError,
   EXAMINER_GROUP,
   GUARDIAN_GROUP,
+  MASTER_GROUP,
   type AuthService,
   type AuthUser,
   type ConfirmSignUpResult,
@@ -42,6 +45,23 @@ function isRole(value: unknown): value is Role {
   return value === 'examiner' || value === 'guardian';
 }
 
+/**
+ * The simulated user of an e-mail and profile: `MOCK_MASTER_EMAIL` with the examiner profile
+ * is the admin master; everyone else shares the fixed id of the profile.
+ */
+function mockUser(email: string, role: Role): AuthUser {
+  if (role === 'examiner' && normalizeEmail(email) === MOCK_MASTER_EMAIL) {
+    return { id: MOCK_MASTER_ID, email, role, isMaster: true };
+  }
+  return { id: MOCK_USER_IDS[role], email, role, isMaster: false };
+}
+
+/** Cognito groups of the simulated token, as the pool would put them. */
+function groupsOf(user: AuthUser): string[] {
+  if (user.role === 'guardian') return [GUARDIAN_GROUP];
+  return user.isMaster ? [EXAMINER_GROUP, MASTER_GROUP] : [EXAMINER_GROUP];
+}
+
 function readStored(storage: Storage | null): AuthUser | null {
   if (!storage) return null;
   try {
@@ -49,7 +69,7 @@ function readStored(storage: Storage | null): AuthUser | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const record = parsed as Record<string, unknown>;
     if (typeof record.email !== 'string' || !isRole(record.role)) return null;
-    return { id: MOCK_USER_IDS[record.role], email: record.email, role: record.role };
+    return mockUser(record.email, record.role);
   } catch {
     return null;
   }
@@ -60,8 +80,9 @@ function defaultStorage(): Storage | null {
 }
 
 /**
- * Simulated login: any e-mail signs in with the chosen profile. The session (e-mail and
- * profile only) lives in `sessionStorage`, so it ends when the tab closes.
+ * Simulated login: any e-mail signs in with the chosen profile (`MOCK_MASTER_EMAIL` as
+ * examiner is the admin master). The session (e-mail and profile only) lives in
+ * `sessionStorage`, so it ends when the tab closes.
  *
  * Simulated sign-up: the code is always `MOCK_SIGN_UP_CODE` (`MOCK_EXPIRED_CODE` simulates
  * an expired one) and `MOCK_EXISTING_EMAIL` already has an account. The accounts (e-mail
@@ -98,7 +119,7 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
           new AuthError('Confirme o e-mail antes de entrar.', 'USER_NOT_CONFIRMED'),
         );
       }
-      const next: AuthUser = { id: MOCK_USER_IDS[role], email: cleanEmail, role };
+      const next = mockUser(cleanEmail, role);
       if (password === MOCK_TEMPORARY_PASSWORD) {
         pending = next;
         return Promise.resolve<SignInStep>('NEW_PASSWORD_REQUIRED');
@@ -154,7 +175,7 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
       }
       unconfirmed.delete(key);
       confirmed.add(key);
-      finish({ id: MOCK_USER_IDS.guardian, email: email.trim(), role: 'guardian' });
+      finish(mockUser(email.trim(), 'guardian'));
       return Promise.resolve<ConfirmSignUpResult>('SIGNED_IN');
     },
 
@@ -180,7 +201,7 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
         encodeMockToken({
           sub: user.id,
           email: user.email,
-          'cognito:groups': [user.role === 'examiner' ? EXAMINER_GROUP : GUARDIAN_GROUP],
+          'cognito:groups': groupsOf(user),
         }),
       );
     },
