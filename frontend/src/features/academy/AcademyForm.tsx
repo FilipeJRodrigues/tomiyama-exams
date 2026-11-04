@@ -10,14 +10,19 @@ import {
   MAX_ACADEMY_NAME_LENGTH,
   MAX_CERTIFICATE_CITY_LENGTH,
   NO_SENSEI,
+  changedFields,
   firstInvalidField,
+  followReload,
+  followSave,
   formValuesOf,
   hasInactiveSensei,
   inactiveSenseiText,
+  sameFormValues,
   senseiOptions,
   settingsInputOf,
   storedSenseiLabel,
   validateAcademyForm,
+  withoutErrors,
   type AcademyField,
   type AcademyFormErrors,
   type AcademyFormValues,
@@ -77,7 +82,11 @@ interface Props {
 /**
  * Academy data of § 6.6 (model in § 3.7): name, sensei and city of the certificate. Every
  * examiner saves the name and the city; only the admin master changes the sensei, and the
- * others resend the stored one, as `PUT /settings` asks.
+ * others resend the stored one (always the latest read), as `PUT /settings` asks.
+ *
+ * The fields follow the settings read again (window focus, reload after a refusal, the save
+ * itself): a field still as it was at the last sync shows the new value, an edited one keeps
+ * what the user typed.
  */
 export function AcademyForm({
   settings,
@@ -92,9 +101,23 @@ export function AcademyForm({
   const errorId = useId();
   const fieldPrefix = useId();
   const fieldId = (field: AcademyField) => `${fieldPrefix}-${field}`;
-  const [values, setValues] = useState<AcademyFormValues>(() => formValuesOf(settings));
+  const incoming = formValuesOf(settings);
+  /** Values of the settings at the last sync: a field still equal to its value is not edited. */
+  const [synced, setSynced] = useState<AcademyFormValues>(incoming);
+  const [values, setValues] = useState<AcademyFormValues>(incoming);
   const [errors, setErrors] = useState<AcademyFormErrors>({});
   const submitRef = useRef<HTMLButtonElement>(null);
+
+  // Settings read again with other values: the fields not edited since the last sync follow
+  // them, with no validation and no focus change. Adjusted while rendering, not in an effect:
+  // the old values are never painted.
+  if (!sameFormValues(incoming, synced)) {
+    const next = followReload(values, synced, incoming);
+    setSynced(incoming);
+    setValues(next);
+    // A message about a value replaced under it would mislead.
+    setErrors(withoutErrors(errors, changedFields(values, next)));
+  }
 
   const change = <K extends AcademyField>(field: K, value: AcademyFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -118,9 +141,11 @@ export function AcademyForm({
       settingsInputOf(values, { isMaster, storedSenseiId: settings.sensei_user_id }),
     );
     // The fields show what the API stored (trimmed, blanks as empty), unless the user typed
-    // while it was on its way: what was typed stays.
+    // in them while it was on its way: what was typed stays. The answer is already in the
+    // cache, so it becomes the last sync when `settings` brings it.
     if (saved) {
-      setValues((current) => (current === submitted ? formValuesOf(saved) : current));
+      const stored = formValuesOf(saved);
+      setValues((current) => followSave(current, submitted, stored));
     }
     // The button was disabled while saving: the focus may have left it (§ 6.7).
     focusIfLost(submitRef.current);

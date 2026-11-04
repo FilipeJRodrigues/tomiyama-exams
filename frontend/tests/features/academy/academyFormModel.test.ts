@@ -3,16 +3,22 @@ import { describe, expect, it } from 'vitest';
 
 import type { Examiner } from '../../../src/api/types';
 import {
+  changedFields,
   examinerLabel,
   firstInvalidField,
+  followReload,
+  followSave,
   formValuesOf,
   hasInactiveSensei,
   inactiveSenseiText,
   isFirstUse,
+  sameFormValues,
   senseiOptions,
   settingsInputOf,
   storedSenseiLabel,
   validateAcademyForm,
+  withoutErrors,
+  type AcademyFormValues,
 } from '../../../src/features/academy/academyFormModel';
 import { makeSettings } from './helpers';
 
@@ -40,6 +46,76 @@ describe('academy form values', () => {
     expect(formValuesOf(EMPTY)).toEqual({ academyName: '', senseiId: '', certificateCity: '' });
     expect(isFirstUse(EMPTY)).toBe(true);
     expect(isFirstUse(makeSettings())).toBe(false);
+  });
+
+  it('are the same only when every field is', () => {
+    const values = formValuesOf(makeSettings());
+    expect(sameFormValues(values, { ...values })).toBe(true);
+    expect(sameFormValues(values, { ...values, certificateCity: 'Ibaté' })).toBe(false);
+    expect(sameFormValues(values, { ...values, senseiId: '' })).toBe(false);
+  });
+});
+
+describe('the fields after a reload or a save', () => {
+  const SYNCED: AcademyFormValues = {
+    academyName: 'Academia',
+    senseiId: 's',
+    certificateCity: 'Araraquara',
+  };
+  const INCOMING: AcademyFormValues = {
+    academyName: 'Associação',
+    senseiId: 't',
+    certificateCity: 'Ibaté',
+  };
+
+  it('a reload replaces only the fields not edited since the last sync', () => {
+    expect(followReload(SYNCED, SYNCED, INCOMING)).toEqual(INCOMING);
+    expect(followReload({ ...SYNCED, academyName: 'Academia Nova' }, SYNCED, INCOMING)).toEqual({
+      ...INCOMING,
+      academyName: 'Academia Nova',
+    });
+    // An emptied field is an edited one too.
+    expect(followReload({ ...SYNCED, certificateCity: '' }, SYNCED, INCOMING)).toEqual({
+      ...INCOMING,
+      certificateCity: '',
+    });
+    expect(followReload({ ...SYNCED, senseiId: 'u' }, SYNCED, INCOMING).senseiId).toBe('u');
+  });
+
+  it('a save shows what was stored in the fields still as submitted', () => {
+    const submitted = {
+      academyName: '  Academia Nova  ',
+      senseiId: 's',
+      certificateCity: ' Ibaté ',
+    };
+    const saved = { academyName: 'Academia Nova', senseiId: 's', certificateCity: 'Ibaté' };
+    expect(followSave(submitted, submitted, saved)).toEqual(saved);
+    // Typed while the save was on its way: that field keeps it, the others are the saved ones.
+    expect(followSave({ ...submitted, certificateCity: ' Ibaté x' }, submitted, saved)).toEqual({
+      ...saved,
+      certificateCity: ' Ibaté x',
+    });
+  });
+
+  it('lists the fields that changed, in screen order', () => {
+    expect(changedFields(SYNCED, SYNCED)).toEqual([]);
+    expect(changedFields(SYNCED, INCOMING)).toEqual(['academyName', 'senseiId', 'certificateCity']);
+    expect(changedFields(SYNCED, { ...SYNCED, certificateCity: '' })).toEqual(['certificateCity']);
+  });
+
+  it('drops the messages of the fields given, keeping the same object when there are none', () => {
+    const errors = {
+      academyName: 'Informe o nome da academia.',
+      certificateCity: 'Use no máximo 80 caracteres.',
+    };
+    expect(withoutErrors(errors, ['academyName'])).toEqual({
+      academyName: undefined,
+      certificateCity: 'Use no máximo 80 caracteres.',
+    });
+    expect(withoutErrors(errors, [])).toBe(errors);
+    expect(withoutErrors({ academyName: 'Informe o nome da academia.' }, ['senseiId'])).toEqual({
+      academyName: 'Informe o nome da academia.',
+    });
   });
 });
 
