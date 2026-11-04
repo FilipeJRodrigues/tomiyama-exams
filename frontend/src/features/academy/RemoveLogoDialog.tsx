@@ -19,6 +19,8 @@ interface Props {
   opened: boolean;
   removing: boolean;
   error: unknown;
+  /** The slot's mark is on: the slot could not be read again, there is no preview to check. */
+  mayHaveChanged: boolean;
   fullScreen: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -36,6 +38,7 @@ export function RemoveLogoDialog({
   opened,
   removing,
   error,
+  mayHaveChanged,
   fullScreen,
   onConfirm,
   onClose,
@@ -70,7 +73,10 @@ export function RemoveLogoDialog({
             <Text size="sm">{errorMessage(error)}</Text>
             {markOutcomeUnknown(error) && (
               <Text size="sm" mt="xs">
-                O logo pode ter sido removido. Confira a prévia e remova de novo se precisar.
+                {/* Removing again is safe: the API answers 204 also for an empty slot. */}
+                {mayHaveChanged
+                  ? 'O logo pode ter sido removido, mas não foi possível conferir. Remova de novo para concluir.'
+                  : 'O logo pode ter sido removido. Confira a prévia e remova de novo se precisar.'}
               </Text>
             )}
           </Alert>

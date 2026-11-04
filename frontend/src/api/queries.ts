@@ -1,4 +1,11 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  hashKey,
+  skipToken,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 
 import { ApiError, NETWORK_ERROR_STATUS, type ApiClient } from './client';
 import { useApi } from './context';
@@ -56,6 +63,11 @@ export const queryKeys = {
    * must not cancel a logo read on its way.
    */
   logo: (slot: LogoSlot) => ['logos', slot] as const,
+  /**
+   * The slot's mark "the logo may have changed" (`useLogoChange`). Not under `logos`, so
+   * reloading or cancelling the slot's read never touches it.
+   */
+  logoChange: (slot: LogoSlot) => ['logoChange', slot] as const,
   /** Prefix of every requirements list (any filter), for invalidation. */
   allRequirements: ['requirements'] as const,
   requirements: (filters: RequirementFilters = {}) => ['requirements', filters] as const,
@@ -541,8 +553,105 @@ export function useLogo(slot: LogoSlot) {
   });
 }
 
+/**
+ * The mark "the logo may have changed" of a slot (§ 6.6, RN012): a write stored the logo, or
+ * may have, and no read of the slot has worked since. While it is on, the cached logo (or the
+ * empty slot) may not be what the slot has: the screen shows the read error with "Tentar de
+ * novo" (or "Carregando logo…" while a read is on its way), never that preview and never
+ * "Trocar"/"Remover".
+ *
+ * It lives in the `QueryClient` (`queryKeys.logoChange`), not in the screen, so it outlives
+ * the slot panel (leaving the screen and coming back) and ends with the session (`clear`).
+ * - On: `useUploadLogo` and `useDeleteLogo`, when the write stored the logo (PUT 200) or may
+ *   have (no answer, 504, 5xx) and the read again, awaited, did not bring the slot: it failed,
+ *   or did not run because no screen shows the slot.
+ * - Off: only a read of the slot that works (its answer reaches the cache, `watchLogoReads`),
+ *   and the 204 of a removal, which says the slot is empty as a read would.
+ */
+export interface LogoChange {
+  /**
+   * `stored`: the API stored the logo sent (PUT 200), so the read that turns the mark off
+   * brings it and the screen says "salvo". `unknown`: the write may or may not have happened.
+   */
+  outcome: 'stored' | 'unknown';
+}
+
+const LOGO_SLOTS: readonly LogoSlot[] = ['primary', 'secondary'];
+
+/** The slot whose logo read has this query hash (`['logos', slot]`), or null. */
+function logoSlotOf(queryHash: string): LogoSlot | null {
+  return LOGO_SLOTS.find((slot) => hashKey(queryKeys.logo(slot)) === queryHash) ?? null;
+}
+
+/** The clients whose cache already turns the logo marks off (one listener per session). */
+const watchedClients = new WeakSet<QueryClient>();
+
+/**
+ * Turns a slot's mark off when a read of the slot works: the answer of the `GET` reaches the
+ * cache (the `success` of a fetch). A read cancelled or answered too late for the cache never
+ * gets here, and neither does data the screen puts in the cache itself (`setQueryData`).
+ */
+function watchLogoReads(queryClient: QueryClient): void {
+  if (watchedClients.has(queryClient)) return;
+  watchedClients.add(queryClient);
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) {
+      return;
+    }
+    const slot = logoSlotOf(event.query.queryHash);
+    if (slot === null) return;
+    const markKey = queryKeys.logoChange(slot);
+    if (queryClient.getQueryData<LogoChange | null>(markKey)) {
+      queryClient.setQueryData<LogoChange | null>(markKey, null);
+    }
+  });
+}
+
+function markLogoChanged(queryClient: QueryClient, slot: LogoSlot, change: LogoChange): void {
+  watchLogoReads(queryClient);
+  queryClient.setQueryData<LogoChange | null>(queryKeys.logoChange(slot), change);
+}
+
+/**
+ * Reads the slot again after a write and says whether the read brought it. A read already on
+ * its way (asked before the write) is cancelled first, so only a read asked after the write
+ * can answer. With no screen on the slot nothing is read: that is not a confirmation.
+ */
+async function readLogoAgain(queryClient: QueryClient, slot: LogoSlot): Promise<boolean> {
+  const queryKey = queryKeys.logo(slot);
+  await queryClient.cancelQueries({ queryKey, exact: true });
+  await queryClient.invalidateQueries({ queryKey, exact: true });
+  const state = queryClient.getQueryState(queryKey);
+  return state?.status === 'success' && !state.isInvalidated;
+}
+
+/** Reads the slot again; when the read does not bring it, the slot's mark goes on. */
+async function confirmLogoWrite(
+  queryClient: QueryClient,
+  slot: LogoSlot,
+  outcome: LogoChange['outcome'],
+): Promise<boolean> {
+  const read = await readLogoAgain(queryClient, slot);
+  if (!read) markLogoChanged(queryClient, slot, { outcome });
+  return read;
+}
+
+/** The slot's mark (`LogoChange`), or `null` while it is off. */
+export function useLogoChange(slot: LogoSlot): LogoChange | null {
+  const { data } = useQuery<LogoChange | null>({
+    queryKey: queryKeys.logoChange(slot),
+    // Never fetched: only the writes of the slot and its reads change it.
+    queryFn: skipToken,
+    initialData: null,
+    staleTime: Infinity,
+    // Kept for the whole session, also while no screen shows the slot.
+    gcTime: Infinity,
+  });
+  return data ?? null;
+}
+
 /** Whether a failed logo write may have been stored anyway (no answer, 504 or 5xx). */
-function logoMayHaveChanged(error: unknown): boolean {
+function logoMayHaveChanged(error: unknown): error is ApiError {
   return (
     error instanceof ApiError && (error.status === NETWORK_ERROR_STATUS || error.status >= 500)
   );
@@ -551,8 +660,8 @@ function logoMayHaveChanged(error: unknown): boolean {
 /** How a stored logo ended: whether the read again brought its new URL. */
 export interface LogoUploadResult {
   /**
-   * `false` when the logo was stored but the read again failed: the cache still holds the old
-   * logo (or the empty slot), which is no longer what the slot has.
+   * `false` when the logo was stored but the read again did not bring it: the slot's mark is
+   * on (`useLogoChange`) until a read works.
    */
   reloaded: boolean;
 }
@@ -561,45 +670,55 @@ export interface LogoUploadResult {
  * `PUT /settings/logos/{slot}` (RN012). The answer has no URL: the slot is read again, and the
  * mutation only ends when that read is over, so the preview never shows the old image after
  * "salvo". When the read fails the logo is stored all the same: the mutation succeeds with
- * `reloaded: false`, and the screen must not show the old data as the slot's.
- * A 400 or 413 stores nothing (the logo stays); with no answer or a 5xx the file may be in the
- * bucket already (README, "Ordem das gravações"): the slot reloads.
+ * `reloaded: false`, and the slot's mark goes on.
+ * A 400 or 413 stores nothing (the logo stays). With no answer, a 504 or a 5xx the file may be
+ * in the bucket already (README, "Ordem das gravações"): the slot is read again before the
+ * error comes out, and the mark goes on when that read fails. The exception is a 503 on an
+ * empty slot: its metadata was not stored, so the slot is still empty (the `GET` answers 404).
  */
 export function useUploadLogo(slot: LogoSlot) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: LogoUploadInput): Promise<LogoUploadResult> => {
-      await uploadLogo(api, slot, input);
-      const queryKey = queryKeys.logo(slot);
-      await queryClient.invalidateQueries({ queryKey });
-      return { reloaded: queryClient.getQueryState(queryKey)?.status !== 'error' };
-    },
-    onError: (error) => {
-      if (logoMayHaveChanged(error)) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) });
+      const wasEmpty = queryClient.getQueryData(queryKeys.logo(slot)) === null;
+      try {
+        await uploadLogo(api, slot, input);
+      } catch (error) {
+        if (logoMayHaveChanged(error)) {
+          const read = await readLogoAgain(queryClient, slot);
+          const stillEmpty = wasEmpty && error.status === 503;
+          if (!read && !stillEmpty) markLogoChanged(queryClient, slot, { outcome: 'unknown' });
+        }
+        throw error;
       }
+      return { reloaded: await confirmLogoWrite(queryClient, slot, 'stored') };
     },
   });
 }
 
 /**
  * `DELETE /settings/logos/{slot}`: the slot becomes empty in the cache, after cancelling a
- * read on its way. With no answer or a 5xx the metadata may be gone already: it reloads.
+ * read on its way, and its mark goes off (the 204 says the slot is empty). With no answer or a
+ * 5xx the metadata may be gone already: the slot is read again before the error comes out, and
+ * the mark goes on when that read fails.
  */
 export function useDeleteLogo(slot: LogoSlot) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => deleteLogo(api, slot),
+    mutationFn: async () => {
+      try {
+        await deleteLogo(api, slot);
+      } catch (error) {
+        if (logoMayHaveChanged(error)) await confirmLogoWrite(queryClient, slot, 'unknown');
+        throw error;
+      }
+    },
     onSuccess: async () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.logo(slot) });
       queryClient.setQueryData<LogoView | null>(queryKeys.logo(slot), null);
-    },
-    onError: (error) => {
-      if (logoMayHaveChanged(error)) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) });
-      }
+      queryClient.setQueryData<LogoChange | null>(queryKeys.logoChange(slot), null);
     },
   });
 }

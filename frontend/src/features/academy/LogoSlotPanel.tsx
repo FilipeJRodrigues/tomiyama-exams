@@ -3,7 +3,7 @@ import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 
 import { ApiError, errorMessage } from '../../api/client';
-import { useDeleteLogo, useLogo, useUploadLogo } from '../../api/queries';
+import { useDeleteLogo, useLogo, useLogoChange, useUploadLogo } from '../../api/queries';
 import type { LogoSlot } from '../../api/types';
 import { markOutcomeUnknown } from '../exam/examModel';
 import { focusIfLost } from '../exam/focus';
@@ -36,9 +36,11 @@ interface Props {
  * or the read brings the same URL (it only changes from one second to the next), the slot says
  * so and offers "Tentar de novo" (no loop of reloads).
  *
- * "salvo" only comes with the new URL: when the logo is stored but the read again fails, the
- * old preview (or "Nenhum logo") is not the slot's any more, so the slot shows the read error
- * with "Tentar de novo" until a read brings the logo sent.
+ * After a write that stored the logo, or may have, and no read that worked, the slot's mark
+ * "the logo may have changed" is on (`useLogoChange`, kept in the query cache, so also after
+ * leaving the screen and coming back): the old preview (or "Nenhum logo") may not be the
+ * slot's, so the slot shows the read error with "Tentar de novo", without "Trocar"/"Remover",
+ * until a read works. "salvo" only comes with a read that brings the logo sent.
  */
 export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const label = LOGO_SLOT_LABELS[slot];
@@ -48,6 +50,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const brokenId = useId();
 
   const logo = useLogo(slot);
+  const change = useLogoChange(slot);
   const upload = useUploadLogo(slot);
   const remove = useDeleteLogo(slot);
 
@@ -59,8 +62,8 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
   /** Sendings ended so far: after each one the focus goes back to its button (once enabled). */
   const [sendsEnded, setSendsEnded] = useState(0);
-  /** The logo was stored but the read again failed: the cached logo is not the slot's. */
-  const [outdated, setOutdated] = useState(false);
+  /** The slot's mark on the last render: when a read turns it off, the slot says so. */
+  const [seenChange, setSeenChange] = useState(change);
   /** Times a button of the slot went away under the focus: it goes back to the slot. */
   const [focusBack, setFocusBack] = useState(0);
 
@@ -77,12 +80,17 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const sending = preparing || upload.isPending;
   const removing = remove.isPending;
   const current = logo.data ?? null;
+  /** The cached logo may not be the slot's: only the read error or the loading is shown. */
+  const mayHaveChanged = change !== null;
 
-  // A read brought the slot again after the read that failed: now the logo sent is on screen.
-  if (outdated && logo.isSuccess) {
-    setOutdated(false);
-    setNotice(`${label} salvo.`);
-    setFocusBack((count) => count + 1);
+  // A read of the slot worked and turned the mark off: what the slot has is on screen now,
+  // and with it the logo sent, when the API had stored it.
+  if (seenChange !== change) {
+    setSeenChange(change);
+    if (seenChange !== null && change === null) {
+      if (seenChange.outcome === 'stored') setNotice(`${label} salvo.`);
+      setFocusBack((count) => count + 1);
+    }
   }
 
   const clearMessages = () => {
@@ -110,10 +118,11 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
       const { reloaded } = await upload.mutateAsync(prepared.input);
       reloadedForImage.current = false;
       setBrokenUrl(null);
-      setOutdated(!reloaded);
+      // Without the read the slot's mark is on: "salvo" waits for a read that works.
       if (reloaded) setNotice(`${label} salvo.`);
     } catch {
-      // The error is on `upload.error`, shown above the preview.
+      // The error is on `upload.error`, shown above the preview. The read again is over: a
+      // logo that may have changed is already marked.
     } finally {
       setPreparing(false);
       busy.current = false;
@@ -123,7 +132,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
 
   // The button was disabled while sending: the focus may have left it (§ 6.7). The hidden file
   // input cannot keep it either. It goes back once the button is enabled again.
-  // Without the new URL the slot shows the read error: the focus goes to its "Tentar de novo".
+  // With the mark on the slot shows the read error: the focus goes to its "Tentar de novo".
   useEffect(() => {
     if (sendsEnded === 0 || sending) return;
     focusIfLost([chooseRef.current, loadRetryRef.current], { leaving: [inputRef.current] });
@@ -173,9 +182,14 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
     setRemoveOpened(false);
   };
 
-  /** The confirmation is gone: back to "Remover", or to "Carregar" once removed. */
+  /**
+   * The confirmation is gone: back to "Remover", to "Carregar" once removed, or to "Tentar de
+   * novo" when the removal may have happened and the slot could not be read again.
+   */
   const removeClosed = () => {
-    focusIfLost([removeRef.current, chooseRef.current], { leaving: [dialogRef.current] });
+    focusIfLost([removeRef.current, chooseRef.current, loadRetryRef.current], {
+      leaving: [dialogRef.current],
+    });
   };
 
   const confirmRemove = () => {
@@ -206,7 +220,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const broken = current !== null && brokenUrl === current.url;
 
   let body: ReactNode;
-  if (logo.isError && (logo.data === undefined || outdated)) {
+  if (logo.isError && (logo.data === undefined || mayHaveChanged)) {
     body = (
       <LoadError
         title={`Não foi possível carregar o ${name}`}
@@ -216,7 +230,8 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
         retryRef={loadRetryRef}
       />
     );
-  } else if (logo.data === undefined) {
+  } else if (logo.data === undefined || mayHaveChanged) {
+    // With the mark on and no error, a read is on its way (opening the screen again).
     body = (
       <Preview busy>
         <Text size="sm" c="dimmed">
@@ -338,7 +353,9 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
           <Text size="sm">{fileError ?? errorMessage(uploadError)}</Text>
           {!fileError && markOutcomeUnknown(uploadError) && (
             <Text size="sm" mt="xs">
-              O logo pode ter sido salvo. Confira a prévia e envie de novo se precisar.
+              {mayHaveChanged
+                ? 'O logo pode ter sido salvo, mas a prévia não carregou. Tente carregar de novo para conferir e envie de novo se precisar.'
+                : 'O logo pode ter sido salvo. Confira a prévia e envie de novo se precisar.'}
             </Text>
           )}
         </Alert>
@@ -350,6 +367,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
         opened={removeOpened}
         removing={removing}
         error={remove.error}
+        mayHaveChanged={mayHaveChanged}
         fullScreen={fullScreenDialog}
         onConfirm={confirmRemove}
         onClose={closeRemove}
