@@ -97,6 +97,10 @@ export function buildApiUrl(baseUrl: string, path: string, query?: QueryParams):
   return url.toString();
 }
 
+/**
+ * The JSON body of a response; null when it is empty or not JSON. Rejects (`TypeError`) when
+ * the connection drops while the body is still arriving.
+ */
 async function readJson(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return null;
@@ -133,13 +137,18 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
 
     if (!response.ok) {
       if (response.status === 401) options.onUnauthorized?.();
-      throw new ApiError(
-        response.status,
-        messageFromErrorBody(response.status, await readJson(response)),
-      );
+      // A body cut halfway still leaves the status: the error keeps it, with its own message.
+      const errorBody = await readJson(response).catch(() => null);
+      throw new ApiError(response.status, messageFromErrorBody(response.status, errorBody));
     }
     if (response.status === 204) return undefined as T;
-    return (await readJson(response)) as T;
+    try {
+      return (await readJson(response)) as T;
+    } catch {
+      // The API answered, but its body was cut on the way: the outcome is unknown, as when no
+      // answer arrives at all (a mark may have been saved, § 6.4).
+      throw new ApiError(NETWORK_ERROR_STATUS, NETWORK_MESSAGE);
+    }
   }
 
   return {

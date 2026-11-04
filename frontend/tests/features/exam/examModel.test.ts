@@ -11,6 +11,7 @@ import {
   groupByCategory,
   isTransientMarkError,
   markState,
+  markOutcomeUnknown,
   markedCount,
   mayHaveSavedMark,
   neighbors,
@@ -237,6 +238,42 @@ describe('exam model (§ 6.4)', () => {
       expect(mayHaveSavedMark(new ApiError(403, 'Esta área é dos examinadores'))).toBe(false);
       expect(mayHaveSavedMark(new TypeError('Failed to fetch'))).toBe(true);
       expect(mayHaveSavedMark(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
+    });
+  });
+
+  describe('markOutcomeUnknown (rn006 aviso "não foi possível confirmar", #49)', () => {
+    it.each([
+      [NETWORK_ERROR_STATUS, 'Não foi possível falar com o servidor. Verifique a conexão.'],
+      [504, 'O servidor demorou para responder. Tente de novo.'],
+    ])('rn006 a refused mark after %i "%s" has an unknown outcome', (status, message) => {
+      expect(markOutcomeUnknown(new ApiError(status, message))).toBe(true);
+    });
+
+    it('rn006 a failure that is not an ApiError (the request never left) wrote nothing', () => {
+      // E.g. the session token could not be fetched: the client throws before `fetch`.
+      expect(markOutcomeUnknown(new Error('No current user'))).toBe(false);
+      expect(markOutcomeUnknown(new TypeError('Failed to fetch'))).toBe(false);
+    });
+
+    it('rn006 a failure that is not an ApiError is still sent again by itself', () => {
+      // Passing refusal (retry) with the "Não foi possível salvar" notice.
+      expect(isTransientMarkError(new Error('No current user'))).toBe(true);
+      expect(markOutcomeUnknown(new Error('No current user'))).toBe(false);
+    });
+
+    it.each([
+      [429, 'Muitas requisições. Aguarde um instante e tente de novo.'],
+      [503, 'Sistema ocupado no momento. Tente de novo em instantes.'],
+      [409, 'Outra marcação está em andamento. Tente de novo.'],
+      [409, 'Exame já decidido'],
+      [403, 'Esta área é dos examinadores'],
+      [500, 'Erro interno'],
+    ])('rn006 a refused mark after %i "%s" wrote nothing', (status, message) => {
+      expect(markOutcomeUnknown(new ApiError(status, message))).toBe(false);
+    });
+
+    it('rn006 a cancelled request is not a refusal', () => {
+      expect(markOutcomeUnknown(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
     });
   });
 });

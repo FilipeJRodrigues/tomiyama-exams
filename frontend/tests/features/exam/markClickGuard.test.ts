@@ -1,6 +1,6 @@
 /** § 6.4 (RN006): the double tap filter of Certo/Errado (#49). */
 import { renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DOUBLE_TAP_MS,
@@ -60,10 +60,35 @@ describe('useMarkClickGuard', () => {
     expect(accept('parar', 'correct', 'correct', 'unmarked')).toBe(true);
   });
 
+  it('rn006 takes the time of the click event over its clock (#49)', () => {
+    // The clock stands still; the click events say how far apart they are.
+    const { result } = renderHook(() => useMarkClickGuard(() => T0));
+    const accept = result.current;
+    expect(accept('parar', 'correct', 'unmarked', 'correct', 10)).toBe(true);
+    expect(accept('parar', 'correct', 'correct', 'unmarked', 10 + DOUBLE_TAP_MS - 1)).toBe(false);
+    expect(accept('parar', 'correct', 'correct', 'unmarked', 10 + DOUBLE_TAP_MS)).toBe(true);
+  });
+
   it('rn006 keeps each item apart', () => {
     const accept = guardAt([T0, T0, T0]);
     expect(accept('parar', 'correct', 'unmarked', 'correct')).toBe(true);
     expect(accept('fundador', 'correct', 'unmarked', 'correct')).toBe(true);
     expect(accept('parar', 'correct', 'correct', 'unmarked')).toBe(false);
+  });
+});
+
+describe('useMarkClickGuard default clock (#49)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rn006 asks performance.now(), not Date.now(), for a click without its time', () => {
+    const times = [T0, T0 + 100];
+    vi.spyOn(performance, 'now').mockImplementation(() => times.shift() ?? 0);
+    const date = vi.spyOn(Date, 'now');
+    const { result } = renderHook(() => useMarkClickGuard());
+    expect(result.current('parar', 'correct', 'unmarked', 'correct')).toBe(true);
+    expect(result.current('parar', 'correct', 'correct', 'unmarked')).toBe(false);
+    expect(date).not.toHaveBeenCalled();
   });
 });

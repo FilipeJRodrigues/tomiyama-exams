@@ -81,7 +81,10 @@ const CHOICE_ICONS = {
 interface MarkButtonsProps {
   item: ExamSheetItem;
   onMark: (item: ExamSheetItem, state: MarkState) => void;
-  /** Drops a double tap on the same button (`useMarkClickGuard` of the exam screen). */
+  /**
+   * Drops a double tap on the same button (`useMarkClickGuard` of the exam screen), timed by
+   * the `timeStamp` of the click events.
+   */
   acceptClick: AcceptMarkClick;
 }
 
@@ -110,9 +113,9 @@ export function MarkButtons({ item, onMark, acceptClick }: MarkButtonsProps) {
             data-choice={choice}
             leftSection={<Icon size={20} aria-hidden />}
             onKeyDown={preventMarkKeyRepeat}
-            onClick={() => {
+            onClick={(event) => {
               const next = nextMarkState(state, choice);
-              if (!acceptClick(item.id, choice, state, next)) return;
+              if (!acceptClick(item.id, choice, state, next, event.timeStamp)) return;
               onMark(item, next);
             }}
             style={{

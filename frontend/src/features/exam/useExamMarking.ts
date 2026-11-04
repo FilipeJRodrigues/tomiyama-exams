@@ -17,7 +17,8 @@
  *   screen, until the same item is saved (the notice is about the failure, not the current
  *   state). Each exam keeps its own notice: a refusal, a save, a dismiss or a click in one
  *   exam never touches the notice of another (the tries of an exam may end after the examiner
- *   moved to the next student). After passing refusals the notice offers "Tentar de novo",
+ *   moved to the next student). Each refusal is a new notice (`MarkFailure.id`), read out
+ *   again even with the same text. After passing refusals the notice offers "Tentar de novo",
  *   which sends the last mark wanted for the item again; a new click on the item takes that
  *   offer away. When one of those refusals may have been saved anyway (`mayHaveSavedMark`:
  *   504, network…), the exam also reloads once nothing is on its way. A decided exam or closed
@@ -36,6 +37,7 @@ import type { AnswerResult, ExamSheet, ExamSheetItem } from '../../api/types';
 import {
   answerState,
   isTransientMarkError,
+  markOutcomeUnknown,
   mayHaveSavedMark,
   reloadsExam,
   withSavedAnswer,
@@ -46,6 +48,11 @@ import { MARK_RETRY_DELAYS_MS, waitForRetry } from './markRetry';
 
 /** A mark the API refused, for the notice. */
 export interface MarkFailure {
+  /**
+   * Each refusal has its own: the notice is read out again for a new one with the same text
+   * (another refusal of the same item or of another), never twice for the same one.
+   */
+  id: number;
   /** Id of the item: a later save of it takes the notice away. */
   itemId: string;
   /** Description of the item, to say which one. */
@@ -56,6 +63,17 @@ export interface MarkFailure {
    * sends it again. Undefined for a final refusal, or once the item was clicked again.
    */
   retry?: MarkState;
+  /**
+   * The last try ran out with an unknown outcome and some try of the series may have been
+   * saved anyway (network, 504: `markOutcomeUnknown`). The exam reloads and the item may
+   * show the mark: the notice says it could not be confirmed, not that it was not saved.
+   */
+  outcomeUnknown: boolean;
+  /**
+   * The refusal says the screen is out of date (`reloadsExam`: decided exam, closed event…):
+   * the exam reloads and may turn read-only because of this very mark.
+   */
+  outdated: boolean;
 }
 
 /** What a mark needs of the item: which one, and its name for the notice. */
@@ -145,6 +163,7 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
   // The notice of each exam, by exam key: shown only while that exam is on the screen.
   const [failures, setFailures] = useState<Readonly<Record<string, MarkFailure>>>({});
   const books = useRef(new Map<string, ExamMarks>());
+  const lastFailureId = useRef(0);
   // Aborted when the screen leaves: a wait before a new try ends there, and the answers that
   // still come back no longer touch the screen state.
   const alive = useRef(new AbortController());
@@ -221,6 +240,8 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
       let refused = 0;
       // One of those refusals may have been saved anyway (504, network…): reload at the end.
       let unsure = false;
+      // One of them had no answer at all (network, 504): the notice cannot say "not saved".
+      let unknown = false;
       while (state !== undefined) {
         await holdReload(exam, marks);
         let result: AnswerResult;
@@ -229,6 +250,7 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
         } catch (error) {
           const transient = isTransientMarkError(error);
           if (mayHaveSavedMark(error)) unsure = true;
+          if (markOutcomeUnknown(error)) unknown = true;
           const delay = transient ? MARK_RETRY_DELAYS_MS[refused] : undefined;
           if (delay !== undefined) {
             refused += 1;
@@ -245,12 +267,18 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
           const last = marks.wanted.get(item.id) ?? state;
           marks.wanted.delete(item.id);
           setPending(k, item.id, undefined);
-          updateFailure(k, () => ({
+          lastFailureId.current += 1;
+          const failure: MarkFailure = {
+            id: lastFailureId.current,
             itemId: item.id,
             item: item.description,
             message: errorMessage(error),
             retry: transient ? last : undefined,
-          }));
+            // Only while the last refusal itself may pass: a final one says what happened.
+            outcomeUnknown: transient && unknown,
+            outdated: reloadsExam(error),
+          };
+          updateFailure(k, () => failure);
           // After a refusal that may have been saved, the cache may be behind the API: the
           // exam reloads once nothing is on its way.
           if (unsure || reloadsExam(error)) marks.reloadWhenIdle = true;
@@ -258,6 +286,7 @@ export function useExamMarking(eventId: string, studentId: string): ExamMarking 
         }
         refused = 0;
         unsure = false;
+        unknown = false;
         updateFailure(k, (current) => (current?.itemId === item.id ? undefined : current));
         await holdReload(exam, marks);
         const summary = marks.overlapped ? undefined : result.summary;

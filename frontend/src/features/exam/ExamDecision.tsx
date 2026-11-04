@@ -12,8 +12,9 @@
  *   cache), the result is read out and the focus goes to "Decidido por …".
  * - "Exame já decidido": the dialog closes, the exam reloads and the message stays as a
  *   notice. Other refusals stay in the dialog with the API message.
- * - Closing the dialog gives the focus back to its opener or, when a refusal (sensei changed
- *   or removed) took Aprovar/Reprovar away, to the decision area (§ 6.7).
+ * - Closing the dialog gives the focus back to its opener; when a change of layout took it
+ *   away, to the same choice in the layout on the screen; when a refusal (sensei changed or
+ *   removed) took Aprovar/Reprovar away, to the decision area (§ 6.7).
  * - The focus only moves when it is lost (`focusIfLost` in `focus.ts`): a focus the user put
  *   elsewhere stays, even when "Decidido por …" or the notice closing would take it.
  * - Deleted student (RN018): no Aprovar/Reprovar, a notice says the exam cannot be decided.
@@ -109,6 +110,7 @@ function DecideButtons({ flow }: { flow: DecisionFlow }) {
         leftSection={<IconCircleCheck size={18} aria-hidden />}
         style={TOUCH_TARGET}
         data-decision-action
+        data-decision-result="APPROVED"
         onClick={() => {
           flow.ask('APPROVED');
         }}
@@ -120,6 +122,7 @@ function DecideButtons({ flow }: { flow: DecisionFlow }) {
         color="red"
         leftSection={<IconCircleX size={18} aria-hidden />}
         style={TOUCH_TARGET}
+        data-decision-result="FAILED"
         onClick={() => {
           flow.ask('FAILED');
         }}

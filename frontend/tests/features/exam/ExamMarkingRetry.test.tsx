@@ -287,9 +287,13 @@ describe('new tries of a refused mark (§ 6.4, RN006)', () => {
       await user.click(button('Certo: Parar'));
 
       const alert = await screen.findByRole('alert');
-      expect(alert).toHaveTextContent('Não foi possível salvar a marcação de "Parar"');
+      // The last try had no answer: the mark may have been saved (#49, step 3).
+      expect(alert).toHaveTextContent('Não foi possível confirmar a marcação de "Parar"');
       expect(alert).toHaveTextContent(
         'Não foi possível falar com o servidor. Verifique a conexão e tente de novo.',
+      );
+      expect(alert).toHaveTextContent(
+        'Ela pode ter sido salva; confira o item ou toque em Tentar de novo.',
       );
       expect(writes).toHaveLength(3);
       expect(waitDurations()).toEqual([500, 1500]);
@@ -414,7 +418,11 @@ describe('new tries of a refused mark (§ 6.4, RN006)', () => {
       await user.click(button('Certo: Parar'));
 
       const alert = await screen.findByRole('alert');
-      expect(alert).toHaveTextContent('Não foi possível salvar a marcação de "Parar"');
+      // A 504 may have been saved: the notice does not say it was not (#49, step 3).
+      expect(alert).toHaveTextContent('Não foi possível confirmar a marcação de "Parar"');
+      expect(alert).toHaveTextContent(
+        'Ela pode ter sido salva; confira o item ou toque em Tentar de novo.',
+      );
       await waitFor(() => {
         expect(sheetReads).toBe(reads + 1);
       });
