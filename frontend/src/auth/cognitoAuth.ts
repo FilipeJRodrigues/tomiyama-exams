@@ -14,6 +14,7 @@ import type { CognitoConfig } from '../app/config';
 import { normalizeEmail } from './email';
 import {
   AuthError,
+  isMasterFromGroups,
   roleFromGroups,
   type AuthService,
   type AuthUser,
@@ -148,10 +149,12 @@ export function createCognitoAuth(config: CognitoConfig): AuthService {
       const session = await fetchAuthSession();
       const payload = session.tokens?.idToken?.payload;
       if (!payload || typeof payload.sub !== 'string') return null;
+      const groups = stringList(payload['cognito:groups']);
       return {
         id: payload.sub,
         email: typeof payload.email === 'string' ? payload.email : '',
-        role: roleFromGroups(stringList(payload['cognito:groups'])),
+        role: roleFromGroups(groups),
+        isMaster: isMasterFromGroups(groups),
       };
     } catch {
       return null;

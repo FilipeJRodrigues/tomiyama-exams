@@ -104,6 +104,7 @@ describe('createCognitoAuth', () => {
       id: 'sub-1',
       email: 'prof@example.com',
       role: 'examiner',
+      isMaster: false,
     });
     await expect(auth.getIdToken()).resolves.toBe('id-token');
   });

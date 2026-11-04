@@ -15,7 +15,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 
 import { paths } from '../../app/navigation';
 import type { LoginRedirectState } from '../../app/guards';
-import { MOCK_TEMPORARY_PASSWORD } from '../../auth/mockConstants';
+import { MOCK_MASTER_EMAIL, MOCK_TEMPORARY_PASSWORD } from '../../auth/mockConstants';
 import { AuthError, ROLE_LABELS, type Role } from '../../auth/types';
 import { useAuth } from '../../auth/useAuth';
 import { AuthCard } from './AuthCard';
@@ -144,7 +144,8 @@ export function LoginPage() {
     <AuthCard title="Entrar">
       {supportsRoleChoice && (
         <Alert color="orange" title="Dados simulados" role="note">
-          Qualquer e-mail entra. A senha “{MOCK_TEMPORARY_PASSWORD}” simula o primeiro acesso.
+          Qualquer e-mail entra. A senha “{MOCK_TEMPORARY_PASSWORD}” simula o primeiro acesso. Como
+          examinador, o e-mail “{MOCK_MASTER_EMAIL}” entra como administrador master.
         </Alert>
       )}
       {confirmedEmail && (

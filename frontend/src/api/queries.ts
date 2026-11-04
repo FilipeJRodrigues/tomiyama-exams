@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import { ApiError, type ApiClient } from './client';
+import { ApiError, NETWORK_ERROR_STATUS, type ApiClient } from './client';
 import { useApi } from './context';
 import { compareEvents, overlayRecentEventWrites, recordEventWrite } from './recentEventWrites';
 import {
@@ -10,6 +10,7 @@ import {
 } from './recentRequirementWrites';
 import type {
   AcademySettings,
+  AcademySettingsInput,
   AnswerResult,
   Belt,
   BeltInput,
@@ -225,6 +226,14 @@ export function getSettings(api: ApiClient): Promise<AcademySettings> {
   return api.get<AcademySettings>('/settings');
 }
 
+/** `PUT /settings` (examiners; only the admin master changes the sensei). */
+export function updateSettings(
+  api: ApiClient,
+  input: AcademySettingsInput,
+): Promise<AcademySettings> {
+  return api.put<AcademySettings>('/settings', input);
+}
+
 export function listExaminers(api: ApiClient): Promise<Examiner[]> {
   return api.get<Examiner[]>('/examiners');
 }
@@ -398,10 +407,13 @@ export function useExamSheet(
   });
 }
 
-/** `GET /examiners`: active examiners, to show who decided an exam. */
-export function useExaminers() {
+/**
+ * `GET /examiners`: active examiners, to show who decided an exam and to choose the sensei
+ * (§ 6.6). `enabled: false` skips the request (only the admin master chooses the sensei).
+ */
+export function useExaminers(enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.examiners, queryFn: () => listExaminers(api) });
+  return useQuery({ queryKey: queryKeys.examiners, queryFn: () => listExaminers(api), enabled });
 }
 
 /**
@@ -436,6 +448,44 @@ export function useConfirmAttendance(eventId: string) {
 export function useSettings() {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.settings, queryFn: () => getSettings(api) });
+}
+
+/** `PUT /settings` refusals after which the screen reloads the settings (§ 6.6). */
+const MSG_ONLY_MASTER_CHOOSES_SENSEI = 'Somente o administrador master escolhe o sensei';
+const MSG_SENSEI_NOT_ACTIVE_EXAMINER = 'O sensei precisa ser um examinador ativo';
+
+/**
+ * `PUT /settings` (§ 3.7, § 6.6). The answer (same as the `GET`) goes straight into the cache,
+ * after cancelling a read still on its way, so an older answer never takes the saved data
+ * back. A refusal about the sensei reloads what made it: the stored sensei changed meanwhile
+ * (403 for a non-master), or the chosen one is no longer an active examiner (400: the settings
+ * and the examiners). With no answer (network, 504) the settings may have been saved: they
+ * reload too.
+ */
+export function useUpdateSettings() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AcademySettingsInput) => updateSettings(api, input),
+    onSuccess: async (saved) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.settings });
+      queryClient.setQueryData<AcademySettings>(queryKeys.settings, saved);
+    },
+    onError: (error) => {
+      if (!(error instanceof ApiError)) return;
+      const unknownOutcome = error.status === NETWORK_ERROR_STATUS || error.status === 504;
+      if (
+        unknownOutcome ||
+        error.message === MSG_ONLY_MASTER_CHOOSES_SENSEI ||
+        error.message === MSG_SENSEI_NOT_ACTIVE_EXAMINER
+      ) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+      }
+      if (error.message === MSG_SENSEI_NOT_ACTIVE_EXAMINER) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.examiners });
+      }
+    },
+  });
 }
 
 /** API messages after which the screen reloads what it shows (RN008, RN010). */

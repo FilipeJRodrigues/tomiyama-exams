@@ -6,13 +6,17 @@ import { AppProviders } from '../src/app/AppProviders';
 import { createQueryClient } from '../src/app/queryClient';
 import { createRoutes } from '../src/app/routes';
 import { createMockAuth } from '../src/auth/mockAuth';
+import { MOCK_MASTER_EMAIL } from '../src/auth/mockConstants';
 import type { AuthService, Role } from '../src/auth/types';
 import { TEST_API_URL } from './msw-server';
 
 export interface RenderAppOptions {
   route?: string;
-  /** Signed-in profile; omit to start signed out. */
-  signedInAs?: Role;
+  /**
+   * Signed-in profile; omit to start signed out. `master` is the simulated admin master (an
+   * examiner in the groups `admin` and `master`).
+   */
+  signedInAs?: Role | 'master';
   auth?: AuthService;
 }
 
@@ -28,7 +32,9 @@ export async function renderApp({
   signedInAs,
   auth = createMockAuth(window.sessionStorage),
 }: RenderAppOptions = {}): Promise<RenderAppResult> {
-  if (signedInAs) {
+  if (signedInAs === 'master') {
+    await auth.signIn({ email: MOCK_MASTER_EMAIL, password: 'senha-teste', role: 'examiner' });
+  } else if (signedInAs) {
     await auth.signIn({
       email: `${signedInAs}@example.com`,
       password: 'senha-teste',

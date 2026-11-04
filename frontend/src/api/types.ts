@@ -277,6 +277,18 @@ export interface AcademySettings {
   sensei: SettingsSensei | null;
 }
 
+/**
+ * Body of `PUT /settings` (§ 3.7): replaces the three fields; an optional one blank or `null`
+ * becomes `null`. Only the admin master may send a sensei other than the stored one (403);
+ * the other examiners resend the stored one (or `null` when there is none).
+ */
+export interface AcademySettingsInput {
+  academy_name: string;
+  /** `sub` of the sensei (the `id` of `GET /examiners`); `null` removes the sensei. */
+  sensei_user_id: string | null;
+  certificate_city: string | null;
+}
+
 export type DecisionResult = 'APPROVED' | 'FAILED';
 
 /** Body of `POST /events/{id}/exams/{student_id}/decision` (RN008). */

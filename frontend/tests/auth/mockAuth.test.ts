@@ -21,6 +21,7 @@ describe('createMockAuth', () => {
       id: MOCK_USER_IDS.examiner,
       email: 'qualquer@example.com',
       role: 'examiner',
+      isMaster: false,
     });
   });
 
@@ -89,6 +90,7 @@ describe('createMockAuth: cadastro simulado', () => {
       id: MOCK_USER_IDS.guardian,
       email: 'nova@example.com',
       role: 'guardian',
+      isMaster: false,
     });
     const token = await auth.getIdToken();
     expect(token && decodeMockToken(token)?.['cognito:groups']).toEqual(['responsavel']);

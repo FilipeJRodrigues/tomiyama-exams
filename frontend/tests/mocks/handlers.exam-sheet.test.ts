@@ -120,6 +120,10 @@ describe('simulated exam sheet API', () => {
 
   it('lists the active examiners', async () => {
     const examiners = await listExaminers(await apiAs('examiner'));
-    expect(examiners.map((examiner) => examiner.name)).toEqual(['Sensei Simulado', null]);
+    expect(examiners.map((examiner) => examiner.name)).toEqual([
+      'Sensei Simulado',
+      null,
+      'Master Simulado',
+    ]);
   });
 });
