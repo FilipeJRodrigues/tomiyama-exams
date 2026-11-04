@@ -435,9 +435,23 @@ export const showcaseMockExams: readonly Exam[] = [
 
 /**
  * A few items of Appendix A per belt, in sheet order (the real sheets are much longer).
+ * Branca/Cinza, the default of the requirements screen (§ 6.5), has its whole sheet.
  * Amarela/Laranja has no practical item here, so its practical percentage is "—" (RN007).
  */
 const ITEMS: Record<string, [RequirementKind, string, string, string | null][]> = {
+  'Branca/Cinza': [
+    ['PRACTICE', 'Fundamentos', 'Demonstrar saudação em pé', 'Ritsurei'],
+    ['PRACTICE', 'Fundamentos', 'Amortecimento de quedas (deitado)', 'Ushirokemi e Yokoukemi'],
+    ['PRACTICE', 'Naguewaza', 'Deashi barai', null],
+    ['PRACTICE', 'Naguewaza', 'Osoto gari', null],
+    ['THEORY', 'Vocabulário', 'Professor', 'Sensei'],
+    [
+      'THEORY',
+      'Vocabulário',
+      'Contar até 10 em japonês',
+      'iti, ni, san, shi, go, roku, shiti, rati, kyu, jú',
+    ],
+  ],
   'Cinza/Azul': [
     ['PRACTICE', 'Fundamentos', 'Demonstrar formas de pegar no kimono', 'Kumikata'],
     ['THEORY', 'Vocabulário', 'Uniforme do praticante do Judô', 'Judogui'],

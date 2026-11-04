@@ -9,7 +9,9 @@
  * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
  * examiners (`handlers/users.py`), the settings (`handlers/settings.py`, read only) and the
  * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010). The belts screen (§ 6.5) gets
- * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015).
+ * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015) and the
+ * requirements CRUD (`handlers/requirements.py`, `build_requirement` in
+ * `domain/requirements.py`: RN017).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
@@ -26,6 +28,7 @@ import type {
   ExamSummary,
   ExamView,
   KindSummary,
+  Requirement,
   RequirementKind,
   Student,
   StudentView,
@@ -82,6 +85,16 @@ const MSG_BELT_NOT_FOUND = 'Faixa não encontrada';
 const MSG_BELT_NAME_TAKEN = 'Já existe uma faixa com este nome';
 const MSG_BELT_ORDER_TAKEN = 'Já existe uma faixa com esta ordem';
 const BELT_LEVELS: readonly BeltLevel[] = ['BASIC', 'INTERMEDIATE'];
+const REQUIREMENT_KINDS: readonly RequirementKind[] = ['THEORY', 'PRACTICE'];
+const REQUIREMENT_MAX_CATEGORY = 60;
+const REQUIREMENT_MAX_TEXT = 2000;
+const REQUIREMENT_MAX_SORT_ORDER = 9999;
+const MSG_REQUIREMENT_HAS_ANSWERS = 'Requisito possui respostas registradas';
+const MSG_REQUIREMENT_LOCKED =
+  'Não é possível trocar a faixa ou o tipo de um requisito com respostas registradas';
+const MSG_DEFAULT_SORT_ORDER_FULL =
+  'Ordem: a faixa já tem um item na ordem 9999; informe a ordem do novo item';
+const MSG_KIND_FILTER = 'Filtro tipo: use THEORY ou PRACTICE';
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 
 /**
@@ -294,6 +307,85 @@ function applyBeltUpdate(existing: Belt, payload: Payload, belts: readonly Belt[
     }
   }
   return updated;
+}
+
+function requirementKindField(payload: Payload): RequirementKind {
+  const value = payload.kind;
+  if (value === null || value === undefined) {
+    throw new MockValidationError('Campo obrigatório: Tipo');
+  }
+  const kind = REQUIREMENT_KINDS.find((candidate) => candidate === value);
+  if (!kind) throw new MockValidationError('Tipo: valor inválido');
+  return kind;
+}
+
+/**
+ * Same checks, in the same order, as `build_requirement` (RN017): the belt (required, then
+ * existing), the default order that no longer fits, the kind, the texts and the order.
+ */
+function buildRequirement(
+  payload: Payload,
+  belts: readonly Belt[],
+  id: string,
+  defaultSortOrder: number,
+): Requirement {
+  const beltId = requiredStr(payload, 'belt_id', 'Faixa', 64);
+  if (!belts.some((belt) => belt.id === beltId)) {
+    throw new MockValidationError('Faixa: faixa não encontrada');
+  }
+  const omitted = payload.sort_order === null || payload.sort_order === undefined;
+  if (omitted && defaultSortOrder > REQUIREMENT_MAX_SORT_ORDER) {
+    throw new MockValidationError(MSG_DEFAULT_SORT_ORDER_FULL);
+  }
+  const kind = requirementKindField(payload);
+  const category = requiredStr(payload, 'category', 'Categoria', REQUIREMENT_MAX_CATEGORY);
+  const description = requiredStr(payload, 'description', 'Descrição', REQUIREMENT_MAX_TEXT);
+  const expected = optionalStr(
+    payload,
+    'expected_answer',
+    'Resposta esperada',
+    REQUIREMENT_MAX_TEXT,
+  );
+  const sortOrder = omitted
+    ? defaultSortOrder
+    : requiredInt(payload, 'sort_order', 'Ordem', {
+        minimum: 0,
+        maximum: REQUIREMENT_MAX_SORT_ORDER,
+      });
+  return {
+    id,
+    belt_id: beltId,
+    kind,
+    category,
+    description,
+    expected_answer: expected,
+    sort_order: sortOrder,
+  };
+}
+
+/** Like `_next_sort_order`: the largest order of the belt plus one (1 for an empty belt). */
+function nextSortOrder(db: MockDb, beltId: string): number {
+  const orders = db.requirements
+    .filter((item) => item.belt_id === beltId)
+    .map((item) => item.sort_order);
+  return Math.max(0, ...orders) + 1;
+}
+
+/** Like the `answer_count` of the requirement: whether an exam has an answer for it. */
+function hasAnswers(db: MockDb, requirementId: string): boolean {
+  return db.answers.some((item) => item.requirement_id === requirementId);
+}
+
+/** Like `sort_requirements`: belt order, then sheet order, then id. */
+function sortRequirements(db: MockDb, items: readonly Requirement[]): Requirement[] {
+  const beltOrder = new Map(db.belts.map((belt) => [belt.id, belt.sort_order]));
+  const position = (item: Requirement) => beltOrder.get(item.belt_id) ?? db.belts.length;
+  return [...items].sort((a, b) => {
+    if (position(a) !== position(b)) return position(a) - position(b);
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    if (a.id === b.id) return 0;
+    return a.id < b.id ? -1 : 1;
+  });
 }
 
 async function readPayload(request: Request): Promise<Payload> {
@@ -785,6 +877,75 @@ export function createHandlers({
         item.eligibility = unknownEligibility();
         return HttpResponse.json({ exam: examView(db, exam), student: { ...item.student } });
       });
+    }),
+
+    http.get(url('/requirements'), ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const params = new URL(request.url).searchParams;
+      const kindParam = params.get('kind');
+      const kind =
+        kindParam === null ? null : REQUIREMENT_KINDS.find((candidate) => candidate === kindParam);
+      if (kind === undefined) return badRequest(MSG_KIND_FILTER);
+      const beltId = params.get('belt_id');
+      if (beltId && !db.belts.some((belt) => belt.id === beltId)) {
+        return errorResponse(404, MSG_BELT_NOT_FOUND);
+      }
+      const items = db.requirements.filter(
+        (item) => (!beltId || item.belt_id === beltId) && (kind === null || item.kind === kind),
+      );
+      return HttpResponse.json(sortRequirements(db, items));
+    }),
+
+    http.post(url('/requirements'), ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      return withValidation(async () => {
+        const payload = await readPayload(request);
+        const beltId = payload.belt_id;
+        const known = typeof beltId === 'string' && db.belts.some((belt) => belt.id === beltId);
+        const defaultOrder = known ? nextSortOrder(db, beltId) : 1;
+        const created = buildRequirement(payload, db.belts, crypto.randomUUID(), defaultOrder);
+        db.requirements.push(created);
+        return HttpResponse.json(created, { status: 201 });
+      });
+    }),
+
+    http.put(url('/requirements/:id'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const index = db.requirements.findIndex((item) => item.id === params.id);
+      const existing = db.requirements[index];
+      if (!existing) return errorResponse(404, MSG_REQUIREMENT_NOT_FOUND);
+      return withValidation(async () => {
+        const updated = buildRequirement(
+          await readPayload(request),
+          db.belts,
+          existing.id,
+          existing.sort_order,
+        );
+        // RN017: the belt and the kind are locked once an exam has an answer for the item.
+        const moved = updated.belt_id !== existing.belt_id || updated.kind !== existing.kind;
+        if (moved && hasAnswers(db, existing.id)) {
+          throw new MockConflictError(MSG_REQUIREMENT_LOCKED);
+        }
+        db.requirements[index] = updated;
+        return HttpResponse.json(updated);
+      });
+    }),
+
+    http.delete(url('/requirements/:id'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const existing = db.requirements.find((item) => item.id === params.id);
+      if (!existing) return errorResponse(404, MSG_REQUIREMENT_NOT_FOUND);
+      if (hasAnswers(db, existing.id)) return errorResponse(409, MSG_REQUIREMENT_HAS_ANSWERS);
+      db.requirements = db.requirements.filter((item) => item.id !== existing.id);
+      return new HttpResponse(null, { status: 204 });
     }),
 
     http.get(url('/settings'), ({ request }) => {

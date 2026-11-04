@@ -6,6 +6,7 @@ import { ExamPage } from '../features/exam/ExamPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { SignUpPage } from '../features/auth/SignUpPage';
 import { NotFoundPage, PlaceholderPage } from '../features/placeholder/PlaceholderPage';
+import { RequirementsPage } from '../features/requirements/RequirementsPage';
 import { StudentCreatePage } from '../features/students/StudentCreatePage';
 import { StudentEditPage } from '../features/students/StudentEditPage';
 import { StudentsPage } from '../features/students/StudentsPage';
@@ -37,7 +38,7 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
                 { path: paths.examDay, element: <ExamDayPage /> },
                 { path: paths.exam, element: <ExamPage /> },
                 { path: paths.belts, element: <BeltsPage /> },
-                { path: paths.requirements, element: <PlaceholderPage title="Requisitos" /> },
+                { path: paths.requirements, element: <RequirementsPage /> },
                 { path: paths.events, element: <PlaceholderPage title="Eventos" /> },
                 { path: paths.academy, element: <PlaceholderPage title="Academia" /> },
               ],

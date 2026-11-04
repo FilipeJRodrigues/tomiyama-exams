@@ -1,7 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
+import {
+  compareRequirements,
+  overlayRecentWrites,
+  recordRequirementWrite,
+} from './recentRequirementWrites';
 import type {
   AcademySettings,
   AnswerResult,
@@ -15,6 +20,9 @@ import type {
   ExamView,
   Examiner,
   MarkAnswerInput,
+  Requirement,
+  RequirementFilters,
+  RequirementInput,
   StudentFilters,
   StudentInput,
   StudentView,
@@ -35,7 +43,15 @@ export const queryKeys = {
     ['events', eventId, 'exams', studentId] as const,
   examiners: ['examiners'] as const,
   settings: ['settings'] as const,
+  /** Prefix of every requirements list (any filter), for invalidation. */
+  allRequirements: ['requirements'] as const,
+  requirements: (filters: RequirementFilters = {}) => ['requirements', filters] as const,
 };
+
+/** Whether a query key is an exam sheet (`examSheet`): `['events', id, 'exams', studentId]`. */
+export function isExamSheetKey(key: readonly unknown[]): boolean {
+  return key.length === 4 && key[0] === 'events' && key[2] === 'exams';
+}
 
 export function listBelts(api: ApiClient): Promise<Belt[]> {
   return api.get<Belt[]>('/belts');
@@ -144,6 +160,39 @@ export function decideExam(
     `${eventExamsPath(eventId)}/${encodeURIComponent(studentId)}/decision`,
     input,
   );
+}
+
+export function listRequirements(
+  api: ApiClient,
+  filters: RequirementFilters = {},
+): Promise<Requirement[]> {
+  return api.get<Requirement[]>('/requirements', {
+    belt_id: filters.belt_id,
+    kind: filters.kind,
+  });
+}
+
+function requirementPath(id: string): string {
+  return `/requirements/${encodeURIComponent(id)}`;
+}
+
+/** `POST /requirements` (examiners, RN017). */
+export function createRequirement(api: ApiClient, input: RequirementInput): Promise<Requirement> {
+  return api.post<Requirement>('/requirements', input);
+}
+
+/** `PUT /requirements/{id}` with the same fields as the POST (RN017). */
+export function updateRequirement(
+  api: ApiClient,
+  id: string,
+  input: RequirementInput,
+): Promise<Requirement> {
+  return api.put<Requirement>(requirementPath(id), input);
+}
+
+/** `DELETE /requirements/{id}`; 409 when an exam has an answer for the item. */
+export function deleteRequirement(api: ApiClient, id: string): Promise<void> {
+  return api.delete(requirementPath(id));
 }
 
 export function getSettings(api: ApiClient): Promise<AcademySettings> {
@@ -406,6 +455,128 @@ export function useDecideExam(eventId: string, studentId: string) {
         reloadExam();
         reloadStudents();
       }
+    },
+  });
+}
+
+/**
+ * `GET /requirements` of one filter, in sheet order (`sort_order`). `enabled: false` waits
+ * (the screen needs the belts to know its default belt). The answer goes through the recent
+ * writes before reaching the cache: a late read of the `by_belt` GSI never undoes a write
+ * the API has confirmed (see `recentRequirementWrites`).
+ */
+export function useRequirements(filters: RequirementFilters, enabled = true) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.requirements(filters),
+    queryFn: async () =>
+      overlayRecentWrites(queryClient, filters, await listRequirements(api, filters)),
+    enabled,
+  });
+}
+
+export { compareRequirements };
+
+/**
+ * A write confirmed by the API (`saved`, or `null` for an id that no longer exists): it is
+ * recorded, laid over every cached list at once, and the lists reload (their answers go
+ * through the same record, so a late one is corrected, never cancelled). The exam sheets in
+ * cache reload too: their items and the RN007 totals come from the requirements (§ 6.4).
+ *
+ * The reload of a list that has data replaces a read still in flight (TanStack's
+ * `cancelRefetch`), but a list still on its first load (or retrying after an error) would
+ * only wait for that older read. So such a read is restarted first: it goes back to the
+ * state before it, with no data to lose, and the active ones fetch again below; an inactive
+ * one fetches when it is shown again.
+ */
+function applyConfirmedWrite(
+  queryClient: QueryClient,
+  id: string,
+  saved: Requirement | null,
+): void {
+  recordRequirementWrite(queryClient, id, saved);
+  const lists = queryClient.getQueriesData<Requirement[]>({
+    queryKey: queryKeys.allRequirements,
+  });
+  for (const [key, data] of lists) {
+    if (data === undefined) continue;
+    const filters = (key[1] ?? {}) as RequirementFilters;
+    queryClient.setQueryData<Requirement[]>(key, overlayRecentWrites(queryClient, filters, data));
+  }
+  const firstLoads = queryClient.getQueryCache().findAll({
+    queryKey: queryKeys.allRequirements,
+    predicate: (query) => query.state.fetchStatus === 'fetching' && query.state.data === undefined,
+  });
+  for (const query of firstLoads) void query.cancel({ revert: true });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+  void queryClient.invalidateQueries({ predicate: (query) => isExamSheetKey(query.queryKey) });
+}
+
+/** The 404 of `PUT`/`DELETE /requirements/{id}` when the item does not exist. */
+const MSG_REQUIREMENT_NOT_FOUND = 'Requisito não encontrado';
+
+/**
+ * A refusal of an edit or a deletion. 404 "Requisito não encontrado": the item no longer
+ * exists (another examiner deleted it), so it is recorded as gone, as a confirmed deletion,
+ * and a late read does not bring it back. Any other 404 or a 409: the list is behind the API
+ * (answers registered meanwhile) and reloads.
+ */
+function reloadOnConflict(queryClient: QueryClient, id: string, error: unknown): void {
+  if (!(error instanceof ApiError) || ![404, 409].includes(error.status)) return;
+  if (error.status === 404 && error.message === MSG_REQUIREMENT_NOT_FOUND) {
+    applyConfirmedWrite(queryClient, id, null);
+  } else {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+  }
+}
+
+/** `POST /requirements` (§ 6.5, RN017). */
+export function useCreateRequirement() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RequirementInput) => createRequirement(api, input),
+    onSuccess: (saved) => {
+      applyConfirmedWrite(queryClient, saved.id, saved);
+    },
+  });
+}
+
+export interface UpdateRequirementVariables {
+  id: string;
+  input: RequirementInput;
+}
+
+/**
+ * `PUT /requirements/{id}` (§ 6.5, RN017). 409 when the item has answers and the belt or
+ * the kind changes; the message of the API is shown as is.
+ */
+export function useUpdateRequirement() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: UpdateRequirementVariables) => updateRequirement(api, id, input),
+    onSuccess: (saved) => {
+      applyConfirmedWrite(queryClient, saved.id, saved);
+    },
+    onError: (error, { id }) => {
+      reloadOnConflict(queryClient, id, error);
+    },
+  });
+}
+
+/** `DELETE /requirements/{id}` (§ 6.5); 409 when an exam has an answer for the item. */
+export function useDeleteRequirement() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteRequirement(api, id),
+    onSuccess: (_result, id) => {
+      applyConfirmedWrite(queryClient, id, null);
+    },
+    onError: (error, id) => {
+      reloadOnConflict(queryClient, id, error);
     },
   });
 }
