@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ApiError, NETWORK_ERROR_STATUS } from '../../../src/api/client';
 import type { Belt, ExamSheetItem, ExamView, RequirementKind } from '../../../src/api/types';
 import {
   canMark,
@@ -8,10 +9,13 @@ import {
   examTitle,
   examinerName,
   groupByCategory,
+  isTransientMarkError,
   markState,
   markedCount,
+  mayHaveSavedMark,
   neighbors,
   percentLabel,
+  reloadsExam,
 } from '../../../src/features/exam/examModel';
 import { mockBelts } from '../../../src/mocks/data';
 
@@ -178,5 +182,61 @@ describe('exam model (§ 6.4)', () => {
     expect(examAgeLabel({ birth_date: '2011-11-22' }, event)).toBe('14 anos');
     expect(examAgeLabel(null, event)).toBeUndefined();
     expect(examAgeLabel({ birth_date: 'x' }, event)).toBeUndefined();
+  });
+
+  describe('isTransientMarkError (rn006 nova tentativa automática)', () => {
+    it.each([
+      [NETWORK_ERROR_STATUS, 'Não foi possível falar com o servidor. Verifique a conexão.'],
+      [429, 'Muitas requisições. Aguarde um instante e tente de novo.'],
+      [503, 'Sistema ocupado no momento. Tente de novo em instantes.'],
+      [504, 'O servidor demorou para responder. Tente de novo.'],
+      [409, 'Outra marcação está em andamento. Tente de novo.'],
+    ])('rn006 sends a mark again after %i "%s"', (status, message) => {
+      const error = new ApiError(status, message);
+      expect(isTransientMarkError(error)).toBe(true);
+      expect(reloadsExam(error)).toBe(false);
+    });
+
+    it.each([
+      [409, 'Exame já decidido'],
+      [409, 'Conflito com outra alteração. Tente de novo.'],
+      [400, 'Evento encerrado'],
+      [400, 'Item não pertence à faixa do exame'],
+      [400, 'Marcação inválida: envie correct como true (certo) ou false (errado)'],
+      [401, 'Faça login para continuar'],
+      [403, 'Esta área é dos examinadores'],
+      [404, 'Exame não encontrado'],
+      [500, 'Erro no servidor. Tente de novo.'],
+      [502, 'Erro no servidor. Tente de novo.'],
+    ])('rn006 takes %i "%s" as final', (status, message) => {
+      expect(isTransientMarkError(new ApiError(status, message))).toBe(false);
+    });
+
+    it('rn006 sends again after an error that is not from the API, but not after a cancel', () => {
+      expect(isTransientMarkError(new TypeError('Failed to fetch'))).toBe(true);
+      expect(isTransientMarkError(new Error('No current user'))).toBe(true);
+      expect(isTransientMarkError(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
+    });
+  });
+
+  describe('mayHaveSavedMark (rn006 recarga depois da última tentativa)', () => {
+    it.each([
+      [NETWORK_ERROR_STATUS, 'Não foi possível falar com o servidor. Verifique a conexão.'],
+      [429, 'Muitas requisições. Aguarde um instante e tente de novo.'],
+      [503, 'Sistema ocupado no momento. Tente de novo em instantes.'],
+      [504, 'O servidor demorou para responder. Tente de novo.'],
+    ])('rn006 a refused mark after %i "%s" may have been saved', (status, message) => {
+      expect(mayHaveSavedMark(new ApiError(status, message))).toBe(true);
+    });
+
+    it('rn006 a transaction conflict and a final refusal were not saved', () => {
+      expect(
+        mayHaveSavedMark(new ApiError(409, 'Outra marcação está em andamento. Tente de novo.')),
+      ).toBe(false);
+      expect(mayHaveSavedMark(new ApiError(409, 'Exame já decidido'))).toBe(false);
+      expect(mayHaveSavedMark(new ApiError(403, 'Esta área é dos examinadores'))).toBe(false);
+      expect(mayHaveSavedMark(new TypeError('Failed to fetch'))).toBe(true);
+      expect(mayHaveSavedMark(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
+    });
   });
 });

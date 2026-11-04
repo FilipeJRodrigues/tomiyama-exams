@@ -10,6 +10,8 @@
  * 0%, sem aviso, nada gravado ainda); liberada a recusa 503, aparece o aviso com a mensagem da
  * API e o item, a aba, o percentual (33,3%) e o dado gravado voltam a ser os de antes.
  * Issue: #57
+ * Atualizado no #49: um 503 agora é reenviado duas vezes antes do aviso (RN006, nova tentativa
+ * automática); o DELETE recusado chega à API três vezes, e não mais uma.
  */
 import { act, screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
@@ -96,6 +98,7 @@ describe('desmarcação recusada (§ 6.4, RN006)', () => {
     expect(screen.getByRole('tab', { name: /^Teórico 1\/3$/ })).toBeInTheDocument();
     expect(within(theoryScore()).getByText('33,3%')).toBeInTheDocument();
     expect(answerOf(PROFESSOR)?.correct).toBe(true);
-    expect(deletes).toBe(1);
+    // A primeira tentativa e as duas novas tentativas automáticas (#49).
+    expect(deletes).toBe(3);
   });
 });
