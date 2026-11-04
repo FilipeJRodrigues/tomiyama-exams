@@ -164,3 +164,4 @@ academia-judo/
 - Os pais poderão ver o histórico de exames dos filhos ou apenas o cadastro?
 - Domínio próprio para o site.
 - Haverá pagamento de taxa de exame pelo site?
+<!-- teste da esteira por área (#67), não fazer merge -->
