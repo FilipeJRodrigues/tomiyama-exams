@@ -47,6 +47,64 @@ export function formValuesOf(settings: AcademySettings): AcademyFormValues {
   };
 }
 
+/** Whether two sets of form values are the same, field by field. */
+export function sameFormValues(a: AcademyFormValues, b: AcademyFormValues): boolean {
+  return FIELD_ORDER.every((field) => a[field] === b[field]);
+}
+
+/**
+ * The fields after the settings were read again (`incoming`): a field still as it was at the
+ * last sync (`synced`), so not edited since then, shows the new value; an edited one (any
+ * other value) keeps what the user typed. There is no conflict notice nor lock in the API.
+ */
+export function followReload(
+  values: AcademyFormValues,
+  synced: AcademyFormValues,
+  incoming: AcademyFormValues,
+): AcademyFormValues {
+  const next = { ...values };
+  for (const field of FIELD_ORDER) {
+    if (values[field] === synced[field]) next[field] = incoming[field];
+  }
+  return next;
+}
+
+/**
+ * The fields after a save: those still as submitted show what the API stored (trimmed, blanks
+ * as empty), so none of them counts as edited; those changed while the save was on its way
+ * keep what was typed.
+ */
+export function followSave(
+  current: AcademyFormValues,
+  submitted: AcademyFormValues,
+  saved: AcademyFormValues,
+): AcademyFormValues {
+  const next = { ...current };
+  for (const field of FIELD_ORDER) {
+    if (current[field] === submitted[field]) next[field] = saved[field];
+  }
+  return next;
+}
+
+/** Fields whose value differs between `before` and `after`, in screen order. */
+export function changedFields(
+  before: AcademyFormValues,
+  after: AcademyFormValues,
+): AcademyField[] {
+  return FIELD_ORDER.filter((field) => before[field] !== after[field]);
+}
+
+/** The field errors without those of `fields` (their value was replaced under them). */
+export function withoutErrors(
+  errors: AcademyFormErrors,
+  fields: readonly AcademyField[],
+): AcademyFormErrors {
+  if (!fields.some((field) => errors[field])) return errors;
+  const next = { ...errors };
+  for (const field of fields) next[field] = undefined;
+  return next;
+}
+
 /** Whether nothing was saved yet (`GET /settings` before the first `PUT`). */
 export function isFirstUse(settings: AcademySettings): boolean {
   return settings.academy_name === null;
