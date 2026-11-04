@@ -24,6 +24,7 @@ import {
 } from '../../../src/mocks/data';
 import { createHandlers } from '../../../src/mocks/handlers';
 import { server, TEST_API_URL } from '../../msw-server';
+import { DOUBLE_TAP_MS } from '../../../src/features/exam/markClickGuard';
 import { renderApp } from '../../render';
 import { holdRetryWaits, retryWaits } from '../../retryWaits';
 
@@ -259,6 +260,8 @@ describe('new tries of a refused mark (§ 6.4, RN006)', () => {
       const { user } = await openHelena();
       await user.click(button('Certo: Parar'));
       const wait = await waitAskedFor(0);
+      // Past the double tap window: a second click on the same button there is ignored.
+      vi.setSystemTime(Date.now() + DOUBLE_TAP_MS);
       await user.click(button('Certo: Parar'));
       expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'false');
 
