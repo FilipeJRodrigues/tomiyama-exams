@@ -191,7 +191,12 @@ describe('recarga depois da última tentativa (qa, § 6.4, RN006, RN007)', () =>
     });
     expect(within(theoryScore()).getByText('66,7%')).toBeInTheDocument();
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent('Não foi possível salvar a marcação de "Parar"');
+    // The item shows the mark: the notice does not say it was not saved (#49, step 3).
+    expect(alert).toHaveTextContent('Não foi possível confirmar a marcação de "Parar"');
+    expect(alert).toHaveTextContent(
+      'Ela pode ter sido salva; confira o item ou toque em Tentar de novo.',
+    );
+    expect(alert).not.toHaveTextContent('Não foi possível salvar');
     expect(within(alert).getByRole('button', { name: 'Tentar de novo: Parar' })).toBeVisible();
   });
 

@@ -11,6 +11,7 @@ import {
   groupByCategory,
   isTransientMarkError,
   markState,
+  markOutcomeUnknown,
   markedCount,
   mayHaveSavedMark,
   neighbors,
@@ -237,6 +238,34 @@ describe('exam model (§ 6.4)', () => {
       expect(mayHaveSavedMark(new ApiError(403, 'Esta área é dos examinadores'))).toBe(false);
       expect(mayHaveSavedMark(new TypeError('Failed to fetch'))).toBe(true);
       expect(mayHaveSavedMark(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
+    });
+  });
+
+  describe('markOutcomeUnknown (rn006 aviso "não foi possível confirmar", #49)', () => {
+    it.each([
+      [NETWORK_ERROR_STATUS, 'Não foi possível falar com o servidor. Verifique a conexão.'],
+      [504, 'O servidor demorou para responder. Tente de novo.'],
+    ])('rn006 a refused mark after %i "%s" has an unknown outcome', (status, message) => {
+      expect(markOutcomeUnknown(new ApiError(status, message))).toBe(true);
+    });
+
+    it('rn006 a failure that is not an ApiError (no answer at all) has an unknown outcome', () => {
+      expect(markOutcomeUnknown(new TypeError('Failed to fetch'))).toBe(true);
+    });
+
+    it.each([
+      [429, 'Muitas requisições. Aguarde um instante e tente de novo.'],
+      [503, 'Sistema ocupado no momento. Tente de novo em instantes.'],
+      [409, 'Outra marcação está em andamento. Tente de novo.'],
+      [409, 'Exame já decidido'],
+      [403, 'Esta área é dos examinadores'],
+      [500, 'Erro interno'],
+    ])('rn006 a refused mark after %i "%s" wrote nothing', (status, message) => {
+      expect(markOutcomeUnknown(new ApiError(status, message))).toBe(false);
+    });
+
+    it('rn006 a cancelled request is not a refusal', () => {
+      expect(markOutcomeUnknown(new DOMException('The user aborted.', 'AbortError'))).toBe(false);
     });
   });
 });

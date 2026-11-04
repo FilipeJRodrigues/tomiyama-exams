@@ -8,10 +8,12 @@ import {
   IconUserOff,
 } from '@tabler/icons-react';
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -34,8 +36,8 @@ import {
   withPendingMarks,
   type MarkState,
 } from './examModel';
-import { focusIfLost, useScrollPadding } from './focus';
-import { useMarkClickGuard } from './markClickGuard';
+import { focusIfLost, focusIsLost, useScrollPadding } from './focus';
+import { DOUBLE_TAP_MS, useMarkClickGuard } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
 import { useExamMarking, type MarkFailure } from './useExamMarking';
@@ -105,6 +107,11 @@ function Notices({ sheet }: { sheet: ExamSheet }) {
   );
 }
 
+/** Which button of the notice had the focus when a newer notice replaced it. */
+type NoticeControl = 'close' | 'retry';
+
+const CLOSE_NOTICE_LABEL = 'Fechar aviso';
+
 interface MarkFailureNoticeProps {
   failure: MarkFailure;
   onClose: () => void;
@@ -115,6 +122,16 @@ interface MarkFailureNoticeProps {
    * the item the notice names is no longer on the screen (another tab, the filter).
    */
   focusTarget: RefObject<HTMLElement | null>;
+  /**
+   * The button that had the focus in the notice this one replaces (newer refusal), kept by
+   * the exam screen for one render: this one gives it the focus back.
+   */
+  carriedRef: RefObject<NoticeControl | null>;
+  /**
+   * A pointer tap took the notice away; `height` is the space it took, which the screen
+   * keeps for a moment so the list does not move up under the finger.
+   */
+  onTappedAway: (height: number) => void;
 }
 
 /**
@@ -132,30 +149,88 @@ function markButtonOf(itemId: string): HTMLElement | null {
   );
 }
 
+/** Title of the notice: "not saved", or "not confirmed" when the API may have saved it. */
+function failureTitle(failure: MarkFailure): string {
+  return failure.outcomeUnknown
+    ? `Não foi possível confirmar a marcação de "${failure.item}"`
+    : `Não foi possível salvar a marcação de "${failure.item}"`;
+}
+
 /**
  * A refused mark (§ 6.4: "em erro, volta e avisa"), with the API message. Sticky at the top
  * of the items, so it is seen wherever the examiner is in the list. After passing refusals
  * (busy server, network) it offers "Tentar de novo", which sends the mark again.
+ *
+ * - Mounted once per refusal (`key={failure.id}`): an alert put on the page is read out, so
+ *   a new refusal with the same text is heard again, and the same one never twice. When it
+ *   replaces a notice that had the focus, it takes the focus on the same button: the focus
+ *   is never lost, nor taken from elsewhere (§ 6.7).
+ * - After network or 504 the mark may have been saved (`outcomeUnknown`); the exam reloads
+ *   and the item may show it. The notice says the mark could not be confirmed and asks to
+ *   check the item, so it never contradicts the screen. It stays until closed, like any
+ *   other: telling a reload that shows the mark apart from an older state of the cache
+ *   would cost more than the examiner's look at the item.
+ * - A pointer tap on its buttons takes it away: the exam screen keeps its space for a
+ *   moment (`useNoticeSpace`), so the second tap of a double tap does not land on whatever
+ *   moved up under the finger (a Certo/Errado, a tab).
  */
-function MarkFailureNotice({ failure, onClose, onRetry, focusTarget }: MarkFailureNoticeProps) {
+function MarkFailureNotice({
+  failure,
+  onClose,
+  onRetry,
+  focusTarget,
+  carriedRef,
+  onTappedAway,
+}: MarkFailureNoticeProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  // The click being handled comes from a pointer (`detail` 0: the keyboard).
+  const tapped = useRef(false);
+
+  useLayoutEffect(() => {
+    // Replacing a notice that had the focus: the same button of this one takes it.
+    const control = carriedRef.current;
+    carriedRef.current = null;
+    const notice = ref.current;
+    if (control !== null && focusIsLost()) {
+      const close = notice?.querySelector<HTMLElement>(
+        `button[aria-label="${CLOSE_NOTICE_LABEL}"]`,
+      );
+      const target = (control === 'retry' ? retryRef.current : null) ?? close;
+      target?.focus({ preventScroll: true });
+    }
+    const retry = retryRef.current;
+    return () => {
+      // Runs before the notice leaves the page: a newer one may give the focus back.
+      const active = document.activeElement;
+      if (notice === null || active === null || !notice.contains(active)) return;
+      carriedRef.current = retry !== null && active === retry ? 'retry' : 'close';
+    };
+    // Once per refusal: the notice is keyed by it, and the ref of the screen never changes.
+  }, [carriedRef]);
+
   // The notice leaves with the focused button: the focus goes to the item, else the title.
-  const keepFocus = () => {
+  const leave = () => {
     focusIfLost([markButtonOf(failure.itemId), focusTarget.current], {
       leaving: [ref.current],
     });
+    if (tapped.current) onTappedAway(ref.current?.getBoundingClientRect().height ?? 0);
   };
+  const canRetry = onRetry !== undefined && failure.retry !== undefined;
   return (
     <Alert
       color="red"
       variant="light"
       role="alert"
       icon={<IconAlertCircle aria-hidden />}
-      title={`Não foi possível salvar a marcação de "${failure.item}"`}
+      title={failureTitle(failure)}
       withCloseButton
-      closeButtonLabel="Fechar aviso"
+      closeButtonLabel={CLOSE_NOTICE_LABEL}
+      onClickCapture={(event: MouseEvent<HTMLDivElement>) => {
+        tapped.current = event.detail > 0;
+      }}
       onClose={() => {
-        keepFocus();
+        leave();
         onClose();
       }}
       ref={ref}
@@ -167,13 +242,21 @@ function MarkFailureNotice({ failure, onClose, onRetry, focusTarget }: MarkFailu
     >
       <Stack gap="xs" align="flex-start">
         <Text inherit>{failure.message}</Text>
-        {onRetry && failure.retry !== undefined && (
+        {failure.outcomeUnknown && (
+          <Text inherit>
+            {canRetry
+              ? 'Ela pode ter sido salva; confira o item ou toque em Tentar de novo.'
+              : 'Ela pode ter sido salva; confira o item.'}
+          </Text>
+        )}
+        {canRetry && (
           <Button
+            ref={retryRef}
             variant="default"
             leftSection={<IconRefresh size={18} aria-hidden />}
             aria-label={`Tentar de novo: ${failure.item}`}
             onClick={() => {
-              keepFocus();
+              leave();
               onRetry();
             }}
             style={TOUCH_TARGET}
@@ -186,23 +269,79 @@ function MarkFailureNotice({ failure, onClose, onRetry, focusTarget }: MarkFailu
   );
 }
 
+/** The item (`data-item`) of an element, or null outside the list. */
+function itemOf(target: EventTarget | null): string | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLElement>('[data-item]')?.dataset.item ?? null;
+}
+
+/**
+ * The item the examiner last acted on: the last focus or click on the screen, null when it
+ * was outside the list. Clicks count too, as Safari does not focus a clicked button.
+ */
+function useLastItemActedOn(): RefObject<string | null> {
+  const last = useRef<string | null>(null);
+  useEffect(() => {
+    const onAct = (event: Event) => {
+      last.current = itemOf(event.target);
+    };
+    document.addEventListener('focusin', onAct);
+    document.addEventListener('click', onAct, true);
+    return () => {
+      document.removeEventListener('focusin', onAct);
+      document.removeEventListener('click', onAct, true);
+    };
+  }, []);
+  return last;
+}
+
 /**
  * When the exam turns read-only while shown (409 "Exame já decidido", 400 "Evento encerrado"),
  * the Certo/Errado button that had the focus is gone and the focus falls on the page body.
  * Then it goes to the exam title (§ 6.7), not to the notice: the notice is an alert, already
  * announced, and focusing it would make the screen reader read it twice. A focus elsewhere
  * (the trail, Próximo) is left alone.
+ *
+ * The page scrolls to the title only when the examiner's own mark turned the exam read-only
+ * (the refusal is about the item last acted on): the title and the reason come into view.
+ * Otherwise (reload on window focus, the refusal of another item while the examiner works
+ * elsewhere in the list) the title takes the focus without moving the page.
  */
-function useReadOnlyFocus(readOnly: boolean) {
+function useReadOnlyFocus(readOnly: boolean, failure: MarkFailure | null) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const wasReadOnly = useRef(readOnly);
+  const lastItem = useLastItemActedOn();
   useEffect(() => {
     const turned = readOnly && !wasReadOnly.current;
     wasReadOnly.current = readOnly;
     if (!turned) return;
-    focusIfLost(titleRef.current);
-  }, [readOnly]);
+    const ownMark = failure !== null && failure.outdated && failure.itemId === lastItem.current;
+    focusIfLost(titleRef.current, ownMark ? {} : { preventScroll: true });
+  }, [readOnly, failure, lastItem]);
   return titleRef;
+}
+
+/**
+ * The space of the refusal notice after a pointer tap took it away ("Fechar aviso",
+ * "Tentar de novo"), kept for `DOUBLE_TAP_MS`: the list stays where it was, and the second tap
+ * of a double tap lands on the empty space instead of a Certo/Errado that moved up under the
+ * finger (§ 6.4, RN006). A newer notice takes the place at once.
+ */
+function useNoticeSpace(): [{ height: number } | null, (height: number) => void] {
+  const [space, setSpace] = useState<{ height: number } | null>(null);
+  useEffect(() => {
+    if (space === null) return;
+    const timer = window.setTimeout(() => {
+      setSpace(null);
+    }, DOUBLE_TAP_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [space]);
+  const keep = useCallback((height: number) => {
+    setSpace({ height });
+  }, []);
+  return [space, keep];
 }
 
 /** Clear of the fixed header when the focus scrolls a target into view (§ 6.7). */
@@ -258,7 +397,7 @@ function ExamContent({
 }: ExamContentProps) {
   const belts = useBelts();
   const examiners = useExaminers();
-  const titleRef = useReadOnlyFocus(onMark === undefined);
+  const titleRef = useReadOnlyFocus(onMark === undefined, failure);
   const flow = useDecisionFlow(sheet.exam.event_id, sheet.exam.student_id, titleRef);
   const layout = useSummaryLayout(flow);
   useScrollPadding('top', HEADER_SCROLL_PADDING);
@@ -280,6 +419,12 @@ function ExamContent({
   );
   // Lives here, not in the buttons: they remount when the tab or the filter changes.
   const acceptClick = useMarkClickGuard();
+  const [noticeSpace, keepNoticeSpace] = useNoticeSpace();
+  // The button of a notice replaced by a newer one, for the new one (cleared every render).
+  const carriedNoticeFocus = useRef<NoticeControl | null>(null);
+  useLayoutEffect(() => {
+    carriedNoticeFocus.current = null;
+  });
   const renderMark: RenderMark = onMark
     ? (item) => <MarkButtons item={item} onMark={onMark} acceptClick={acceptClick} />
     : renderReadOnlyMark;
@@ -290,11 +435,18 @@ function ExamContent({
       <Notices sheet={sheet} />
       {failure && (
         <MarkFailureNotice
+          // One notice per refusal: a new one is read out again (§ 6.7).
+          key={failure.id}
           failure={failure}
           onClose={onDismissFailure}
           onRetry={onRetryFailure}
           focusTarget={titleRef}
+          carriedRef={carriedNoticeFocus}
+          onTappedAway={keepNoticeSpace}
         />
+      )}
+      {!failure && noticeSpace !== null && (
+        <div aria-hidden data-notice-space style={{ height: noticeSpace.height }} />
       )}
       <ExamItems
         items={sheet.items}

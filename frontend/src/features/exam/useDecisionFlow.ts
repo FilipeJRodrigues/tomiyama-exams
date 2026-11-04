@@ -76,8 +76,11 @@ export interface DecisionFlow {
  * State of the decision of one exam; mount it once per exam (keyed by the exam).
  *
  * The dialog and the panel give the focus back themselves (§ 6.7): to the button that opened
- * them or, when a refusal swapped Aprovar/Reprovar (or "Decidir") for "A decisão é do sensei …"
- * or "Sem sensei definido", to the decision area, and else to the exam title (`titleRef`).
+ * them; when it went with a change of layout (the dialog opened from the phone panel and the
+ * screen turned into the column), to the same choice in the layout on the screen (Aprovar or
+ * Reprovar, else "Decidir"); when a refusal swapped Aprovar/Reprovar (or "Decidir") for
+ * "A decisão é do sensei …" or "Sem sensei definido", to the decision area; and else to the
+ * exam title (`titleRef`).
  */
 export function useDecisionFlow(
   eventId: string,
@@ -100,6 +103,8 @@ export function useDecisionFlow(
     setFocusDecided(false);
   }, []);
   const dialogOpener = useRef<Element | null>(null);
+  // The choice the dialog was opened for, to find its button again in another layout.
+  const dialogChoice = useRef<DecisionResult | null>(null);
   const panelOpener = useRef<Element | null>(null);
   const areas = useRef<Partial<Record<DecisionLayout, HTMLElement | null>>>({});
   // The last element focused in a decision area, to follow it when the layout changes.
@@ -150,13 +155,26 @@ export function useDecisionFlow(
   );
 
   /**
-   * After the closing renders: the opener, else the first decision area shown, else the
-   * title. A focus that went elsewhere on its own ("Decidido por …", a click) stays.
+   * After the closing renders: the opener, else the same choice in a decision area shown
+   * (`choice`: its Aprovar/Reprovar, else its "Decidir"), else the first decision area shown,
+   * else the title. A focus that went elsewhere on its own ("Decidido por …", a click) stays.
    */
-  const giveFocusBack = (opener: Element | null, layouts: DecisionLayout[]) => {
+  const giveFocusBack = (
+    opener: Element | null,
+    layouts: DecisionLayout[],
+    choice: DecisionResult | null = null,
+  ) => {
     window.setTimeout(() => {
       const areaTargets = layouts.map((layout) => areas.current[layout]);
-      focusIfLost([opener, ...areaTargets, titleRef?.current]);
+      const sameChoice =
+        choice === null
+          ? []
+          : areaTargets.map(
+              (area) =>
+                area?.querySelector(`[data-decision-result="${choice}"]`) ??
+                area?.querySelector('[data-decision-action]'),
+            );
+      focusIfLost([opener, ...sameChoice, ...areaTargets, titleRef?.current]);
     }, 0);
   };
 
@@ -180,6 +198,7 @@ export function useDecisionFlow(
       decide.reset();
       setNotice(null);
       dialogOpener.current = document.activeElement;
+      dialogChoice.current = result;
       setAsking(result);
     },
     cancel: () => {
@@ -232,8 +251,13 @@ export function useDecisionFlow(
     },
     areaRef,
     dialogClosed: () => {
-      giveFocusBack(dialogOpener.current, panelOpened ? ['panel'] : ['column', 'bar']);
+      giveFocusBack(
+        dialogOpener.current,
+        panelOpened ? ['panel'] : ['column', 'bar'],
+        dialogChoice.current,
+      );
       dialogOpener.current = null;
+      dialogChoice.current = null;
     },
     panelClosed: () => {
       giveFocusBack(panelOpener.current, ['bar']);

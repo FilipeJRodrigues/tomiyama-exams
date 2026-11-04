@@ -15,6 +15,14 @@
  * - The Enter key held down repeats `keydown`, and each one clicks a focused button. Those
  *   repeats are dropped in `MarkButtons` (`preventMarkKeyRepeat`); the Space key clicks only
  *   when released, so holding it clicks once.
+ * - A tap that takes the refusal notice away ("Fechar aviso", "Tentar de novo") would move
+ *   the list up under the finger, and the second tap of a double tap land on a Certo/Errado
+ *   never aimed at: the exam screen keeps the space of the notice for `DOUBLE_TAP_MS`
+ *   (`ExamPage.tsx`), so that tap lands on the empty space.
+ * - The time of a click is the `timeStamp` of its event: in the browser it counts from the
+ *   page load and never goes back when the system clock is set, unlike `Date.now()`. In the
+ *   tests (jsdom) it is `Date.now()` of the moment the event was made, so `vi.setSystemTime`
+ *   still drives it. Without it (a call made by code), the guard asks its own clock.
  *
  * The last accepted click of each item lives in a ref of the exam screen (`ExamContent`),
  * not of the buttons: the buttons remount when the tab or the "Só não marcados" filter
@@ -35,7 +43,7 @@ export interface AcceptedMarkClick {
   choice: MarkChoice;
   /** What the click made of the item. */
   made: MarkState;
-  /** `Date.now()` of the click. */
+  /** Time of the click, in ms (`timeStamp` of its event). */
   at: number;
 }
 
@@ -44,7 +52,7 @@ export interface MarkClick {
   choice: MarkChoice;
   /** What the item shows when clicked. */
   current: MarkState;
-  /** `Date.now()` of the click. */
+  /** Time of the click, in ms (`timeStamp` of its event). */
   at: number;
 }
 
@@ -63,23 +71,28 @@ export function isDoubleTap(last: AcceptedMarkClick | undefined, click: MarkClic
 
 /**
  * `true` when the click counts (and is remembered with what it makes of the item, `next`),
- * `false` for a double tap.
+ * `false` for a double tap. `at` is the `timeStamp` of the click event.
  */
 export type AcceptMarkClick = (
   itemId: string,
   choice: MarkChoice,
   current: MarkState,
   next: MarkState,
+  at?: number,
 ) => boolean;
 
-const systemNow = () => Date.now();
+/** Same origin as `Event.timeStamp` in the browser, and monotonic. */
+const pageNow = () => performance.now();
 
-/** The click filter of one exam screen; `now` is the clock, for tests. */
-export function useMarkClickGuard(now: () => number = systemNow): AcceptMarkClick {
+/**
+ * The click filter of one exam screen; `now` is the clock of a click that comes without its
+ * time (`at`), for tests.
+ */
+export function useMarkClickGuard(now: () => number = pageNow): AcceptMarkClick {
   const accepted = useRef(new Map<string, AcceptedMarkClick>());
   return useCallback(
-    (itemId, choice, current, next) => {
-      const at = now();
+    (itemId, choice, current, next, clickedAt) => {
+      const at = clickedAt ?? now();
       if (isDoubleTap(accepted.current.get(itemId), { choice, current, at })) return false;
       accepted.current.set(itemId, { choice, made: next, at });
       return true;
