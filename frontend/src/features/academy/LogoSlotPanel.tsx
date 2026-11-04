@@ -33,7 +33,12 @@ interface Props {
  * The pre-signed URL of the preview lasts 5 minutes. The read stays fresh for 4 (reload on
  * focus or on opening the screen again); when the image fails to load (an expired URL, while
  * the screen stayed open), the slot is read once more for a new URL. If the new one fails too,
- * the slot says so and offers "Tentar de novo" (no loop of reloads).
+ * or the read brings the same URL (it only changes from one second to the next), the slot says
+ * so and offers "Tentar de novo" (no loop of reloads).
+ *
+ * "salvo" only comes with the new URL: when the logo is stored but the read again fails, the
+ * old preview (or "Nenhum logo") is not the slot's any more, so the slot shows the read error
+ * with "Tentar de novo" until a read brings the logo sent.
  */
 export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const label = LOGO_SLOT_LABELS[slot];
@@ -54,10 +59,15 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
   /** Sendings ended so far: after each one the focus goes back to its button (once enabled). */
   const [sendsEnded, setSendsEnded] = useState(0);
+  /** The logo was stored but the read again failed: the cached logo is not the slot's. */
+  const [outdated, setOutdated] = useState(false);
+  /** Times a button of the slot went away under the focus: it goes back to the slot. */
+  const [focusBack, setFocusBack] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const chooseRef = useRef<HTMLButtonElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
+  const loadRetryRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   /** Synchronous lock of the slot: `isPending` only arrives on the next render. */
   const busy = useRef(false);
@@ -67,6 +77,13 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const sending = preparing || upload.isPending;
   const removing = remove.isPending;
   const current = logo.data ?? null;
+
+  // A read brought the slot again after the read that failed: now the logo sent is on screen.
+  if (outdated && logo.isSuccess) {
+    setOutdated(false);
+    setNotice(`${label} salvo.`);
+    setFocusBack((count) => count + 1);
+  }
 
   const clearMessages = () => {
     setNotice(null);
@@ -90,10 +107,11 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
         setFileError(prepared.message);
         return;
       }
-      await upload.mutateAsync(prepared.input);
+      const { reloaded } = await upload.mutateAsync(prepared.input);
       reloadedForImage.current = false;
       setBrokenUrl(null);
-      setNotice(`${label} salvo.`);
+      setOutdated(!reloaded);
+      if (reloaded) setNotice(`${label} salvo.`);
     } catch {
       // The error is on `upload.error`, shown above the preview.
     } finally {
@@ -105,10 +123,17 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
 
   // The button was disabled while sending: the focus may have left it (§ 6.7). The hidden file
   // input cannot keep it either. It goes back once the button is enabled again.
+  // Without the new URL the slot shows the read error: the focus goes to its "Tentar de novo".
   useEffect(() => {
     if (sendsEnded === 0 || sending) return;
-    focusIfLost(chooseRef.current, { leaving: [inputRef.current] });
+    focusIfLost([chooseRef.current, loadRetryRef.current], { leaving: [inputRef.current] });
   }, [sendsEnded, sending]);
+
+  // "Tentar de novo" goes away once pressed (§ 6.7): the focus stays in the slot.
+  useEffect(() => {
+    if (focusBack === 0) return;
+    focusIfLost(chooseRef.current);
+  }, [focusBack]);
 
   const fileChosen = (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -121,7 +146,10 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const imageFailed = (url: string) => {
     if (!reloadedForImage.current) {
       reloadedForImage.current = true;
-      void logo.refetch();
+      // The same URL makes no new image, so the browser fires no other `error`: it is broken.
+      void logo.refetch().then((result) => {
+        if (result.data?.url === url) setBrokenUrl(url);
+      });
       return;
     }
     setBrokenUrl(url);
@@ -129,6 +157,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
 
   const showAgain = () => {
     setBrokenUrl(null);
+    setFocusBack((count) => count + 1);
     void logo.refetch();
   };
 
@@ -177,13 +206,14 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const broken = current !== null && brokenUrl === current.url;
 
   let body: ReactNode;
-  if (logo.data === undefined && logo.isError) {
+  if (logo.isError && (logo.data === undefined || outdated)) {
     body = (
       <LoadError
         title={`Não foi possível carregar o ${name}`}
         error={logo.error}
         retrying={logo.isFetching}
         onRetry={() => void logo.refetch()}
+        retryRef={loadRetryRef}
       />
     );
   } else if (logo.data === undefined) {

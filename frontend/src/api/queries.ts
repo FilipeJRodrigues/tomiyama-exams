@@ -548,18 +548,33 @@ function logoMayHaveChanged(error: unknown): boolean {
   );
 }
 
+/** How a stored logo ended: whether the read again brought its new URL. */
+export interface LogoUploadResult {
+  /**
+   * `false` when the logo was stored but the read again failed: the cache still holds the old
+   * logo (or the empty slot), which is no longer what the slot has.
+   */
+  reloaded: boolean;
+}
+
 /**
  * `PUT /settings/logos/{slot}` (RN012). The answer has no URL: the slot is read again, and the
- * mutation only ends when the new URL is in the cache, so the preview never shows the old
- * image after "salvo". A 400 or 413 stores nothing (the logo stays); with no answer or a 5xx
- * the file may be in the bucket already (README, "Ordem das gravações"): the slot reloads.
+ * mutation only ends when that read is over, so the preview never shows the old image after
+ * "salvo". When the read fails the logo is stored all the same: the mutation succeeds with
+ * `reloaded: false`, and the screen must not show the old data as the slot's.
+ * A 400 or 413 stores nothing (the logo stays); with no answer or a 5xx the file may be in the
+ * bucket already (README, "Ordem das gravações"): the slot reloads.
  */
 export function useUploadLogo(slot: LogoSlot) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: LogoUploadInput) => uploadLogo(api, slot, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) }),
+    mutationFn: async (input: LogoUploadInput): Promise<LogoUploadResult> => {
+      await uploadLogo(api, slot, input);
+      const queryKey = queryKeys.logo(slot);
+      await queryClient.invalidateQueries({ queryKey });
+      return { reloaded: queryClient.getQueryState(queryKey)?.status !== 'error' };
+    },
     onError: (error) => {
       if (logoMayHaveChanged(error)) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) });

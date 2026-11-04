@@ -360,6 +360,47 @@ describe('academy logos, sending (RN012)', () => {
     expect(ofMethod(requests, 'GET', 'primary').length).toBeGreaterThan(readsBefore);
   });
 
+  it('stored but not read again: the read error, the focus on "Tentar de novo", then "salvo"', async () => {
+    let readFails = false;
+    server.use(
+      http.get(logoUrl('primary'), () =>
+        readFails ? HttpResponse.json({ message: BUSY }, { status: 503 }) : undefined,
+      ),
+      http.put(logoUrl('primary'), () => {
+        readFails = true;
+        return undefined;
+      }),
+    );
+    const { user } = await openLogos();
+
+    await user.upload(fileInput('primary'), png());
+
+    const region = slotRegion('primary');
+    const alert = await within(region).findByRole('alert');
+    expect(alert).toHaveTextContent('Não foi possível carregar o logo principal');
+    expect(alert).toHaveTextContent(BUSY);
+    // "salvo" only comes with the new URL.
+    expect(within(region).queryByRole('status')).not.toBeInTheDocument();
+    const retry = within(region).getByRole('button', { name: 'Tentar de novo' });
+    await waitFor(() => {
+      expect(retry).toHaveFocus();
+    });
+
+    readFails = false;
+    await user.keyboard('{Enter}');
+
+    expect(await within(slotRegion('primary')).findByRole('status')).toHaveTextContent(
+      'Logo principal salvo.',
+    );
+    expect(within(slotRegion('primary')).getByRole('img', { name: PRIMARY_ALT })).toHaveAttribute(
+      'src',
+      `data:image/png;base64,${base64Of(PNG_BYTES)}`,
+    );
+    await waitFor(() => {
+      expect(slotButton('primary', 'Trocar')).toHaveFocus();
+    });
+  });
+
   it('sends once: while on its way the buttons are disabled and another file is ignored', async () => {
     db.logos.primary = mockLogo(PNG_BYTES);
     const held = gate();
@@ -634,13 +675,15 @@ describe('academy logos, the URL of the preview (5 minutes)', () => {
     const reads = signedUrls();
     await renderApp({ route: ROUTE, signedInAs: 'examiner' });
     fireEvent.error(await screen.findByRole('img', { name: PRIMARY_ALT }));
+    // The image of the new URL is a new element (`key={url}`): it is looked up on each try.
     await waitFor(() => {
       expect(reads()).toBe(2);
+      expect(screen.getByRole('img', { name: PRIMARY_ALT })).toHaveAttribute(
+        'src',
+        'https://imagens.test/logos/primary?v=2',
+      );
     });
-    const second = await screen.findByRole('img', { name: PRIMARY_ALT });
-    await waitFor(() => {
-      expect(second).toHaveAttribute('src', 'https://imagens.test/logos/primary?v=2');
-    });
+    const second = screen.getByRole('img', { name: PRIMARY_ALT });
 
     fireEvent.load(second);
     fireEvent.error(second);
