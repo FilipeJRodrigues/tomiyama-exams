@@ -12,7 +12,9 @@
  * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015), the
  * requirements CRUD (`handlers/requirements.py`, `build_requirement` in
  * `domain/requirements.py`: RN017) and the events CRUD (`handlers/events.py`,
- * `domain/events.py`: RN016).
+ * `domain/events.py`: RN016). The academy screen (§ 6.6) gets the logos
+ * (`handlers/logos.py`, `parse_image_upload` in `domain/images.py`: RN012), with a data URL
+ * in place of the pre-signed S3 URL.
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
@@ -29,7 +31,11 @@ import type {
   ExamSheetItem,
   ExamSummary,
   ExamView,
+  ImageContentType,
   KindSummary,
+  LogoMeta,
+  LogoSlot,
+  LogoView,
   Requirement,
   RequirementKind,
   Student,
@@ -39,7 +45,7 @@ import { decodeMockToken, type MockClaims } from '../auth/mockToken';
 import { EXAMINER_GROUP, isMasterFromGroups } from '../auth/types';
 import { ageInYears, parseIsoDate, todayIso } from '../lib/dates';
 import { foldText } from '../lib/text';
-import { createMockDb, type MockDb, type MockStudent } from './data';
+import { createMockDb, type MockDb, type MockLogo, type MockStudent } from './data';
 
 function claimsFrom(request: Request): MockClaims | null {
   const header = request.headers.get('Authorization') ?? '';
@@ -87,6 +93,22 @@ const MSG_ONLY_MASTER_CHOOSES_SENSEI = 'Somente o administrador master escolhe o
 const SETTINGS_MAX_ACADEMY_NAME = 255;
 const SETTINGS_MAX_CERTIFICATE_CITY = 80;
 const SETTINGS_MAX_SENSEI_USER_ID = 128;
+const MSG_LOGO_NOT_FOUND = 'Logo não encontrado';
+const MSG_INVALID_IMAGE = 'Envie PNG ou JPEG de até 2 MB';
+const MSG_BODY_TOO_LARGE = 'Corpo da requisição grande demais';
+/** Body limit of every route with a body (3 MiB in UTF-8, README "Erros comuns"). */
+const MAX_BODY_BYTES = 3 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+/** Longest base64 text that can decode to `MAX_IMAGE_BYTES`. */
+const MAX_BASE64_CHARS = 4 * Math.ceil(MAX_IMAGE_BYTES / 3);
+const PRESIGNED_URL_SECONDS = 300;
+const LOGO_SLOTS: readonly LogoSlot[] = ['primary', 'secondary'];
+/** Standard base64 with padding, no line breaks (`b64decode(validate=True)`). */
+const STRICT_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const IMAGE_SIGNATURES: readonly (readonly [ImageContentType, readonly number[]])[] = [
+  ['image/png', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
+  ['image/jpeg', [0xff, 0xd8, 0xff]],
+];
 const MSG_INVALID_RESULT =
   'Resultado inválido: envie result como APPROVED (aprovado) ou FAILED (reprovado)';
 const MSG_GRADUATION_CHANGED =
@@ -642,6 +664,69 @@ function parseSettings(payload: Payload) {
   };
 }
 
+function logoSlot(value: unknown): LogoSlot | null {
+  return LOGO_SLOTS.find((slot) => slot === value) ?? null;
+}
+
+/** Like `detect_content_type`: the type read from the first bytes, or null. */
+function detectImageType(bytes: Uint8Array): ImageContentType | null {
+  const found = IMAGE_SIGNATURES.find(([, signature]) =>
+    signature.every((value, index) => bytes[index] === value),
+  );
+  return found ? found[0] : null;
+}
+
+/** Like `parse_image_upload` (RN012): the declared type must match the bytes; up to 2 MB. */
+function parseImageUpload(payload: Payload): {
+  content_type: ImageContentType;
+  data: string;
+  size: number;
+} {
+  const contentType = payload.content_type;
+  const data = payload.data;
+  if ((contentType !== 'image/png' && contentType !== 'image/jpeg') || typeof data !== 'string') {
+    throw new MockValidationError(MSG_INVALID_IMAGE);
+  }
+  if (!data || data.length > MAX_BASE64_CHARS || !STRICT_BASE64.test(data)) {
+    throw new MockValidationError(MSG_INVALID_IMAGE);
+  }
+  const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) {
+    throw new MockValidationError(MSG_INVALID_IMAGE);
+  }
+  if (detectImageType(bytes) !== contentType) throw new MockValidationError(MSG_INVALID_IMAGE);
+  return { content_type: contentType, data, size: bytes.length };
+}
+
+/**
+ * The body of a route that checks the 3 MiB limit before reading the JSON; null when it is
+ * too big (413).
+ */
+async function readLimitedPayload(request: Request): Promise<Payload | null> {
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new MockValidationError(MSG_INVALID_BODY);
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new MockValidationError(MSG_INVALID_BODY);
+  }
+  return body as Payload;
+}
+
+function logoMeta(slot: LogoSlot, logo: MockLogo): LogoMeta {
+  return {
+    slot,
+    content_type: logo.content_type,
+    size: logo.size,
+    updated_at: logo.updated_at,
+    updated_by: logo.updated_by,
+  };
+}
+
 /** Optional note up to 500 characters, trimmed; blank means none. */
 function decisionNotes(payload: Payload): string | null {
   const value = payload.notes;
@@ -1102,6 +1187,50 @@ export function createHandlers({
         };
         return HttpResponse.json(settingsView(db));
       });
+    }),
+
+    // Like `handlers/logos.py`: examiners only (authorization before the slot); an unknown
+    // slot is 404. The URL is a data URL of the file instead of a pre-signed S3 URL.
+    http.get(url('/settings/logos/:slot'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const slot = logoSlot(params.slot);
+      const logo = slot ? db.logos[slot] : undefined;
+      if (!slot || !logo) return errorResponse(404, MSG_LOGO_NOT_FOUND);
+      const view: LogoView = {
+        ...logoMeta(slot, logo),
+        url: `data:${logo.content_type};base64,${logo.data}`,
+        expires_in: PRESIGNED_URL_SECONDS,
+      };
+      return HttpResponse.json(view);
+    }),
+
+    http.put(url('/settings/logos/:slot'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const slot = logoSlot(params.slot);
+      if (!slot) return errorResponse(404, MSG_LOGO_NOT_FOUND);
+      return withValidation(async () => {
+        const payload = await readLimitedPayload(request);
+        if (payload === null) return errorResponse(413, MSG_BODY_TOO_LARGE);
+        const image = parseImageUpload(payload);
+        const logo: MockLogo = { ...image, updated_at: utcNowIso(), updated_by: claims.sub };
+        db.logos[slot] = logo;
+        return HttpResponse.json(logoMeta(slot, logo));
+      });
+    }),
+
+    http.delete(url('/settings/logos/:slot'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const slot = logoSlot(params.slot);
+      if (!slot) return errorResponse(404, MSG_LOGO_NOT_FOUND);
+      // A slot without a logo is 204 too.
+      db.logos = Object.fromEntries(Object.entries(db.logos).filter(([key]) => key !== slot));
+      return new HttpResponse(null, { status: 204 });
     }),
 
     http.get(url('/examiners'), ({ request }) => {

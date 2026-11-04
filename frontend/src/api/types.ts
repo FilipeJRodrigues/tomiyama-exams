@@ -289,6 +289,38 @@ export interface AcademySettingsInput {
   certificate_city: string | null;
 }
 
+/** The two logo spaces of the academy (§ 6.6): `primary` and `secondary`. */
+export type LogoSlot = 'primary' | 'secondary';
+
+/** Image types accepted by the API (RN012), read from the file's bytes. */
+export type ImageContentType = 'image/png' | 'image/jpeg';
+
+/** 200 of `PUT /settings/logos/{slot}`: the metadata of the stored logo (never the file). */
+export interface LogoMeta {
+  slot: LogoSlot;
+  content_type: ImageContentType;
+  /** Size of the file in bytes. */
+  size: number;
+  updated_at: IsoDateTime;
+  /** `sub` of who sent it. */
+  updated_by: string;
+}
+
+/**
+ * 200 of `GET /settings/logos/{slot}`: the metadata and a pre-signed S3 URL, valid for
+ * `expires_in` seconds (300), only for `<img src>`. A slot without a logo answers 404.
+ */
+export interface LogoView extends LogoMeta {
+  url: string;
+  expires_in: number;
+}
+
+/** Body of `PUT /settings/logos/{slot}`: the file in standard base64, without the data-URL prefix. */
+export interface LogoUploadInput {
+  content_type: ImageContentType;
+  data: string;
+}
+
 export type DecisionResult = 'APPROVED' | 'FAILED';
 
 /** Body of `POST /events/{id}/exams/{student_id}/decision` (RN008). */

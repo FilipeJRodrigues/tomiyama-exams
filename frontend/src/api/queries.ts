@@ -23,6 +23,10 @@ import type {
   ExamSheet,
   ExamView,
   Examiner,
+  LogoMeta,
+  LogoSlot,
+  LogoUploadInput,
+  LogoView,
   MarkAnswerInput,
   Requirement,
   RequirementFilters,
@@ -47,6 +51,11 @@ export const queryKeys = {
     ['events', eventId, 'exams', studentId] as const,
   examiners: ['examiners'] as const,
   settings: ['settings'] as const,
+  /**
+   * Not under `settings`: reloading or cancelling the settings (their save, the decision)
+   * must not cancel a logo read on its way.
+   */
+  logo: (slot: LogoSlot) => ['logos', slot] as const,
   /** Prefix of every requirements list (any filter), for invalidation. */
   allRequirements: ['requirements'] as const,
   requirements: (filters: RequirementFilters = {}) => ['requirements', filters] as const,
@@ -232,6 +241,33 @@ export function updateSettings(
   input: AcademySettingsInput,
 ): Promise<AcademySettings> {
   return api.put<AcademySettings>('/settings', input);
+}
+
+/**
+ * `GET /settings/logos/{slot}` (RN012): the logo with its pre-signed URL, or `null` when the
+ * slot is empty (404 "Logo não encontrado" is the empty slot, not an error of the screen).
+ */
+export async function getLogo(api: ApiClient, slot: LogoSlot): Promise<LogoView | null> {
+  try {
+    return await api.get<LogoView>(`/settings/logos/${slot}`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** `PUT /settings/logos/{slot}`: sends or replaces the logo; answers its metadata. */
+export function uploadLogo(
+  api: ApiClient,
+  slot: LogoSlot,
+  input: LogoUploadInput,
+): Promise<LogoMeta> {
+  return api.put<LogoMeta>(`/settings/logos/${slot}`, input);
+}
+
+/** `DELETE /settings/logos/{slot}`: 204, also when the slot had no logo. */
+export function deleteLogo(api: ApiClient, slot: LogoSlot): Promise<void> {
+  return api.delete(`/settings/logos/${slot}`);
 }
 
 export function listExaminers(api: ApiClient): Promise<Examiner[]> {
@@ -483,6 +519,71 @@ export function useUpdateSettings() {
       }
       if (error.message === MSG_SENSEI_NOT_ACTIVE_EXAMINER) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.examiners });
+      }
+    },
+  });
+}
+
+/**
+ * How long a logo read stays fresh: below the 300 s of its pre-signed URL, so a reload on
+ * window focus or on opening the screen again brings a URL still valid. A URL that expires
+ * while the screen stays open is replaced by the screen when the image fails to load.
+ */
+export const LOGO_STALE_TIME_MS = 240_000;
+
+/** `GET /settings/logos/{slot}` (§ 6.6): `null` is the empty slot. */
+export function useLogo(slot: LogoSlot) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.logo(slot),
+    queryFn: () => getLogo(api, slot),
+    staleTime: LOGO_STALE_TIME_MS,
+  });
+}
+
+/** Whether a failed logo write may have been stored anyway (no answer, 504 or 5xx). */
+function logoMayHaveChanged(error: unknown): boolean {
+  return (
+    error instanceof ApiError && (error.status === NETWORK_ERROR_STATUS || error.status >= 500)
+  );
+}
+
+/**
+ * `PUT /settings/logos/{slot}` (RN012). The answer has no URL: the slot is read again, and the
+ * mutation only ends when the new URL is in the cache, so the preview never shows the old
+ * image after "salvo". A 400 or 413 stores nothing (the logo stays); with no answer or a 5xx
+ * the file may be in the bucket already (README, "Ordem das gravações"): the slot reloads.
+ */
+export function useUploadLogo(slot: LogoSlot) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: LogoUploadInput) => uploadLogo(api, slot, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) }),
+    onError: (error) => {
+      if (logoMayHaveChanged(error)) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) });
+      }
+    },
+  });
+}
+
+/**
+ * `DELETE /settings/logos/{slot}`: the slot becomes empty in the cache, after cancelling a
+ * read on its way. With no answer or a 5xx the metadata may be gone already: it reloads.
+ */
+export function useDeleteLogo(slot: LogoSlot) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => deleteLogo(api, slot),
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.logo(slot) });
+      queryClient.setQueryData<LogoView | null>(queryKeys.logo(slot), null);
+    },
+    onError: (error) => {
+      if (logoMayHaveChanged(error)) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.logo(slot) });
       }
     },
   });
