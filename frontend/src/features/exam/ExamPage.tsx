@@ -348,10 +348,15 @@ function useReadOnlyFocus(readOnly: boolean, failure: MarkFailure | null) {
  * The space of the refusal notice after a pointer tap took it away ("Fechar aviso",
  * "Tentar de novo"), kept for `DOUBLE_TAP_MS`: the list stays where it was, and the second tap
  * of a double tap lands on the empty space instead of a Certo/Errado that moved up under the
- * finger (§ 6.4, RN006). A newer notice takes the place at once.
+ * finger (§ 6.4, RN006). A newer notice takes the place at once and for good: the kept space
+ * is dropped, so it never comes back when that notice leaves (by the keyboard, say).
  */
-function useNoticeSpace(): [{ height: number } | null, (height: number) => void] {
+function useNoticeSpace(
+  noticeShown: boolean,
+): [{ height: number } | null, (height: number) => void] {
   const [space, setSpace] = useState<{ height: number } | null>(null);
+  // Adjusted while rendering, not in an effect: the space is never painted with the notice.
+  if (noticeShown && space !== null) setSpace(null);
   useEffect(() => {
     if (space === null) return;
     const timer = window.setTimeout(() => {
@@ -452,7 +457,7 @@ function ExamContent({
   );
   // Lives here, not in the buttons: they remount when the tab or the filter changes.
   const acceptClick = useMarkClickGuard();
-  const [noticeSpace, keepNoticeSpace] = useNoticeSpace();
+  const [noticeSpace, keepNoticeSpace] = useNoticeSpace(failure !== null);
   // The focus of a notice that left in this render: a newer notice takes it (its layout
   // effect runs first); with none, it goes to the item of the notice, else the title, as
   // when the notice is closed (§ 6.7). Never left on the page body.

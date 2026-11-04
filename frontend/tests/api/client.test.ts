@@ -123,6 +123,76 @@ describe('createApiClient', () => {
       message: 'Não foi possível falar com o servidor. Verifique a conexão e tente de novo.',
     });
   });
+
+  it('returns null for an empty or non-JSON 200 body', async () => {
+    server.use(
+      http.get(`${TEST_API_URL}/belts`, () => new HttpResponse('', { status: 200 })),
+      http.get(`${TEST_API_URL}/students`, () => new HttpResponse('<html>', { status: 200 })),
+    );
+    await expect(client().get('/belts')).resolves.toBeNull();
+    await expect(client().get('/students')).resolves.toBeNull();
+  });
+
+  it('uses the message of the status when an error body is empty', async () => {
+    server.use(http.get(`${TEST_API_URL}/belts`, () => new HttpResponse(null, { status: 504 })));
+    await expect(client().get('/belts')).rejects.toMatchObject({
+      status: 504,
+      message: 'O servidor demorou para responder. Tente de novo.',
+    });
+  });
+});
+
+describe('createApiClient with a body cut halfway', () => {
+  /** Headers arrived; the connection dropped while the body was still coming. */
+  function cutBody(status: number): Response {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"message":'));
+        controller.error(new TypeError('terminated'));
+      },
+    });
+    return new Response(body, { status, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  function cutClient(status: number, onUnauthorized = vi.fn()) {
+    return createApiClient({
+      baseUrl: TEST_API_URL,
+      getToken: () => Promise.resolve('token-123'),
+      onUnauthorized,
+      fetchFn: () => Promise.resolve(cutBody(status)),
+    });
+  }
+
+  it('turns a cut 200 into the network error: the outcome is unknown', async () => {
+    const error = await cutClient(200)
+      .put('/events/e/exams/s/answers/r', { correct: true })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: NETWORK_ERROR_STATUS,
+      message: 'Não foi possível falar com o servidor. Verifique a conexão e tente de novo.',
+    });
+  });
+
+  it('keeps the status of a cut 504, with its own message', async () => {
+    const error = await cutClient(504)
+      .get('/belts')
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 504,
+      message: 'O servidor demorou para responder. Tente de novo.',
+    });
+  });
+
+  it('keeps the status of a cut 401 and still ends the session', async () => {
+    const onUnauthorized = vi.fn();
+    await expect(cutClient(401, onUnauthorized).get('/belts')).rejects.toMatchObject({
+      status: 401,
+      message: 'Sua sessão expirou. Entre de novo.',
+    });
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('messageFromErrorBody', () => {
