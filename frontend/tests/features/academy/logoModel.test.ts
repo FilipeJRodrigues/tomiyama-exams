@@ -4,12 +4,15 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { ApiError, NETWORK_ERROR_STATUS } from '../../../src/api/client';
 import { LOGO_STALE_TIME_MS } from '../../../src/api/queries';
 import {
   MAX_LOGO_BYTES,
   MSG_INVALID_IMAGE,
   describeLogo,
   detectImageType,
+  logoWriteErrorTitle,
+  logoWriteUnknownHint,
   prepareLogo,
 } from '../../../src/features/academy/logoModel';
 import { GIF_BYTES, JPEG_BYTES, PNG_BYTES, base64Of, imageFile } from './logoHelpers';
@@ -83,5 +86,42 @@ describe('logo read freshness', () => {
   it('stays fresh for less than the 300 s of the pre-signed URL', () => {
     expect(LOGO_STALE_TIME_MS).toBeLessThan(300_000);
     expect(LOGO_STALE_TIME_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('logo write errors', () => {
+  const noAnswer = new ApiError(NETWORK_ERROR_STATUS, 'sem resposta');
+  const timeout = new ApiError(504, 'O servidor demorou para responder. Tente de novo.');
+  const forbidden = new ApiError(403, 'Você não tem permissão para esta ação.');
+  const refused = new ApiError(400, MSG_INVALID_IMAGE);
+  const busy = new ApiError(503, 'Sistema ocupado no momento. Tente de novo em instantes.');
+
+  it('titles a send: no permission, unknown outcome (no answer, 504) or refused', () => {
+    expect(logoWriteErrorTitle('upload', forbidden)).toBe('Sem permissão');
+    expect(logoWriteErrorTitle('upload', noAnswer)).toBe('Não foi possível confirmar o envio');
+    expect(logoWriteErrorTitle('upload', timeout)).toBe('Não foi possível confirmar o envio');
+    expect(logoWriteErrorTitle('upload', refused)).toBe('Não foi possível enviar o logo');
+    expect(logoWriteErrorTitle('upload', busy)).toBe('Não foi possível enviar o logo');
+  });
+
+  it('titles a removal the same way', () => {
+    expect(logoWriteErrorTitle('remove', forbidden)).toBe('Sem permissão');
+    expect(logoWriteErrorTitle('remove', noAnswer)).toBe('Não foi possível confirmar a remoção');
+    expect(logoWriteErrorTitle('remove', busy)).toBe('Não foi possível remover');
+  });
+
+  it('with the mark on there is no preview to check: the hint says to load again', () => {
+    expect(logoWriteUnknownHint('upload', true)).toBe(
+      'O logo pode ter sido salvo, mas a prévia não carregou. Tente carregar de novo para conferir e envie de novo se precisar.',
+    );
+    expect(logoWriteUnknownHint('upload', false)).toBe(
+      'O logo pode ter sido salvo. Confira a prévia e envie de novo se precisar.',
+    );
+    expect(logoWriteUnknownHint('remove', true)).toBe(
+      'O logo pode ter sido removido, mas a prévia não carregou. Tente carregar de novo para conferir e remova de novo se precisar.',
+    );
+    expect(logoWriteUnknownHint('remove', false)).toBe(
+      'O logo pode ter sido removido. Confira a prévia e remova de novo se precisar.',
+    );
   });
 });

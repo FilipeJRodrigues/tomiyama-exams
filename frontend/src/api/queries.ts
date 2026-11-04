@@ -2,8 +2,10 @@ import {
   hashKey,
   skipToken,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
+  type MutationStatus,
   type QueryClient,
 } from '@tanstack/react-query';
 
@@ -71,6 +73,16 @@ export const queryKeys = {
   /** Prefix of every requirements list (any filter), for invalidation. */
   allRequirements: ['requirements'] as const,
   requirements: (filters: RequirementFilters = {}) => ['requirements', filters] as const,
+};
+
+export const mutationKeys = {
+  /**
+   * Prefix of a logo slot's writes, sends and removals (`useLogoWrites`): a write outlives the
+   * slot panel that started it, and the panel opened next sees it on its way.
+   */
+  logoWrite: (slot: LogoSlot) => ['logoWrite', slot] as const,
+  logoUpload: (slot: LogoSlot) => ['logoWrite', slot, 'upload'] as const,
+  logoRemove: (slot: LogoSlot) => ['logoWrite', slot, 'remove'] as const,
 };
 
 /** Whether a query key is an exam sheet (`examSheet`): `['events', id, 'exams', studentId]`. */
@@ -557,8 +569,8 @@ export function useLogo(slot: LogoSlot) {
  * The mark "the logo may have changed" of a slot (§ 6.6, RN012): a write stored the logo, or
  * may have, and no read of the slot has worked since. While it is on, the cached logo (or the
  * empty slot) may not be what the slot has: the screen shows the read error with "Tentar de
- * novo" (or "Carregando logo…" while a read is on its way), never that preview and never
- * "Trocar"/"Remover".
+ * novo" (or "Carregando logo…" while a read is on its way; a read paused until the network is
+ * back is the read error), never that preview and never "Trocar"/"Remover".
  *
  * It lives in the `QueryClient` (`queryKeys.logoChange`), not in the screen, so it outlives
  * the slot panel (leaving the screen and coming back) and ends with the session (`clear`).
@@ -680,6 +692,7 @@ export function useUploadLogo(slot: LogoSlot) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: mutationKeys.logoUpload(slot),
     mutationFn: async (input: LogoUploadInput): Promise<LogoUploadResult> => {
       const wasEmpty = queryClient.getQueryData(queryKeys.logo(slot)) === null;
       try {
@@ -707,6 +720,7 @@ export function useDeleteLogo(slot: LogoSlot) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: mutationKeys.logoRemove(slot),
     mutationFn: async () => {
       try {
         await deleteLogo(api, slot);
@@ -720,6 +734,42 @@ export function useDeleteLogo(slot: LogoSlot) {
       queryClient.setQueryData<LogoView | null>(queryKeys.logo(slot), null);
       queryClient.setQueryData<LogoChange | null>(queryKeys.logoChange(slot), null);
     },
+  });
+}
+
+/** A send (`useUploadLogo`) or a removal (`useDeleteLogo`) of a logo slot. */
+export type LogoWriteKind = 'upload' | 'remove';
+
+/** A write of a logo slot as the mutation cache has it, also after its panel is gone. */
+export interface LogoWrite {
+  /** The mutation's id: tells one write from another. */
+  id: number;
+  kind: LogoWriteKind;
+  status: MutationStatus;
+  /** A send that worked: whether the read again brought the logo sent (`LogoUploadResult`). */
+  reloaded: boolean;
+  error: unknown;
+}
+
+function wasReloaded(data: unknown): boolean {
+  return typeof data === 'object' && data !== null && 'reloaded' in data && data.reloaded === true;
+}
+
+/**
+ * The slot's writes, oldest first, from every slot panel (`mutationKeys.logoWrite`). A write
+ * goes on after its panel is gone (the screen was left): the panel opened next sees it pending
+ * and, when it ends, how it ended. Ended writes stay for the mutation cache time (5 minutes).
+ */
+export function useLogoWrites(slot: LogoSlot): LogoWrite[] {
+  return useMutationState({
+    filters: { mutationKey: mutationKeys.logoWrite(slot) },
+    select: (mutation): LogoWrite => ({
+      id: mutation.mutationId,
+      kind: mutation.options.mutationKey?.at(-1) === 'remove' ? 'remove' : 'upload',
+      status: mutation.state.status,
+      reloaded: wasReloaded(mutation.state.data),
+      error: mutation.state.error,
+    }),
   });
 }
 

@@ -3,7 +3,10 @@
  * its conversion to the body of `PUT /settings/logos/{slot}`. The check is a convenience: the
  * API checks the type (by the bytes) and the size again, with the same message.
  */
+import { ApiError } from '../../api/client';
+import type { LogoWriteKind } from '../../api/queries';
 import type { ImageContentType, LogoSlot, LogoUploadInput } from '../../api/types';
+import { markOutcomeUnknown } from '../exam/examModel';
 
 export const LOGO_SLOTS: readonly LogoSlot[] = ['primary', 'secondary'];
 
@@ -112,4 +115,35 @@ export function describeLogo(contentType: ImageContentType, size: number): strin
   const amount =
     kib < 1024 ? `${String(Math.max(1, Math.round(kib)))} KB` : `${decimal.format(kib / 1024)} MB`;
   return `${TYPE_LABELS[contentType]}, ${amount}`;
+}
+
+/**
+ * Title of a failed send or removal (§ 6.6): "Sem permissão" for a 403, "Não foi possível
+ * confirmar…" when the request left and no answer came (it may have been stored), and "Não foi
+ * possível…" for a refusal of the API.
+ */
+export function logoWriteErrorTitle(kind: LogoWriteKind, error: unknown): string {
+  if (error instanceof ApiError && error.status === 403) return 'Sem permissão';
+  if (markOutcomeUnknown(error)) {
+    return kind === 'upload'
+      ? 'Não foi possível confirmar o envio'
+      : 'Não foi possível confirmar a remoção';
+  }
+  return kind === 'upload' ? 'Não foi possível enviar o logo' : 'Não foi possível remover';
+}
+
+/**
+ * What to do after a write whose outcome is unknown, in the slot (not in the removal dialog,
+ * which has its own "Remover"). `mayHaveChanged`: the slot's mark is on, so there is no preview
+ * to check, only "Tentar de novo".
+ */
+export function logoWriteUnknownHint(kind: LogoWriteKind, mayHaveChanged: boolean): string {
+  if (kind === 'upload') {
+    return mayHaveChanged
+      ? 'O logo pode ter sido salvo, mas a prévia não carregou. Tente carregar de novo para conferir e envie de novo se precisar.'
+      : 'O logo pode ter sido salvo. Confira a prévia e envie de novo se precisar.';
+  }
+  return mayHaveChanged
+    ? 'O logo pode ter sido removido, mas a prévia não carregou. Tente carregar de novo para conferir e remova de novo se precisar.'
+    : 'O logo pode ter sido removido. Confira a prévia e remova de novo se precisar.';
 }

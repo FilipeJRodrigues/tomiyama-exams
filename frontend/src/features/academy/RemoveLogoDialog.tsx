@@ -2,16 +2,10 @@ import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import type { Ref } from 'react';
 
-import { ApiError, errorMessage } from '../../api/client';
+import { errorMessage } from '../../api/client';
 import type { LogoSlot } from '../../api/types';
 import { markOutcomeUnknown } from '../exam/examModel';
-import { logoName } from './logoModel';
-
-function errorTitle(error: unknown): string {
-  if (error instanceof ApiError && error.status === 403) return 'Sem permissão';
-  if (markOutcomeUnknown(error)) return 'Não foi possível confirmar a remoção';
-  return 'Não foi possível remover';
-}
+import { logoName, logoWriteErrorTitle } from './logoModel';
 
 interface Props {
   ref?: Ref<HTMLDivElement>;
@@ -68,7 +62,7 @@ export function RemoveLogoDialog({
             variant="light"
             role="alert"
             icon={<IconAlertCircle aria-hidden />}
-            title={errorTitle(error)}
+            title={logoWriteErrorTitle('remove', error)}
           >
             <Text size="sm">{errorMessage(error)}</Text>
             {markOutcomeUnknown(error) && (

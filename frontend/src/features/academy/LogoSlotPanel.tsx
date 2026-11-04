@@ -2,21 +2,47 @@ import { Alert, Box, Button, Group, Stack, Text, Title } from '@mantine/core';
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 
-import { ApiError, errorMessage } from '../../api/client';
-import { useDeleteLogo, useLogo, useLogoChange, useUploadLogo } from '../../api/queries';
+import { errorMessage, networkError } from '../../api/client';
+import {
+  useDeleteLogo,
+  useLogo,
+  useLogoChange,
+  useLogoWrites,
+  useUploadLogo,
+  type LogoWriteKind,
+} from '../../api/queries';
 import type { LogoSlot } from '../../api/types';
 import { markOutcomeUnknown } from '../exam/examModel';
 import { focusIfLost } from '../exam/focus';
 import { LoadError } from '../students/screenStates';
 import { RemoveLogoDialog } from './RemoveLogoDialog';
-import { LOGO_ACCEPT, LOGO_SLOT_LABELS, describeLogo, logoName, prepareLogo } from './logoModel';
+import {
+  LOGO_ACCEPT,
+  LOGO_SLOT_LABELS,
+  describeLogo,
+  logoName,
+  logoWriteErrorTitle,
+  logoWriteUnknownHint,
+  prepareLogo,
+} from './logoModel';
 
 const PREVIEW_HEIGHT = 120;
 
-function uploadErrorTitle(error: unknown): string {
-  if (error instanceof ApiError && error.status === 403) return 'Sem permissão';
-  if (markOutcomeUnknown(error)) return 'Não foi possível confirmar o envio';
-  return 'Não foi possível enviar o logo';
+/** What a read waiting for the network shows: the browser is offline. */
+const OFFLINE_ERROR = networkError();
+
+/** A failed write shown above the preview. */
+interface WriteError {
+  kind: LogoWriteKind;
+  error: unknown;
+}
+
+/** The red notice above the preview: the chosen file or a failed write. */
+interface ErrorNotice {
+  title: string;
+  message: string;
+  /** What to do when the write may have been stored anyway. */
+  hint: string | null;
 }
 
 interface Props {
@@ -40,7 +66,13 @@ interface Props {
  * "the logo may have changed" is on (`useLogoChange`, kept in the query cache, so also after
  * leaving the screen and coming back): the old preview (or "Nenhum logo") may not be the
  * slot's, so the slot shows the read error with "Tentar de novo", without "Trocar"/"Remover",
- * until a read works. "salvo" only comes with a read that brings the logo sent.
+ * until a read works. "salvo" only comes with a read that brings the logo sent. A read that
+ * waits for the network (the browser is offline) does not end by itself: with the mark on it
+ * is shown as the read error too, and it goes on once the network is back.
+ *
+ * A write goes on after leaving the screen. The panel opened while one of the slot's writes
+ * is on its way (`useLogoWrites`) shows the slot as the panel that started it did: busy, with
+ * no action, until it ends; then what it left, with its "salvo"/"removido" or its error.
  */
 export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const label = LOGO_SLOT_LABELS[slot];
@@ -53,6 +85,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const change = useLogoChange(slot);
   const upload = useUploadLogo(slot);
   const remove = useDeleteLogo(slot);
+  const writes = useLogoWrites(slot);
 
   const [preparing, setPreparing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -60,8 +93,20 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const [removeOpened, setRemoveOpened] = useState(false);
   /** URL whose image could not be shown even after a new read. */
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
-  /** Sendings ended so far: after each one the focus goes back to its button (once enabled). */
-  const [sendsEnded, setSendsEnded] = useState(0);
+  /**
+   * Writes ended so far, the panel's sendings and the writes it took over: after each one the
+   * focus goes back to the slot's button (once enabled).
+   */
+  const [writesEnded, setWritesEnded] = useState(0);
+  /**
+   * The slot's writes on their way when the panel opened, started by a panel no longer on
+   * screen (the screen was left): their end is shown here, as in the panel that started them.
+   */
+  const [adopted, setAdopted] = useState<readonly number[]>(() =>
+    writes.filter((write) => write.status === 'pending').map((write) => write.id),
+  );
+  /** The error of a write taken over (`adopted`); this panel's own is on `upload.error`. */
+  const [adoptedError, setAdoptedError] = useState<WriteError | null>(null);
   /** The slot's mark on the last render: when a read turns it off, the slot says so. */
   const [seenChange, setSeenChange] = useState(change);
   /** Times a button of the slot went away under the focus: it goes back to the slot. */
@@ -77,11 +122,37 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   /** Whether the slot was already read again because its image failed to load. */
   const reloadedForImage = useRef(false);
 
-  const sending = preparing || upload.isPending;
-  const removing = remove.isPending;
+  /** A write of the slot on its way: this panel's, or one it took over. */
+  const writing = (kind: LogoWriteKind) =>
+    writes.some((write) => write.kind === kind && write.status === 'pending');
+  const sending = preparing || upload.isPending || writing('upload');
+  const removing = remove.isPending || writing('remove');
   const current = logo.data ?? null;
   /** The cached logo may not be the slot's: only the read error or the loading is shown. */
   const mayHaveChanged = change !== null;
+
+  // A write taken over ended: the slot shows what it left (the read again is over, and the
+  // mark is on when it failed), and says how it ended, as the panel that started it would.
+  const adoptedEnded = writes.filter(
+    (write) => adopted.includes(write.id) && write.status !== 'pending',
+  );
+  if (adoptedEnded.length > 0) {
+    const endedIds = adoptedEnded.map((write) => write.id);
+    setAdopted(adopted.filter((id) => !endedIds.includes(id)));
+    for (const write of adoptedEnded) {
+      if (write.status === 'error') {
+        setAdoptedError({ kind: write.kind, error: write.error });
+      } else if (write.kind === 'remove') {
+        setBrokenUrl(null);
+        setNotice(`${label} removido.`);
+      } else {
+        setBrokenUrl(null);
+        // Without the read the slot's mark is on: "salvo" waits for a read that works.
+        if (write.reloaded) setNotice(`${label} salvo.`);
+      }
+    }
+    setWritesEnded((count) => count + 1);
+  }
 
   // A read of the slot worked and turned the mark off: what the slot has is on screen now,
   // and with it the logo sent, when the API had stored it.
@@ -96,6 +167,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const clearMessages = () => {
     setNotice(null);
     setFileError(null);
+    setAdoptedError(null);
     upload.reset();
   };
 
@@ -126,7 +198,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
     } finally {
       setPreparing(false);
       busy.current = false;
-      setSendsEnded((count) => count + 1);
+      setWritesEnded((count) => count + 1);
     }
   };
 
@@ -134,9 +206,9 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   // input cannot keep it either. It goes back once the button is enabled again.
   // With the mark on the slot shows the read error: the focus goes to its "Tentar de novo".
   useEffect(() => {
-    if (sendsEnded === 0 || sending) return;
+    if (writesEnded === 0 || sending) return;
     focusIfLost([chooseRef.current, loadRetryRef.current], { leaving: [inputRef.current] });
-  }, [sendsEnded, sending]);
+  }, [writesEnded, sending]);
 
   // "Tentar de novo" goes away once pressed (§ 6.7): the focus stays in the slot.
   useEffect(() => {
@@ -215,16 +287,30 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
     }, 0);
   };
 
-  const uploadError: unknown = fileError ?? upload.error;
-  const hasUploadError = uploadError !== null && uploadError !== undefined;
+  const writeError: WriteError | null =
+    upload.error !== null ? { kind: 'upload', error: upload.error } : adoptedError;
+  let errorNotice: ErrorNotice | null = null;
+  if (fileError !== null) {
+    errorNotice = { title: 'Não foi possível enviar o logo', message: fileError, hint: null };
+  } else if (writeError !== null) {
+    errorNotice = {
+      title: logoWriteErrorTitle(writeError.kind, writeError.error),
+      message: errorMessage(writeError.error),
+      hint: markOutcomeUnknown(writeError.error)
+        ? logoWriteUnknownHint(writeError.kind, mayHaveChanged)
+        : null,
+    };
+  }
   const broken = current !== null && brokenUrl === current.url;
+  /** With the mark on, a read paused until the network is back is the read error (offline). */
+  const readWaitsForNetwork = mayHaveChanged && logo.isPaused;
 
   let body: ReactNode;
-  if (logo.isError && (logo.data === undefined || mayHaveChanged)) {
+  if ((logo.isError || readWaitsForNetwork) && (logo.data === undefined || mayHaveChanged)) {
     body = (
       <LoadError
         title={`Não foi possível carregar o ${name}`}
-        error={logo.error}
+        error={logo.error ?? OFFLINE_ERROR}
         retrying={logo.isFetching}
         onRetry={() => void logo.refetch()}
         retryRef={loadRetryRef}
@@ -342,20 +428,18 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
           {notice}
         </Alert>
       )}
-      {hasUploadError && (
+      {errorNotice && (
         <Alert
           color="red"
           variant="light"
           role="alert"
           icon={<IconAlertCircle aria-hidden />}
-          title={fileError ? 'Não foi possível enviar o logo' : uploadErrorTitle(uploadError)}
+          title={errorNotice.title}
         >
-          <Text size="sm">{fileError ?? errorMessage(uploadError)}</Text>
-          {!fileError && markOutcomeUnknown(uploadError) && (
+          <Text size="sm">{errorNotice.message}</Text>
+          {errorNotice.hint && (
             <Text size="sm" mt="xs">
-              {mayHaveChanged
-                ? 'O logo pode ter sido salvo, mas a prévia não carregou. Tente carregar de novo para conferir e envie de novo se precisar.'
-                : 'O logo pode ter sido salvo. Confira a prévia e envie de novo se precisar.'}
+              {errorNotice.hint}
             </Text>
           )}
         </Alert>
