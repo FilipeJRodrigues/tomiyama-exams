@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # No PR, um push novo cancela o run antigo. No main, não: cada merge confere só as áreas
-  # que trouxe, então cancelar o run de um merge deixaria as áreas dele sem conferir.
+  # No PR, um push novo cancela o run antigo (grupo por ref). No main, cada merge confere só
+  # as áreas que trouxe, então nenhum run pode ser cancelado, nem na fila: grupo por commit.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
