@@ -351,3 +351,51 @@ def read_signature_image(bucket: str, signature_id: str) -> tuple[bytes, str] | 
             return None
         raise
     return stored["Body"].read(), stored["ContentType"]
+
+
+# --- Eventually consistent reads (moto is always strongly consistent) ---
+
+
+def _key_id(key: dict[str, Any]) -> str:
+    return repr(sorted(key.items()))
+
+
+def lag_eventual_reads(monkeypatch: pytest.MonkeyPatch, table_env: str) -> list[dict[str, Any]]:
+    """Make the table behave like a DynamoDB replica one write behind.
+
+    From this call on, each ``PutItem``, ``UpdateItem`` and ``DeleteItem`` on the
+    table (PK ``id``) records the item as it was before the write. A ``GetItem``
+    without ``ConsistentRead=True`` on that key gets the recorded old version
+    (no item for one just created), as an eventually consistent read can up to
+    about one second after the write. Strongly consistent reads, keys not
+    written since the call and other tables go to moto unchanged.
+
+    Returns:
+        The parameters of every ``GetItem`` on the table, in call order.
+    """
+    from botocore.client import BaseClient
+
+    table_name = os.environ[table_env]
+    behind: dict[str, Any] = {}
+    get_calls: list[dict[str, Any]] = []
+    original = BaseClient._make_api_call
+
+    def lagging(self: BaseClient, operation_name: str, api_params: dict[str, Any]) -> Any:
+        if api_params.get("TableName") != table_name:
+            return original(self, operation_name, api_params)
+        if operation_name in {"PutItem", "UpdateItem", "DeleteItem"}:
+            key = api_params.get("Key") or {"id": api_params["Item"]["id"]}
+            before = original(
+                self, "GetItem", {"TableName": table_name, "Key": key, "ConsistentRead": True}
+            )
+            behind[_key_id(key)] = before.get("Item")
+        elif operation_name == "GetItem":
+            get_calls.append(dict(api_params))
+            key_id = _key_id(api_params["Key"])
+            if api_params.get("ConsistentRead") is not True and key_id in behind:
+                old = behind[key_id]
+                return {"Item": dict(old)} if old is not None else {}
+        return original(self, operation_name, api_params)
+
+    monkeypatch.setattr(BaseClient, "_make_api_call", lagging)
+    return get_calls
