@@ -13,6 +13,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -107,8 +108,29 @@ function Notices({ sheet }: { sheet: ExamSheet }) {
   );
 }
 
-/** Which button of the notice had the focus when a newer notice replaced it. */
+/** Which button of the notice had the focus when it left the page. */
 type NoticeControl = 'close' | 'retry';
+
+/**
+ * The focus a notice had when it left the page by itself (saved item, newer refusal, exam
+ * turned read-only), kept by the exam screen for the commit that took it away: a newer
+ * notice takes it on the same button; with none, the item of the notice takes it.
+ */
+interface CarriedNoticeFocus {
+  control: NoticeControl;
+  itemId: string;
+}
+
+/**
+ * Where the refusal notice sits: stuck under the fixed header while the list scrolls, over
+ * the items (Mantine buttons are `position: relative`). The space kept after a tap
+ * (`NoticeSpace`) uses the same, so it covers the same place on the screen.
+ */
+const NOTICE_PLACE: CSSProperties = {
+  position: 'sticky',
+  top: 'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))',
+  zIndex: 2,
+};
 
 const CLOSE_NOTICE_LABEL = 'Fechar aviso';
 
@@ -123,10 +145,10 @@ interface MarkFailureNoticeProps {
    */
   focusTarget: RefObject<HTMLElement | null>;
   /**
-   * The button that had the focus in the notice this one replaces (newer refusal), kept by
-   * the exam screen for one render: this one gives it the focus back.
+   * The focus of the notice that left in this render (see `CarriedNoticeFocus`): this one
+   * takes it on the same button, and fills it when it leaves with the focus.
    */
-  carriedRef: RefObject<NoticeControl | null>;
+  carriedRef: RefObject<CarriedNoticeFocus | null>;
   /**
    * A pointer tap took the notice away; `height` is the space it took, which the screen
    * keeps for a moment so the list does not move up under the finger.
@@ -189,7 +211,7 @@ function MarkFailureNotice({
 
   useLayoutEffect(() => {
     // Replacing a notice that had the focus: the same button of this one takes it.
-    const control = carriedRef.current;
+    const control = carriedRef.current?.control ?? null;
     carriedRef.current = null;
     const notice = ref.current;
     if (control !== null && focusIsLost()) {
@@ -200,14 +222,19 @@ function MarkFailureNotice({
       target?.focus({ preventScroll: true });
     }
     const retry = retryRef.current;
+    const itemId = failure.itemId;
     return () => {
-      // Runs before the notice leaves the page: a newer one may give the focus back.
+      // Runs before the notice leaves the page: a newer one, else the screen, places the focus.
       const active = document.activeElement;
       if (notice === null || active === null || !notice.contains(active)) return;
-      carriedRef.current = retry !== null && active === retry ? 'retry' : 'close';
+      carriedRef.current = {
+        control: retry !== null && active === retry ? 'retry' : 'close',
+        itemId,
+      };
     };
-    // Once per refusal: the notice is keyed by it, and the ref of the screen never changes.
-  }, [carriedRef]);
+    // Once per refusal: the notice is keyed by it (so is its item), and the ref of the screen
+    // never changes.
+  }, [carriedRef, failure.itemId]);
 
   // The notice leaves with the focused button: the focus goes to the item, else the title.
   const leave = () => {
@@ -234,11 +261,7 @@ function MarkFailureNotice({
         onClose();
       }}
       ref={ref}
-      style={{
-        position: 'sticky',
-        top: 'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))',
-        zIndex: 2,
-      }}
+      style={NOTICE_PLACE}
     >
       <Stack gap="xs" align="flex-start">
         <Text inherit>{failure.message}</Text>
@@ -344,6 +367,16 @@ function useNoticeSpace(): [{ height: number } | null, (height: number) => void]
   return [space, keep];
 }
 
+/**
+ * The space of a notice taken away by a tap, on the same place of the screen as the notice
+ * (`NOTICE_PLACE`), scrolled list or not. Being over the items, it takes the second tap of a
+ * double tap itself: a transparent box still gets the pointer (`pointer-events` stays `auto`),
+ * so no background is needed. No width of its own: it is as wide as the list, never more.
+ */
+function NoticeSpace({ height }: { height: number }) {
+  return <div aria-hidden data-notice-space style={{ ...NOTICE_PLACE, height }} />;
+}
+
 /** Clear of the fixed header when the focus scrolls a target into view (§ 6.7). */
 const HEADER_SCROLL_PADDING =
   'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))';
@@ -420,10 +453,14 @@ function ExamContent({
   // Lives here, not in the buttons: they remount when the tab or the filter changes.
   const acceptClick = useMarkClickGuard();
   const [noticeSpace, keepNoticeSpace] = useNoticeSpace();
-  // The button of a notice replaced by a newer one, for the new one (cleared every render).
-  const carriedNoticeFocus = useRef<NoticeControl | null>(null);
+  // The focus of a notice that left in this render: a newer notice takes it (its layout
+  // effect runs first); with none, it goes to the item of the notice, else the title, as
+  // when the notice is closed (§ 6.7). Never left on the page body.
+  const carriedNoticeFocus = useRef<CarriedNoticeFocus | null>(null);
   useLayoutEffect(() => {
+    const carried = carriedNoticeFocus.current;
     carriedNoticeFocus.current = null;
+    if (carried !== null) focusIfLost([markButtonOf(carried.itemId), titleRef.current]);
   });
   const renderMark: RenderMark = onMark
     ? (item) => <MarkButtons item={item} onMark={onMark} acceptClick={acceptClick} />
@@ -445,9 +482,7 @@ function ExamContent({
           onTappedAway={keepNoticeSpace}
         />
       )}
-      {!failure && noticeSpace !== null && (
-        <div aria-hidden data-notice-space style={{ height: noticeSpace.height }} />
-      )}
+      {!failure && noticeSpace !== null && <NoticeSpace height={noticeSpace.height} />}
       <ExamItems
         items={sheet.items}
         summary={sheet.summary}

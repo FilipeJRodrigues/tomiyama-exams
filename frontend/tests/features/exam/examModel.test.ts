@@ -249,8 +249,16 @@ describe('exam model (§ 6.4)', () => {
       expect(markOutcomeUnknown(new ApiError(status, message))).toBe(true);
     });
 
-    it('rn006 a failure that is not an ApiError (no answer at all) has an unknown outcome', () => {
-      expect(markOutcomeUnknown(new TypeError('Failed to fetch'))).toBe(true);
+    it('rn006 a failure that is not an ApiError (the request never left) wrote nothing', () => {
+      // E.g. the session token could not be fetched: the client throws before `fetch`.
+      expect(markOutcomeUnknown(new Error('No current user'))).toBe(false);
+      expect(markOutcomeUnknown(new TypeError('Failed to fetch'))).toBe(false);
+    });
+
+    it('rn006 a failure that is not an ApiError is still sent again by itself', () => {
+      // Passing refusal (retry) with the "Não foi possível salvar" notice.
+      expect(isTransientMarkError(new Error('No current user'))).toBe(true);
+      expect(markOutcomeUnknown(new Error('No current user'))).toBe(false);
     });
 
     it.each([

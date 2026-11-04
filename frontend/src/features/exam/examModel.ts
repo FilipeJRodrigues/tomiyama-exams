@@ -257,15 +257,16 @@ export function mayHaveSavedMark(error: unknown): boolean {
 }
 
 /**
- * A refused mark whose outcome is unknown: no answer from the server (network) or the
- * gateway timeout (504), after which the API may well have saved it. The notice then says
- * the mark could not be confirmed, not that it was not saved (§ 6.4, RN006). The 503 and the
- * 429 are refusals of the API itself or of the gateway: per the API contract nothing was
- * written (backend README), so their notice keeps "Não foi possível salvar".
+ * A refused mark whose outcome is unknown: the request left but no answer came back (network
+ * failure, `ApiError` with `NETWORK_ERROR_STATUS`) or the gateway timed out (504), after which
+ * the API may well have saved it. The notice then says the mark could not be confirmed, not
+ * that it was not saved (§ 6.4, RN006). The 503 and the 429 are refusals of the API itself or
+ * of the gateway: per the API contract nothing was written (backend README), so their notice
+ * keeps "Não foi possível salvar". So does an error that is not an `ApiError` (the session
+ * token could not be fetched): the request never left.
  */
 export function markOutcomeUnknown(error: unknown): boolean {
-  if (!isTransientMarkError(error)) return false;
-  if (!(error instanceof ApiError)) return true;
+  if (!(error instanceof ApiError)) return false;
   return error.status === NETWORK_ERROR_STATUS || error.status === 504;
 }
 
