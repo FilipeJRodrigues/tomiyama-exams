@@ -121,3 +121,4 @@ Constraints for each level:
 - MUST still execute the user's choice if they disagree with a suggestion
 
 <!-- END AWS Agent Toolkit rules -->
+<!-- teste da esteira por área (#67), não fazer merge -->
