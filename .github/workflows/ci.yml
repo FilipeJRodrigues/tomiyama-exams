@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # No PR, um push novo cancela o run antigo. No main, não: cada merge confere só as áreas
+  # que trouxe, então cancelar o run de um merge deixaria as áreas dele sem conferir.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -33,8 +35,6 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
-          REF_NAME: ${{ github.ref_name }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
         run: |
@@ -45,13 +45,10 @@ jobs:
 
           # Base da comparação:
           # - PR: o que o PR traz em relação ao branch de destino;
-          # - push numa branch de trabalho: o que ela traz em relação ao branch principal;
-          # - push no branch principal: o que o push trouxe (sem o commit anterior, roda tudo).
+          # - push no main: o que o push trouxe (sem o commit anterior, roda tudo).
           base=""
           if [ "$EVENT_NAME" = "pull_request" ]; then
             base=$(git merge-base "origin/${BASE_REF}" HEAD)
-          elif [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
-            base=$(git merge-base "origin/${DEFAULT_BRANCH}" "$SHA")
           elif [ -n "$BEFORE" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             base="$BEFORE"
           fi
@@ -63,9 +60,12 @@ jobs:
             frontend=true
           else
             # quotePath=false: caminhos com acento saem crus, sem aspas.
-            files=$(git -c core.quotePath=false diff --name-only "$base" "$SHA")
+            # --no-renames: um arquivo movido lista a origem e o destino (as duas áreas rodam).
+            files=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$SHA")
             echo "Arquivos alterados desde ${base}:"
             echo "${files:-(nenhum)}"
+            # Dependências entre áreas: se um teste passar a ler arquivos de outra pasta,
+            # acrescente a regra aqui (senão o job dele é pulado quando só essa pasta muda).
             while IFS= read -r file; do
               [ -z "$file" ] && continue
               case "$file" in
@@ -74,9 +74,17 @@ jobs:
                   backend=true
                   infra=true
                   ;;
-                infra/*) infra=true ;;
+                infra/*)
+                  # Os testes do backend leem o template e o samconfig (test_template*.py).
+                  backend=true
+                  infra=true
+                  ;;
+                requirements/*)
+                  # test_requirements.py compara o seed com o Apêndice A dos requisitos.
+                  backend=true
+                  ;;
                 frontend/*) frontend=true ;;
-                requirements/* | .claude/* | *.md) ;;
+                .claude/* | *.md) ;;
                 *)
                   # .github/, arquivos da raiz (.gitignore, .gitattributes...) e qualquer
                   # outro caminho: roda tudo.
