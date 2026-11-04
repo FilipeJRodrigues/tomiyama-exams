@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # Branches de trabalho rodam pelo PR; o push só roda no main (evita jobs duplicados).
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
