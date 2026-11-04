@@ -1,0 +1,13 @@
+# Fim de linha LF em todo texto, também na cópia de trabalho do Windows
+# (o prettier e o ruff conferem LF; com CRLF o format:check falha localmente).
+* text=auto eol=lf
+
+# Binários: sem conversão nem diff de texto.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

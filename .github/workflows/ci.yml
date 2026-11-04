@@ -1,20 +1,113 @@
 name: CI
 
 on:
+  # Branches de trabalho rodam pelo PR; o push só roda no main (evita jobs duplicados).
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # No PR, um push novo cancela o run antigo (grupo por ref). No main, cada merge confere só
+  # as áreas que trouxe, então nenhum run pode ser cancelado, nem na fila: grupo por commit.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Áreas alteradas
+    # Decide quais áreas rodam. Os jobs de área são pulados por `if` (job pulado conta como
+    # aprovado na proteção do branch); `paths:` no workflow não é usado porque um workflow
+    # que não roda não reporta as checagens obrigatórias e trava o PR.
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.areas.outputs.backend }}
+      infra: ${{ steps.areas.outputs.infra }}
+      frontend: ${{ steps.areas.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Listar arquivos alterados
+        id: areas
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          backend=false
+          infra=false
+          frontend=false
+
+          # Base da comparação:
+          # - PR: o que o PR traz em relação ao branch de destino;
+          # - push no main: o que o push trouxe (sem o commit anterior, roda tudo).
+          base=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base=$(git merge-base "origin/${BASE_REF}" HEAD)
+          elif [ -n "$BEFORE" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          fi
+
+          if [ -z "$base" ]; then
+            echo "Sem base de comparação: roda todas as áreas."
+            backend=true
+            infra=true
+            frontend=true
+          else
+            # quotePath=false: caminhos com acento saem crus, sem aspas.
+            # --no-renames: um arquivo movido lista a origem e o destino (as duas áreas rodam).
+            files=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$SHA")
+            echo "Arquivos alterados desde ${base}:"
+            echo "${files:-(nenhum)}"
+            # Dependências entre áreas: se um teste passar a ler arquivos de outra pasta,
+            # acrescente a regra aqui (senão o job dele é pulado quando só essa pasta muda).
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                backend/*)
+                  # O template empacota o código do backend: infra roda junto.
+                  backend=true
+                  infra=true
+                  ;;
+                infra/*)
+                  # Os testes do backend leem o template e o samconfig (test_template*.py).
+                  backend=true
+                  infra=true
+                  ;;
+                requirements/*)
+                  # test_requirements.py compara o seed com o Apêndice A dos requisitos.
+                  backend=true
+                  ;;
+                frontend/*) frontend=true ;;
+                .claude/* | *.md) ;;
+                *)
+                  # .github/, arquivos da raiz (.gitignore, .gitattributes...) e qualquer
+                  # outro caminho: roda tudo.
+                  backend=true
+                  infra=true
+                  frontend=true
+                  ;;
+              esac
+            done <<< "$files"
+          fi
+
+          {
+            echo "backend=$backend"
+            echo "infra=$infra"
+            echo "frontend=$frontend"
+          } >> "$GITHUB_OUTPUT"
+          echo "backend=$backend infra=$infra frontend=$frontend"
+
   backend:
     name: Backend (lint e testes)
+    needs: changes
+    # Se a detecção falhar, roda mesmo assim (falha aberta): pular aqui aprovaria a checagem.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,6 +129,8 @@ jobs:
 
   infra:
     name: Template SAM (cfn-lint)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.infra == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -48,6 +143,8 @@ jobs:
 
   frontend:
     name: Frontend (lint, tipos, testes e build)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.frontend == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -75,6 +172,7 @@ jobs:
   regression:
     name: Correção traz teste de regressão
     # Branches de correção (fix/*) precisam adicionar ou alterar um teste de regressão.
+    # Vale para qualquer área: não depende da detecção de caminhos.
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/')
     runs-on: ubuntu-latest
     steps:
