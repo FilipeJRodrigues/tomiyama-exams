@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { forgetRecentRequirementWrites } from '../api/recentRequirementWrites';
+import { forgetRecentWrites } from '../api/recentWrites';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './context';
 import type { AuthService, AuthUser, SignInInput } from './types';
 
@@ -64,7 +64,7 @@ export function AuthProvider({ service, children }: Props) {
       // Every end of session (Sair or a 401 from the API) drops the cached data, so the
       // next user of this browser never sees the previous one's students (LGPD).
       queryClient.clear();
-      forgetRecentRequirementWrites(queryClient);
+      forgetRecentWrites(queryClient);
       setUser(null);
       setStatus('signedOut');
     }

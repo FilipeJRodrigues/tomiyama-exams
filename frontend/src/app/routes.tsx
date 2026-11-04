@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from 'react-router';
 
 import { BeltsPage } from '../features/belts/BeltsPage';
 import { ExamDayPage } from '../features/exam-day/ExamDayPage';
+import { EventsPage } from '../features/events/EventsPage';
 import { ExamPage } from '../features/exam/ExamPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { SignUpPage } from '../features/auth/SignUpPage';
@@ -39,7 +40,7 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
                 { path: paths.exam, element: <ExamPage /> },
                 { path: paths.belts, element: <BeltsPage /> },
                 { path: paths.requirements, element: <RequirementsPage /> },
-                { path: paths.events, element: <PlaceholderPage title="Eventos" /> },
+                { path: paths.events, element: <EventsPage /> },
                 { path: paths.academy, element: <PlaceholderPage title="Academia" /> },
               ],
             },

@@ -9,9 +9,10 @@
  * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
  * examiners (`handlers/users.py`), the settings (`handlers/settings.py`, read only) and the
  * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010). The belts screen (§ 6.5) gets
- * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015) and the
+ * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015), the
  * requirements CRUD (`handlers/requirements.py`, `build_requirement` in
- * `domain/requirements.py`: RN017).
+ * `domain/requirements.py`: RN017) and the events CRUD (`handlers/events.py`,
+ * `domain/events.py`: RN016).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
@@ -21,6 +22,7 @@ import type {
   Belt,
   BeltLevel,
   Eligibility,
+  EventStatus,
   Exam,
   ExamEvent,
   ExamSheet,
@@ -68,6 +70,10 @@ const MSG_EXAMINERS_ONLY = 'Esta área é dos examinadores';
 const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
 const MSG_ALREADY_CONFIRMED = 'Presença já confirmada neste evento';
 const MSG_EVENT_CLOSED = 'Evento encerrado';
+const MSG_EVENT_HAS_EXAMS = 'Evento possui exames registrados';
+const MSG_EVENT_DATE_LOCKED = 'A data do evento não pode ser alterada';
+const EVENT_MAX_NAME = 80;
+const EVENT_STATUSES: readonly EventStatus[] = ['OPEN', 'CLOSED'];
 const MSG_STUDENT_INACTIVE = 'Aluno inativo não pode fazer exame';
 const MSG_EXAM_NOT_FOUND = 'Exame não encontrado';
 const MSG_REQUIREMENT_NOT_FOUND = 'Requisito não encontrado';
@@ -443,6 +449,51 @@ function toView(db: MockDb, item: MockStudent, reference: string): StudentView {
   };
 }
 
+/** Like `utc_now_iso`: UTC to the second, `2026-11-03T12:00:00+00:00`. */
+function utcNowIso(): string {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, '+00:00');
+}
+
+/** Like `_status` in `domain/events.py`: absent (or `null`) is the fallback. */
+function eventStatusField(payload: Payload, fallback: EventStatus): EventStatus {
+  const value = payload.status;
+  if (value === null || value === undefined) return fallback;
+  const status = EVENT_STATUSES.find((candidate) => candidate === value);
+  if (!status) throw new MockValidationError('Situação: valor inválido');
+  return status;
+}
+
+/** Like `create_event`: name, then date, then status (default `OPEN`). */
+function buildEvent(payload: Payload): ExamEvent {
+  const name = requiredStr(payload, 'name', 'Nome', EVENT_MAX_NAME);
+  const examDate = dateField(payload, 'exam_date', 'Data do exame');
+  const status = eventStatusField(payload, 'OPEN');
+  const now = utcNowIso();
+  return {
+    id: crypto.randomUUID(),
+    name,
+    exam_date: examDate,
+    status,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+/**
+ * Like `update_event`: name and status (a closed event may be reopened); the same
+ * `exam_date` may be resent, another one is refused.
+ */
+function applyEventUpdate(existing: ExamEvent, payload: Payload): ExamEvent {
+  const name = requiredStr(payload, 'name', 'Nome', EVENT_MAX_NAME);
+  const status = eventStatusField(payload, existing.status);
+  const rawDate = payload.exam_date;
+  if (rawDate !== null && rawDate !== undefined && rawDate !== '') {
+    const examDate = dateField(payload, 'exam_date', 'Data do exame');
+    if (examDate !== existing.exam_date) throw new MockValidationError(MSG_EVENT_DATE_LOCKED);
+  }
+  return { ...existing, name, status, updated_at: utcNowIso() };
+}
+
 /** Like `sort_events`: most recent `exam_date` first, then the newest created, then id. */
 function sortEvents(events: ExamEvent[]): ExamEvent[] {
   const key = (event: ExamEvent) => `${event.exam_date}|${event.created_at}|${event.id}`;
@@ -719,6 +770,54 @@ export function createHandlers({
       if (!claims) return unauthorized();
       if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
       return HttpResponse.json(sortEvents(db.events));
+    }),
+
+    http.post(url('/events'), ({ request }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      return withValidation(async () => {
+        const created = buildEvent(await readPayload(request));
+        db.events.push(created);
+        return HttpResponse.json(created, { status: 201 });
+      });
+    }),
+
+    http.get(url('/events/:id'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const event = db.events.find((candidate) => candidate.id === params.id);
+      if (!event) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      return HttpResponse.json(event);
+    }),
+
+    http.put(url('/events/:id'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const index = db.events.findIndex((candidate) => candidate.id === params.id);
+      const existing = db.events[index];
+      if (!existing) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      return withValidation(async () => {
+        const updated = applyEventUpdate(existing, await readPayload(request));
+        db.events[index] = updated;
+        return HttpResponse.json(updated);
+      });
+    }),
+
+    http.delete(url('/events/:id'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const existing = db.events.find((candidate) => candidate.id === params.id);
+      if (!existing) return errorResponse(404, MSG_EVENT_NOT_FOUND);
+      // RN016: an event with exams is never deleted (the exams keep the history).
+      if (db.exams.some((exam) => exam.event_id === existing.id)) {
+        return errorResponse(409, MSG_EVENT_HAS_EXAMS);
+      }
+      db.events = db.events.filter((candidate) => candidate.id !== existing.id);
+      return new HttpResponse(null, { status: 204 });
     }),
 
     http.get(url('/events/:id/exams'), ({ request, params }) => {
