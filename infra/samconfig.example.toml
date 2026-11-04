@@ -23,3 +23,4 @@ s3_prefix = "tomiyama-dev"
 # Na linha de comando, --parameter-overrides substitui esta linha inteira:
 # repita Environment=dev se usar a opção.
 parameter_overrides = "Environment=dev AdminEmail=voce@example.com"
+# teste da esteira por área (#67), não fazer merge
