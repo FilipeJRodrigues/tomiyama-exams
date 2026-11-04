@@ -47,7 +47,7 @@ Rode, dentro de `frontend/`, todos os scripts de verificação do `package.json`
 
 ```bash
 npm run lint
-npx tsc --noEmit
+npm run typecheck   # tsc -b; `npx tsc --noEmit` na raiz não confere nada ("files": [])
 npm test
 npm run build
 ```
