@@ -95,6 +95,22 @@ export interface ExamEvent {
   updated_at: IsoDateTime;
 }
 
+/** Body of `POST /events` (examiners, RN016); without `status` the API uses `OPEN`. */
+export interface EventCreateInput {
+  name: string;
+  exam_date: IsoDate;
+  status?: EventStatus;
+}
+
+/**
+ * Body of `PUT /events/{id}`: only `name` and `status` change (a closed event may be
+ * reopened). `exam_date` never changes after the creation, so it is not sent.
+ */
+export interface EventUpdateInput {
+  name: string;
+  status: EventStatus;
+}
+
 /** A student's exam in an event, as stored (unique per event and student). */
 export interface Exam {
   id: string;

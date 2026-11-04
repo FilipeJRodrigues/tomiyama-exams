@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 
 import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
+import { compareEvents, overlayRecentEventWrites, recordEventWrite } from './recentEventWrites';
 import {
   compareRequirements,
   overlayRecentWrites,
@@ -15,6 +16,8 @@ import type {
   ConfirmAttendanceInput,
   DecisionInput,
   DecisionOutcome,
+  EventCreateInput,
+  EventUpdateInput,
   ExamEvent,
   ExamSheet,
   ExamView,
@@ -96,6 +99,29 @@ export function deleteStudent(api: ApiClient, id: string): Promise<void> {
 
 export function listEvents(api: ApiClient): Promise<ExamEvent[]> {
   return api.get<ExamEvent[]>('/events');
+}
+
+function eventPath(id: string): string {
+  return `/events/${encodeURIComponent(id)}`;
+}
+
+/** `POST /events` (examiners, RN016). */
+export function createEvent(api: ApiClient, input: EventCreateInput): Promise<ExamEvent> {
+  return api.post<ExamEvent>('/events', input);
+}
+
+/** `PUT /events/{id}`: name and status (RN016). */
+export function updateEvent(
+  api: ApiClient,
+  id: string,
+  input: EventUpdateInput,
+): Promise<ExamEvent> {
+  return api.put<ExamEvent>(eventPath(id), input);
+}
+
+/** `DELETE /events/{id}`; 409 when the event has exams (RN016). */
+export function deleteEvent(api: ApiClient, id: string): Promise<void> {
+  return api.delete(eventPath(id));
 }
 
 function eventExamsPath(eventId: string): string {
@@ -320,10 +346,19 @@ export function useForgetStudent() {
   };
 }
 
-/** `GET /events`, from the most recent to the oldest (examiners only). */
+/**
+ * `GET /events`, from the most recent to the oldest (examiners only). The answer goes through
+ * the recent writes before reaching the cache: the API reads the list with a `Scan` that is
+ * eventually consistent, and a late answer never undoes a write it has confirmed (see
+ * `recentEventWrites`).
+ */
 export function useEvents() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.events, queryFn: () => listEvents(api) });
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.events,
+    queryFn: async () => overlayRecentEventWrites(queryClient, await listEvents(api)),
+  });
 }
 
 /** `GET /events/{id}/exams`: the event's exams, by student name. */
@@ -479,6 +514,24 @@ export function useRequirements(filters: RequirementFilters, enabled = true) {
 export { compareRequirements };
 
 /**
+ * Restarts the reads of these lists that are still on their first load (or retrying after an
+ * error): a reload would only wait for such an older read, while a list with data has its
+ * read replaced (TanStack's `cancelRefetch`). A restarted read goes back to the state before
+ * it, with no data to lose; the active ones fetch again on the invalidation that follows, an
+ * inactive one when it is shown again.
+ */
+function restartFirstLoads(
+  queryClient: QueryClient,
+  filters: { queryKey: readonly unknown[]; exact?: boolean },
+): void {
+  const firstLoads = queryClient.getQueryCache().findAll({
+    ...filters,
+    predicate: (query) => query.state.fetchStatus === 'fetching' && query.state.data === undefined,
+  });
+  for (const query of firstLoads) void query.cancel({ revert: true });
+}
+
+/**
  * A write confirmed by the API (`saved`, or `null` for an id that no longer exists): it is
  * recorded, laid over every cached list at once, and the lists reload (their answers go
  * through the same record, so a late one is corrected, never cancelled). The exam sheets in
@@ -504,11 +557,7 @@ function applyConfirmedWrite(
     const filters = (key[1] ?? {}) as RequirementFilters;
     queryClient.setQueryData<Requirement[]>(key, overlayRecentWrites(queryClient, filters, data));
   }
-  const firstLoads = queryClient.getQueryCache().findAll({
-    queryKey: queryKeys.allRequirements,
-    predicate: (query) => query.state.fetchStatus === 'fetching' && query.state.data === undefined,
-  });
-  for (const query of firstLoads) void query.cancel({ revert: true });
+  restartFirstLoads(queryClient, { queryKey: queryKeys.allRequirements });
   void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
   void queryClient.invalidateQueries({ predicate: (query) => isExamSheetKey(query.queryKey) });
 }
@@ -530,6 +579,97 @@ function reloadOnConflict(queryClient: QueryClient, id: string, error: unknown):
     void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
   }
 }
+
+/**
+ * An event write confirmed by the API (`saved`, or `null` for an id that no longer exists):
+ * it is recorded, laid over the cached list at once (so the exam day picks the right open
+ * event), and the list reloads; its answer goes through the same record, so a late `Scan`
+ * is corrected, never cancelled. After an edit, what is cached under the event (its exams
+ * and exam sheets, which show its name and status) reloads too: a closed event blocks
+ * attendance and marking (RN016).
+ */
+function applyConfirmedEventWrite(
+  queryClient: QueryClient,
+  id: string,
+  saved: ExamEvent | null,
+  { edited = false }: { edited?: boolean } = {},
+): void {
+  recordEventWrite(queryClient, id, saved);
+  queryClient.setQueryData<ExamEvent[]>(
+    queryKeys.events,
+    (current) => current && overlayRecentEventWrites(queryClient, current),
+  );
+  // Exact: `['events']` is also the prefix of the event exams and the exam sheets.
+  restartFirstLoads(queryClient, { queryKey: queryKeys.events, exact: true });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.events, exact: true });
+  if (edited) void queryClient.invalidateQueries({ queryKey: queryKeys.eventExams(id) });
+}
+
+/** The 404 of `PUT`/`DELETE /events/{id}` when the event does not exist. */
+const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
+
+/**
+ * A refusal of an edit or a deletion. 404 "Evento não encontrado": the event no longer exists
+ * (another examiner deleted it), so it is recorded as gone and a late read does not bring it
+ * back. A 409 (exams registered meanwhile): the list reloads.
+ */
+function reloadEventsOnConflict(queryClient: QueryClient, id: string, error: unknown): void {
+  if (!(error instanceof ApiError) || ![404, 409].includes(error.status)) return;
+  if (error.status === 404 && error.message === MSG_EVENT_NOT_FOUND) {
+    applyConfirmedEventWrite(queryClient, id, null);
+  } else {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.events, exact: true });
+  }
+}
+
+/** `POST /events` (§ 6.5, RN016); without `status` the API uses `OPEN`. */
+export function useCreateEvent() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EventCreateInput) => createEvent(api, input),
+    onSuccess: (saved) => {
+      applyConfirmedEventWrite(queryClient, saved.id, saved);
+    },
+  });
+}
+
+export interface UpdateEventVariables {
+  id: string;
+  input: EventUpdateInput;
+}
+
+/** `PUT /events/{id}` (§ 6.5, RN016): name and status; a closed event may be reopened. */
+export function useUpdateEvent() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: UpdateEventVariables) => updateEvent(api, id, input),
+    onSuccess: (saved) => {
+      applyConfirmedEventWrite(queryClient, saved.id, saved, { edited: true });
+    },
+    onError: (error, { id }) => {
+      reloadEventsOnConflict(queryClient, id, error);
+    },
+  });
+}
+
+/** `DELETE /events/{id}` (§ 6.5); 409 "Evento possui exames registrados" (RN016). */
+export function useDeleteEvent() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteEvent(api, id),
+    onSuccess: (_result, id) => {
+      applyConfirmedEventWrite(queryClient, id, null);
+    },
+    onError: (error, id) => {
+      reloadEventsOnConflict(queryClient, id, error);
+    },
+  });
+}
+
+export { compareEvents };
 
 /** `POST /requirements` (§ 6.5, RN017). */
 export function useCreateRequirement() {

@@ -3,51 +3,17 @@
  *
  * `GET /requirements?belt_id` reads the `by_belt` GSI, which is eventually consistent: right
  * after a write it may still answer the list from before it, and a read asked before the
- * write may answer after it. Neither may undo what the API has just confirmed (201/200/204,
- * or a 404 saying the item no longer exists). So each confirmed write is kept for
- * `RECENT_WRITE_WINDOW_MS`, and every list that reaches the cache (a read or the patch right
- * after the write) goes through `overlayRecentWrites`. Nothing is cancelled: a late answer is
- * simply corrected.
- *
- * The record is per `QueryClient` (a session's cache), never module-wide, and is dropped
- * with the cache at the end of the session (`forgetRecentRequirementWrites`).
+ * write may answer after it. Neither may undo what the API has just confirmed. Every list that
+ * reaches the cache (a read or the patch right after the write) goes through
+ * `overlayRecentWrites`; the record itself lives in `recentWrites` (per `QueryClient`, for
+ * `RECENT_WRITE_WINDOW_MS`, dropped at the end of the session).
  */
 import type { QueryClient } from '@tanstack/react-query';
 
+import { forgetRecentWrites, liveRecentWrites, recordRecentWrite } from './recentWrites';
 import type { Requirement, RequirementFilters } from './types';
 
-/** How long a confirmed write overrides the reads (the GSI catches up well within it). */
-export const RECENT_WRITE_WINDOW_MS = 30_000;
-
-interface RecentWrite {
-  /** The item as the API saved it, or `null` when it no longer exists (deleted, 404). */
-  saved: Requirement | null;
-  /** `Date.now()` when the API confirmed it. */
-  confirmedAt: number;
-}
-
-/** id → its latest confirmed write. */
-type WriteLog = Map<string, RecentWrite>;
-
-const logs = new WeakMap<QueryClient, WriteLog>();
-
-function logOf(queryClient: QueryClient): WriteLog {
-  let log = logs.get(queryClient);
-  if (!log) {
-    log = new Map();
-    logs.set(queryClient, log);
-  }
-  return log;
-}
-
-/** The writes still inside the window; the expired ones are dropped. */
-function liveWrites(queryClient: QueryClient, now: number): WriteLog {
-  const log = logOf(queryClient);
-  for (const [id, write] of log) {
-    if (now - write.confirmedAt >= RECENT_WRITE_WINDOW_MS) log.delete(id);
-  }
-  return log;
-}
+export { RECENT_WRITE_WINDOW_MS } from './recentWrites';
 
 /**
  * Keeps a write confirmed by the API: the saved item, or `null` for an id that no longer
@@ -60,12 +26,12 @@ export function recordRequirementWrite(
   saved: Requirement | null,
   now: number = Date.now(),
 ): void {
-  logOf(queryClient).set(id, { saved, confirmedAt: now });
+  recordRecentWrite(queryClient, 'requirements', id, saved, now);
 }
 
-/** Drops every recorded write (end of session, with the rest of the cache). */
+/** Drops every recorded requirement write. */
 export function forgetRecentRequirementWrites(queryClient: QueryClient): void {
-  logs.delete(queryClient);
+  forgetRecentWrites(queryClient, 'requirements');
 }
 
 /** Sheet order inside a belt, as the API sends it: `sort_order`, then id. */
@@ -95,7 +61,7 @@ export function overlayRecentWrites(
   items: readonly Requirement[],
   now: number = Date.now(),
 ): Requirement[] {
-  const writes = liveWrites(queryClient, now);
+  const writes = liveRecentWrites(queryClient, 'requirements', now);
   if (writes.size === 0) return [...items];
 
   const result: Requirement[] = [];
