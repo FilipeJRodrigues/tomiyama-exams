@@ -9,6 +9,8 @@ import type {
   ExamAnswer,
   ExamEvent,
   Examiner,
+  ImageContentType,
+  LogoSlot,
   Requirement,
   RequirementKind,
   Student,
@@ -566,8 +568,19 @@ export interface MockSettings {
   updated_at: string | null;
 }
 
+/** A stored logo (RN012): the metadata and the file in base64, which the API keeps in S3. */
+export interface MockLogo {
+  content_type: ImageContentType;
+  size: number;
+  updated_at: string;
+  updated_by: string;
+  data: string;
+}
+
 export interface MockDb {
   settings: MockSettings;
+  /** The logos by slot; a missing slot has no logo (`GET` 404). */
+  logos: Partial<Record<LogoSlot, MockLogo>>;
   belts: Belt[];
   students: MockStudent[];
   events: ExamEvent[];
@@ -615,6 +628,7 @@ export function createMockDb({
       created_at: '2026-10-01T12:00:00+00:00',
       updated_at: '2026-10-01T12:00:00+00:00',
     },
+    logos: {},
     belts: mockBelts.map((belt) => ({ ...belt })),
     students: students.map(copy),
     events: initialMockEvents.map((event) => ({ ...event })),

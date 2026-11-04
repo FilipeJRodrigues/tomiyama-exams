@@ -1,5 +1,6 @@
 import { Alert, Button, Group, Loader, Stack, Text } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
+import type { Ref } from 'react';
 
 import { ApiError, errorMessage } from '../../api/client';
 
@@ -19,10 +20,12 @@ interface LoadErrorProps {
   error: unknown;
   retrying: boolean;
   onRetry: () => void;
+  /** The "Tentar de novo" button, for a screen that moves the focus to it. */
+  retryRef?: Ref<HTMLButtonElement>;
 }
 
 /** Error loading data: the API message, with "Tentar de novo" unless it is a 403. */
-export function LoadError({ title, error, retrying, onRetry }: LoadErrorProps) {
+export function LoadError({ title, error, retrying, onRetry, retryRef }: LoadErrorProps) {
   const forbidden = error instanceof ApiError && error.status === 403;
   return (
     <Alert
@@ -35,7 +38,7 @@ export function LoadError({ title, error, retrying, onRetry }: LoadErrorProps) {
       <Stack gap="sm" align="flex-start">
         <Text size="sm">{errorMessage(error)}</Text>
         {!forbidden && (
-          <Button variant="default" loading={retrying} onClick={onRetry}>
+          <Button ref={retryRef} variant="default" loading={retrying} onClick={onRetry}>
             Tentar de novo
           </Button>
         )}

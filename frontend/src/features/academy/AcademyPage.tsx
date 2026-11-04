@@ -8,15 +8,17 @@ import { useAuth } from '../../auth/useAuth';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { AcademyForm } from './AcademyForm';
+import { LogosSection } from './LogosSection';
 import { isFirstUse } from './academyFormModel';
 
 const TITLE_ID = 'academy-title';
 const DATA_TITLE_ID = 'academy-data-title';
 
 /**
- * § 6.6 academy screen (examiners), first part: the academy data (`GET`/`PUT /settings`),
- * with the sensei chosen among the active examiners (`GET /examiners`) by the admin master
- * only. The logos and the certificate signatures come later.
+ * § 6.6 academy screen (examiners): the academy data (`GET`/`PUT /settings`), with the
+ * sensei chosen among the active examiners (`GET /examiners`) by the admin master only, and
+ * below it the two logos (`/settings/logos/{slot}`, RN012), loaded and saved on their own.
+ * The certificate signatures come later.
  */
 export function AcademyPage() {
   const { user } = useAuth();
@@ -123,6 +125,7 @@ export function AcademyPage() {
         )}
         {content}
       </Stack>
+      <LogosSection />
     </Stack>
   );
 }

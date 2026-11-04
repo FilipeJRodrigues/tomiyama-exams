@@ -17,6 +17,14 @@ export const NETWORK_ERROR_STATUS = 0;
 const NETWORK_MESSAGE =
   'Não foi possível falar com o servidor. Verifique a conexão e tente de novo.';
 
+/**
+ * The error of a request that cannot go out because the browser is offline (a read paused by
+ * TanStack Query, waiting for the network): the same as a request that got no answer.
+ */
+export function networkError(): ApiError {
+  return new ApiError(NETWORK_ERROR_STATUS, NETWORK_MESSAGE);
+}
+
 /** Messages API Gateway itself returns in English (no Lambda involved). */
 const GATEWAY_MESSAGES: Record<string, string> = {
   unauthorized: 'Sua sessão expirou. Entre de novo.',
