@@ -78,6 +78,18 @@ function fieldMessages() {
   return screen.queryAllByText(FIELD_MESSAGE);
 }
 
+/** Holds every `PUT /settings` until `release()`, then lets the mock answer. */
+function holdPuts() {
+  const held = gate();
+  server.use(
+    http.put(SETTINGS_URL, async () => {
+      await held.wait;
+      return undefined;
+    }),
+  );
+  return held;
+}
+
 describe('academy screen, the fields follow the settings read again (§ 6.6)', () => {
   it('nothing edited: name, city and the master selector show the new values', async () => {
     await openAcademy('master');
@@ -260,6 +272,29 @@ describe('academy screen, a reload while the user works (§ 6.6, § 6.7)', () =>
     expect(cityField()).toHaveFocus();
   });
 
+  it('the master typing the name: the untouched selector follows, the name and focus stay', async () => {
+    const { user } = await openAcademy('master');
+    await user.clear(nameField());
+    await user.keyboard('Academia N');
+    savedElsewhere({ academy_name: 'Outro nome', sensei_user_id: MOCK_USER_IDS.examiner });
+
+    readGate = gate();
+    await windowFocusBack();
+    await user.keyboard('ov');
+    readGate.release();
+
+    await waitFor(() => {
+      expect(senseiSelect()).toHaveValue(MOCK_USER_IDS.examiner);
+    });
+    expect(senseiSelect()).toHaveDisplayValue(SENSEI_SIMULADO);
+    expect(nameField()).toHaveValue('Academia Nov');
+    expect(nameField()).toHaveFocus();
+
+    await user.keyboard('a');
+    expect(nameField()).toHaveValue('Academia Nova');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('a reload does not check the fields: an emptied name shows no message', async () => {
     const { user } = await openAcademy('examiner');
     await user.clear(nameField());
@@ -348,14 +383,9 @@ describe('academy screen, after a save the answer is the new base (§ 6.6)', () 
   });
 
   it('what was typed while the save was on its way stays through a later reload', async () => {
-    const held = gate();
-    server.use(
-      http.put(SETTINGS_URL, async () => {
-        await held.wait;
-        return undefined;
-      }),
-    );
+    const held = holdPuts();
     const { user } = await openAcademy('examiner');
+    await replaceText(user, nameField(), '  Academia Nova  ');
     await replaceText(user, cityField(), ' Araraquara ');
     await user.click(saveButton());
     await waitFor(() => {
@@ -365,6 +395,8 @@ describe('academy screen, after a save the answer is the new base (§ 6.6)', () 
     held.release();
     expect(await screen.findByText(SAVED)).toBeVisible();
     expect(cityField()).toHaveValue(' Araraquara x');
+    // Field by field: the name, untouched since the submission, is the one stored.
+    expect(nameField()).toHaveValue('Academia Nova');
 
     savedElsewhere({ academy_name: 'Outro nome', certificate_city: 'Ibaté' });
     await windowFocusBack();
@@ -373,5 +405,39 @@ describe('academy screen, after a save the answer is the new base (§ 6.6)', () 
       expect(nameField()).toHaveValue('Outro nome');
     });
     expect(cityField()).toHaveValue(' Araraquara x');
+  });
+
+  it('a reload while the save is on its way: the fields end with what the API stored', async () => {
+    const held = holdPuts();
+    const { user } = await openAcademy('examiner');
+    await replaceText(user, nameField(), 'Academia Nova');
+    await user.click(saveButton());
+    await waitFor(() => {
+      expect(saveButton()).toBeDisabled();
+    });
+
+    // Another examiner saves the city before this PUT reaches the API.
+    savedElsewhere({ certificate_city: 'Araraquara' });
+    await windowFocusBack();
+    await waitFor(() => {
+      expect(cityField()).toHaveValue('Araraquara');
+    });
+
+    held.release();
+    expect(await screen.findByText(SAVED)).toBeVisible();
+    // No lock in the API: the PUT carried the city read before, and the screen shows it.
+    expect(db.settings.certificate_city).toBe('Cidade Simulada');
+    await waitFor(() => {
+      expect(cityField()).toHaveValue('Cidade Simulada');
+    });
+    expect(nameField()).toHaveValue('Academia Nova');
+
+    // Neither field counts as edited after the save.
+    savedElsewhere({ academy_name: 'Outro nome', certificate_city: 'Ibaté' });
+    await windowFocusBack();
+    await waitFor(() => {
+      expect(nameField()).toHaveValue('Outro nome');
+    });
+    expect(cityField()).toHaveValue('Ibaté');
   });
 });

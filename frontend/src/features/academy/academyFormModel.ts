@@ -87,10 +87,7 @@ export function followSave(
 }
 
 /** Fields whose value differs between `before` and `after`, in screen order. */
-export function changedFields(
-  before: AcademyFormValues,
-  after: AcademyFormValues,
-): AcademyField[] {
+export function changedFields(before: AcademyFormValues, after: AcademyFormValues): AcademyField[] {
   return FIELD_ORDER.filter((field) => before[field] !== after[field]);
 }
 

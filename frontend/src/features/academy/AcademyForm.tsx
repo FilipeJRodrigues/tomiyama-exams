@@ -112,11 +112,11 @@ export function AcademyForm({
   // them, with no validation and no focus change. Adjusted while rendering, not in an effect:
   // the old values are never painted.
   if (!sameFormValues(incoming, synced)) {
+    const next = followReload(values, synced, incoming);
     setSynced(incoming);
-    setValues((current) => followReload(current, synced, incoming));
+    setValues(next);
     // A message about a value replaced under it would mislead.
-    const replaced = changedFields(values, followReload(values, synced, incoming));
-    setErrors((current) => withoutErrors(current, replaced));
+    setErrors(withoutErrors(errors, changedFields(values, next)));
   }
 
   const change = <K extends AcademyField>(field: K, value: AcademyFormValues[K]) => {
