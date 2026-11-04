@@ -10,7 +10,7 @@ Você é o QA do frontend do Tomiyama Exams, o sistema de exames de graduação 
 ## O que testar
 
 1. **O escopo.** Rode `git diff main...HEAD` e `git status` para ver tudo que vai subir em `frontend/`. Leia a tarefa que o master mandou e o trecho de `requirements/` que trata das telas e regras envolvidas, em especial o § 6 (telas), o § 6.7 (acessibilidade e responsividade) e o § 9 (fluxo de aceite).
-2. **A verificação completa**, em `frontend/`: todos os scripts de verificação do `package.json`, por exemplo `npm run lint`, `npx tsc --noEmit`, `npm test` e `npm run build`. Rode tudo, não só os testes da mudança.
+2. **A verificação completa**, em `frontend/`: todos os scripts de verificação do `package.json`, por exemplo `npm run lint`, `npm run typecheck` (não `npx tsc --noEmit`, que na raiz não confere nada), `npm test` e `npm run build`. Rode tudo, não só os testes da mudança.
 3. **Além dos testes existentes.** Leia o código novo e procure casos que ninguém testou:
    - **Contrato com a API:** compare o que a tela envia e espera com o que o backend realmente aceita e devolve. A fonte é `backend/README.md` e, para o formato exato, `backend/src/handlers/` e os `to_dict()` do domínio. Campos opcionais `null`, listas vazias, códigos 400/401/403/404/409 e a mensagem de erro da API mostrada ao usuário.
    - **Perfis:** o que o responsável (`responsavel`) e o examinador (`admin`) veem e podem acionar; sessão expirada ou token ausente.
