@@ -3,7 +3,7 @@
  * grouped and labelled. Target belt, kind, marks and percentages (RN004, RN006, RN007) come
  * from the API; nothing here recalculates them.
  */
-import { ApiError } from '../../api/client';
+import { ApiError, NETWORK_ERROR_STATUS } from '../../api/client';
 import type {
   Belt,
   ExamAnswer,
@@ -216,6 +216,34 @@ export function reloadsExam(error: unknown): boolean {
     return error.message === MSG_EVENT_CLOSED || error.message === MSG_ITEM_NOT_IN_BELT;
   }
   return false;
+}
+
+/** 409 of a transaction conflict that lasted (`MSG_MARK_TRY_AGAIN` in the backend). */
+const MSG_MARK_TRY_AGAIN = 'Outra marcação está em andamento. Tente de novo.';
+
+/**
+ * Statuses of a refusal that may pass by itself: no answer from the server (0), API Gateway
+ * throttling (429), DynamoDB capacity that lasted (503) and the gateway timeout (504).
+ */
+const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([NETWORK_ERROR_STATUS, 429, 503, 504]);
+
+/** A cancelled request (`AbortError`, an `Error` or a `DOMException`, not always both). */
+function isAbort(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+  );
+}
+
+/**
+ * A refused mark worth sending again by itself (§ 6.4, RN006): a 409 of a transaction
+ * conflict, 429, 503, 504 or a network failure (also an error that is not an `ApiError`,
+ * as when the session token could not be fetched, but not a cancelled request). Anything
+ * else (decided exam, closed event, 400, 403, 404, 500…) is final.
+ */
+export function isTransientMarkError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return !isAbort(error);
+  if (error.status === 409) return error.message === MSG_MARK_TRY_AGAIN;
+  return TRANSIENT_STATUSES.has(error.status);
 }
 
 export const MARK_LABELS: Record<MarkState, string> = {

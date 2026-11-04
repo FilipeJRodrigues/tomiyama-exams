@@ -1,6 +1,12 @@
 import { Alert, Box, Button, Stack, Text, Title, VisuallyHidden } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconAlertCircle, IconArrowLeft, IconLock, IconUserOff } from '@tabler/icons-react';
+import {
+  IconAlertCircle,
+  IconArrowLeft,
+  IconLock,
+  IconRefresh,
+  IconUserOff,
+} from '@tabler/icons-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -29,6 +35,7 @@ import {
   type MarkState,
 } from './examModel';
 import { focusIfLost, useScrollPadding } from './focus';
+import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
 import { useExamMarking, type MarkFailure } from './useExamMarking';
 
@@ -100,6 +107,8 @@ function Notices({ sheet }: { sheet: ExamSheet }) {
 interface MarkFailureNoticeProps {
   failure: MarkFailure;
   onClose: () => void;
+  /** "Tentar de novo", after passing refusals (`failure.retry`) while the exam takes marks. */
+  onRetry: (() => void) | undefined;
   /**
    * Where the focus goes when it was in the notice (its close button goes away, § 6.7) and
    * the item the notice names is no longer on the screen (another tab, the filter).
@@ -124,10 +133,17 @@ function markButtonOf(itemId: string): HTMLElement | null {
 
 /**
  * A refused mark (§ 6.4: "em erro, volta e avisa"), with the API message. Sticky at the top
- * of the items, so it is seen wherever the examiner is in the list.
+ * of the items, so it is seen wherever the examiner is in the list. After passing refusals
+ * (busy server, network) it offers "Tentar de novo", which sends the mark again.
  */
-function MarkFailureNotice({ failure, onClose, focusTarget }: MarkFailureNoticeProps) {
+function MarkFailureNotice({ failure, onClose, onRetry, focusTarget }: MarkFailureNoticeProps) {
   const ref = useRef<HTMLDivElement>(null);
+  // The notice leaves with the focused button: the focus goes to the item, else the title.
+  const keepFocus = () => {
+    focusIfLost([markButtonOf(failure.itemId), focusTarget.current], {
+      leaving: [ref.current],
+    });
+  };
   return (
     <Alert
       color="red"
@@ -138,9 +154,7 @@ function MarkFailureNotice({ failure, onClose, focusTarget }: MarkFailureNoticeP
       withCloseButton
       closeButtonLabel="Fechar aviso"
       onClose={() => {
-        focusIfLost([markButtonOf(failure.itemId), focusTarget.current], {
-          leaving: [ref.current],
-        });
+        keepFocus();
         onClose();
       }}
       ref={ref}
@@ -150,7 +164,23 @@ function MarkFailureNotice({ failure, onClose, focusTarget }: MarkFailureNoticeP
         zIndex: 2,
       }}
     >
-      {failure.message}
+      <Stack gap="xs" align="flex-start">
+        <Text inherit>{failure.message}</Text>
+        {onRetry && failure.retry !== undefined && (
+          <Button
+            variant="default"
+            leftSection={<IconRefresh size={18} aria-hidden />}
+            aria-label={`Tentar de novo: ${failure.item}`}
+            onClick={() => {
+              keepFocus();
+              onRetry();
+            }}
+            style={TOUCH_TARGET}
+          >
+            Tentar de novo
+          </Button>
+        )}
+      </Stack>
     </Alert>
   );
 }
@@ -212,6 +242,8 @@ interface ExamContentProps {
   settled: boolean;
   failure: MarkFailure | null;
   onDismissFailure: () => void;
+  /** "Tentar de novo" of the notice; undefined while the exam is read-only. */
+  onRetryFailure: (() => void) | undefined;
 }
 
 function ExamContent({
@@ -220,6 +252,7 @@ function ExamContent({
   settled,
   failure,
   onDismissFailure,
+  onRetryFailure,
   ...itemProps
 }: ExamContentProps) {
   const belts = useBelts();
@@ -253,7 +286,12 @@ function ExamContent({
       <ExamHeader sheet={sheet} belts={belts.data} titleRef={titleRef} />
       <Notices sheet={sheet} />
       {failure && (
-        <MarkFailureNotice failure={failure} onClose={onDismissFailure} focusTarget={titleRef} />
+        <MarkFailureNotice
+          failure={failure}
+          onClose={onDismissFailure}
+          onRetry={onRetryFailure}
+          focusTarget={titleRef}
+        />
       )}
       <ExamItems
         items={sheet.items}
@@ -338,12 +376,21 @@ export function ExamPage() {
     );
   } else {
     const markable = canMark(data.exam, data.event);
-    const onMark = (item: ExamSheetItem, state: MarkState) => {
+    // Marked items stay in place under "Só não marcados" until the tab or the filter changes.
+    const keepItem = (itemId: string) => {
       setKept((current) => ({
         examKey,
-        ids: new Set([...(current.examKey === examKey ? current.ids : []), item.id]),
+        ids: new Set([...(current.examKey === examKey ? current.ids : []), itemId]),
       }));
+    };
+    const onMark = (item: ExamSheetItem, state: MarkState) => {
+      keepItem(item.id);
       marking.mark(item, state);
+    };
+    const failure = marking.failure;
+    const onRetryFailure = () => {
+      if (failure) keepItem(failure.itemId);
+      marking.retryFailure();
     };
     content = (
       <ExamContent
@@ -363,8 +410,9 @@ export function ExamPage() {
         keep={keep}
         onMark={markable ? onMark : undefined}
         settled={!marking.busy}
-        failure={marking.failure}
+        failure={failure}
         onDismissFailure={marking.dismissFailure}
+        onRetryFailure={markable ? onRetryFailure : undefined}
       />
     );
   }
