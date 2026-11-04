@@ -31,6 +31,7 @@ import {
   type CategoryGroup,
   type MarkState,
 } from './examModel';
+import { preventMarkKeyRepeat, type AcceptMarkClick, type MarkChoice } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
 
 const MARK_ICONS = {
@@ -67,8 +68,6 @@ export function MarkText({ state }: { state: MarkState }) {
   );
 }
 
-type MarkChoice = 'correct' | 'wrong';
-
 const CHOICES: readonly MarkChoice[] = ['correct', 'wrong'];
 
 /** Mantine color of the pressed button; its text uses the contrast-checked light color. */
@@ -82,15 +81,18 @@ const CHOICE_ICONS = {
 interface MarkButtonsProps {
   item: ExamSheetItem;
   onMark: (item: ExamSheetItem, state: MarkState) => void;
+  /** Drops a double tap on the same button (`useMarkClickGuard` of the exam screen). */
+  acceptClick: AcceptMarkClick;
 }
 
 /**
  * Certo / Errado of one item (§ 6.4, RN006), at least 44 px tall. The pressed one has
  * `aria-pressed`, a filled icon, a border and a tinted background, so the state never
  * depends on color alone (§ 6.7); clicking it again takes the mark off. The accessible
- * name starts with the visible text and names the item ("Certo: Osoto gari").
+ * name starts with the visible text and names the item ("Certo: Osoto gari"). A double tap
+ * or the Enter key held down counts as one click (`markClickGuard`).
  */
-export function MarkButtons({ item, onMark }: MarkButtonsProps) {
+export function MarkButtons({ item, onMark, acceptClick }: MarkButtonsProps) {
   const state = markState(item);
   return (
     <Group gap="xs" wrap="nowrap" role="group" aria-label={`Marcação: ${item.description}`}>
@@ -107,8 +109,11 @@ export function MarkButtons({ item, onMark }: MarkButtonsProps) {
             aria-label={`${MARK_LABELS[choice]}: ${item.description}`}
             data-choice={choice}
             leftSection={<Icon size={20} aria-hidden />}
+            onKeyDown={preventMarkKeyRepeat}
             onClick={() => {
-              onMark(item, nextMarkState(state, choice));
+              const next = nextMarkState(state, choice);
+              if (!acceptClick(item.id, choice, state, next)) return;
+              onMark(item, next);
             }}
             style={{
               ...TOUCH_TARGET,

@@ -21,6 +21,7 @@ import {
 } from '../../../src/mocks/data';
 import { createHandlers } from '../../../src/mocks/handlers';
 import { server, TEST_API_URL } from '../../msw-server';
+import { DOUBLE_TAP_MS } from '../../../src/features/exam/markClickGuard';
 import { renderApp } from '../../render';
 import { setViewportWidth } from '../../viewport';
 
@@ -673,6 +674,8 @@ describe('marking the exam items (§ 6.4)', () => {
       await waitFor(() => {
         expect(answerOf(PROFESSOR)).toBeUndefined();
       });
+      // Past the double tap window: a second click on the same button there is ignored.
+      vi.setSystemTime(Date.now() + DOUBLE_TAP_MS);
       await user.click(button('Certo: Professor'));
       await waitFor(() => {
         expect(answerOf(PROFESSOR)?.correct).toBe(true);

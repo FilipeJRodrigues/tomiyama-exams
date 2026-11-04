@@ -35,6 +35,7 @@ import {
   type MarkState,
 } from './examModel';
 import { focusIfLost, useScrollPadding } from './focus';
+import { useMarkClickGuard } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
 import { useExamMarking, type MarkFailure } from './useExamMarking';
@@ -277,8 +278,10 @@ function ExamContent({
       </VisuallyHidden>
     </>
   );
+  // Lives here, not in the buttons: they remount when the tab or the filter changes.
+  const acceptClick = useMarkClickGuard();
   const renderMark: RenderMark = onMark
-    ? (item) => <MarkButtons item={item} onMark={onMark} />
+    ? (item) => <MarkButtons item={item} onMark={onMark} acceptClick={acceptClick} />
     : renderReadOnlyMark;
 
   const main = (
