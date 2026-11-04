@@ -57,7 +57,11 @@ def _from_item(item: dict[str, Any]) -> Requirement:
 
 def get_requirement(requirement_id: str) -> Requirement | None:
     """Return an item by id, or None."""
-    item = table(REQUIREMENTS_TABLE_ENV).get_item(Key={"id": requirement_id}).get("Item")
+    item = (
+        table(REQUIREMENTS_TABLE_ENV)
+        .get_item(Key={"id": requirement_id}, ConsistentRead=True)
+        .get("Item")
+    )
     return _from_item(item) if item else None
 
 

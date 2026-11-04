@@ -29,7 +29,7 @@ def _from_item(item: dict[str, Any]) -> ExamEvent:
 
 def get_event(event_id: str) -> ExamEvent | None:
     """Return an event by id, or None."""
-    item = table(EVENTS_TABLE_ENV).get_item(Key={"id": event_id}).get("Item")
+    item = table(EVENTS_TABLE_ENV).get_item(Key={"id": event_id}, ConsistentRead=True).get("Item")
     return _from_item(item) if item else None
 
 
