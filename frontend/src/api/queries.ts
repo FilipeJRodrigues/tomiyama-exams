@@ -2,6 +2,11 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 
 import { ApiError, type ApiClient } from './client';
 import { useApi } from './context';
+import {
+  compareRequirements,
+  overlayRecentWrites,
+  recordRequirementWrite,
+} from './recentRequirementWrites';
 import type {
   AcademySettings,
   AnswerResult,
@@ -456,116 +461,74 @@ export function useDecideExam(eventId: string, studentId: string) {
 
 /**
  * `GET /requirements` of one filter, in sheet order (`sort_order`). `enabled: false` waits
- * (the screen needs the belts to know its default belt).
+ * (the screen needs the belts to know its default belt). The answer goes through the recent
+ * writes before reaching the cache: a late read of the `by_belt` GSI never undoes a write
+ * the API has confirmed (see `recentRequirementWrites`).
  */
 export function useRequirements(filters: RequirementFilters, enabled = true) {
   const api = useApi();
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: queryKeys.requirements(filters),
-    queryFn: () => listRequirements(api, filters),
+    queryFn: async () =>
+      overlayRecentWrites(queryClient, filters, await listRequirements(api, filters)),
     enabled,
   });
 }
 
-/** Sheet order inside a belt, as the API sends it: `sort_order`, then id. */
-export function compareRequirements(a: Requirement, b: Requirement): number {
-  if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
-  if (a.id === b.id) return 0;
-  return a.id < b.id ? -1 : 1;
-}
-
-function matchesFilters(item: Requirement, filters: RequirementFilters): boolean {
-  return (
-    (filters.belt_id === undefined || filters.belt_id === item.belt_id) &&
-    (filters.kind === undefined || filters.kind === item.kind)
-  );
-}
+export { compareRequirements };
 
 /**
- * Puts a saved item (or the removal of a deleted one) straight into every cached list of
- * one belt, so the screen shows it at once: the item leaves the lists whose filter it no
- * longer matches. Lists without a belt filter are only reloaded (their order also depends
- * on the belts).
+ * A write confirmed by the API (`saved`, or `null` for an id that no longer exists): it is
+ * recorded, laid over every cached list at once, and the lists reload (their answers go
+ * through the same record, so a late one is corrected, never cancelled). The exam sheets in
+ * cache reload too: their items and the RN007 totals come from the requirements (§ 6.4).
+ *
+ * The reload of a list that has data replaces a read still in flight (TanStack's
+ * `cancelRefetch`), but a list still on its first load (or retrying after an error) would
+ * only wait for that older read. So such a read is restarted first: it goes back to the
+ * state before it, with no data to lose, and the active ones fetch again below; an inactive
+ * one fetches when it is shown again.
  */
-function patchRequirementLists(
+function applyConfirmedWrite(
   queryClient: QueryClient,
   id: string,
   saved: Requirement | null,
 ): void {
+  recordRequirementWrite(queryClient, id, saved);
   const lists = queryClient.getQueriesData<Requirement[]>({
     queryKey: queryKeys.allRequirements,
   });
   for (const [key, data] of lists) {
-    const filters = key[1] as RequirementFilters | undefined;
-    if (data === undefined || filters?.belt_id === undefined) continue;
-    const others = data.filter((item) => item.id !== id);
-    const next =
-      saved && matchesFilters(saved, filters)
-        ? [...others, saved].sort(compareRequirements)
-        : others;
-    queryClient.setQueryData<Requirement[]>(key, next);
+    if (data === undefined) continue;
+    const filters = (key[1] ?? {}) as RequirementFilters;
+    queryClient.setQueryData<Requirement[]>(key, overlayRecentWrites(queryClient, filters, data));
   }
-}
-
-function hasBeltFilter(key: readonly unknown[]): boolean {
-  const filters = key[1] as RequirementFilters | undefined;
-  return filters?.belt_id !== undefined;
-}
-
-/**
- * After a change of the items. The lists of one belt were already fixed with the answer of
- * the API (`patchRequirementLists`) and are only marked stale, not reloaded now:
- * `GET /requirements?belt_id` reads the `by_belt` GSI, which may still return the list from
- * before the write and would undo the change the API has just confirmed. They reload on the
- * next mount or filter change. Lists without a belt filter reload now, and so do the exam
- * sheets in cache: their items and the RN007 totals come from the requirements (§ 6.4).
- */
-function reloadRequirements(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({
+  const firstLoads = queryClient.getQueryCache().findAll({
     queryKey: queryKeys.allRequirements,
-    predicate: (query) => hasBeltFilter(query.queryKey),
-    refetchType: 'none',
+    predicate: (query) => query.state.fetchStatus === 'fetching' && query.state.data === undefined,
   });
-  void queryClient.invalidateQueries({
-    queryKey: queryKeys.allRequirements,
-    predicate: (query) => !hasBeltFilter(query.queryKey),
-  });
+  for (const query of firstLoads) void query.cancel({ revert: true });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
   void queryClient.invalidateQueries({ predicate: (query) => isExamSheetKey(query.queryKey) });
 }
 
-/**
- * Applies a confirmed write (201/200/204) to the lists of one belt. A `GET` of those lists
- * still in flight was asked before the write and would overwrite the patch when it answers,
- * so it is cancelled first and the patch waits for the cancellation (which restores the
- * previous state asynchronously). A cancelled list that had no data yet is fetched again,
- * so it does not stay loading.
- */
-async function applyConfirmedWrite(
-  queryClient: QueryClient,
-  id: string,
-  saved: Requirement | null,
-): Promise<void> {
-  const filters = {
-    queryKey: queryKeys.allRequirements,
-    predicate: (query: { queryKey: readonly unknown[] }) => hasBeltFilter(query.queryKey),
-  };
-  const withoutData = queryClient
-    .getQueryCache()
-    .findAll(filters)
-    .filter((query) => query.state.fetchStatus === 'fetching' && query.state.data === undefined)
-    .map((query) => query.queryKey);
-  await queryClient.cancelQueries(filters);
-  patchRequirementLists(queryClient, id, saved);
-  reloadRequirements(queryClient);
-  for (const queryKey of withoutData) {
-    void queryClient.refetchQueries({ queryKey, exact: true, type: 'active' });
-  }
-}
+/** The 404 of `PUT`/`DELETE /requirements/{id}` when the item does not exist. */
+const MSG_REQUIREMENT_NOT_FOUND = 'Requisito não encontrado';
 
-/** A 404 or 409 means the list is behind the API (item gone, answers registered meanwhile). */
-function reloadOnConflict(queryClient: QueryClient, error: unknown): void {
+/**
+ * A refusal of an edit or a deletion. 404 "Requisito não encontrado": the item no longer
+ * exists (another examiner deleted it), so it is recorded as gone, as a confirmed deletion,
+ * and a late read does not bring it back. Any other 404 or a 409: the list is behind the API
+ * (answers registered meanwhile) and reloads.
+ */
+function reloadOnConflict(queryClient: QueryClient, id: string, error: unknown): void {
   if (!(error instanceof ApiError) || ![404, 409].includes(error.status)) return;
-  void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+  if (error.status === 404 && error.message === MSG_REQUIREMENT_NOT_FOUND) {
+    applyConfirmedWrite(queryClient, id, null);
+  } else {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.allRequirements });
+  }
 }
 
 /** `POST /requirements` (§ 6.5, RN017). */
@@ -574,7 +537,9 @@ export function useCreateRequirement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: RequirementInput) => createRequirement(api, input),
-    onSuccess: (saved) => applyConfirmedWrite(queryClient, saved.id, saved),
+    onSuccess: (saved) => {
+      applyConfirmedWrite(queryClient, saved.id, saved);
+    },
   });
 }
 
@@ -592,9 +557,11 @@ export function useUpdateRequirement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: UpdateRequirementVariables) => updateRequirement(api, id, input),
-    onSuccess: (saved) => applyConfirmedWrite(queryClient, saved.id, saved),
-    onError: (error) => {
-      reloadOnConflict(queryClient, error);
+    onSuccess: (saved) => {
+      applyConfirmedWrite(queryClient, saved.id, saved);
+    },
+    onError: (error, { id }) => {
+      reloadOnConflict(queryClient, id, error);
     },
   });
 }
@@ -605,9 +572,11 @@ export function useDeleteRequirement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteRequirement(api, id),
-    onSuccess: (_result, id) => applyConfirmedWrite(queryClient, id, null),
-    onError: (error) => {
-      reloadOnConflict(queryClient, error);
+    onSuccess: (_result, id) => {
+      applyConfirmedWrite(queryClient, id, null);
+    },
+    onError: (error, id) => {
+      reloadOnConflict(queryClient, id, error);
     },
   });
 }

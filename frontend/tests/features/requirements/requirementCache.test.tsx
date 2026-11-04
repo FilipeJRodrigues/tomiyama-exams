@@ -116,7 +116,7 @@ describe('requirements cache (§ 6.5 → § 6.4)', () => {
   });
 
   it('a list still loading for the first time when a write is confirmed loads again, not stuck', async () => {
-    // The first read of the list is held (and later cancelled by the write).
+    // The first read of the list is held (the write restarts it).
     let held = true;
     server.use(
       http.get(`${TEST_API_URL}/requirements`, async () => {
