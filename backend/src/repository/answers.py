@@ -27,13 +27,13 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from domain.answers import (
-    MSG_BUSY_TRY_AGAIN,
     MSG_EXAM_DECIDED,
     MSG_ITEM_NOT_IN_BELT,
     MSG_MARK_TRY_AGAIN,
     ExamAnswer,
 )
 from domain.errors import (
+    MSG_SERVICE_BUSY,
     ConflictError,
     DomainError,
     NotFoundError,
@@ -231,7 +231,7 @@ def _cancellation_reasons(exc: ClientError) -> list[str | None]:
     code = exc.response["Error"]["Code"]
     if code in THROTTLING_ERRORS:
         logger.warning("Answer transaction throttled after botocore retries: %s", code)
-        raise ServiceUnavailableError(MSG_BUSY_TRY_AGAIN) from exc
+        raise ServiceUnavailableError(MSG_SERVICE_BUSY) from exc
     if code != _CANCELLED:
         raise exc
     return [reason.get("Code") for reason in exc.response.get("CancellationReasons", [])]
@@ -244,7 +244,7 @@ def _retry_error(reasons: list[str | None]) -> DomainError | None:
     ``TransactionConflict`` → 409 (another marking on the same items).
     """
     if _THROTTLED_REASONS.intersection(reasons):
-        return ServiceUnavailableError(MSG_BUSY_TRY_AGAIN)
+        return ServiceUnavailableError(MSG_SERVICE_BUSY)
     if _CONFLICT in reasons:
         return ConflictError(MSG_MARK_TRY_AGAIN)
     return None

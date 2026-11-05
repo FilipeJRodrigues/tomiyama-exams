@@ -4,7 +4,7 @@ import logging
 import os
 import random
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -173,7 +173,12 @@ BATCH_GET_ATTEMPTS = 4
 BATCH_GET_BACKOFF_SECONDS = 0.05
 
 
-def batch_get(target: Any, keys: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+def batch_get(
+    target: Any,
+    keys: Iterable[dict[str, Any]],
+    *,
+    attributes: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
     """Read items by key from the ``target`` table with ``BatchGetItem``.
 
     Eventually consistent, 100 keys per call; missing keys are left out of the
@@ -184,6 +189,8 @@ def batch_get(target: Any, keys: Iterable[dict[str, Any]]) -> list[dict[str, Any
     Args:
         target: DynamoDB ``Table`` resource.
         keys: Distinct keys (``BatchGetItem`` refuses a repeated key).
+        attributes: Top-level attributes to read (``ProjectionExpression``,
+            with every name escaped); None reads whole items.
 
     Raises:
         ServiceUnavailableError: If the whole call kept throttling after
@@ -193,9 +200,16 @@ def batch_get(target: Any, keys: Iterable[dict[str, Any]]) -> list[dict[str, Any
     """
     keys = list(keys)
     client = target.meta.client
+    options: dict[str, Any] = {}
+    if attributes:
+        names = {f"#p{index}": attribute for index, attribute in enumerate(attributes)}
+        options = {"ProjectionExpression": ", ".join(names), "ExpressionAttributeNames": names}
     items: list[dict[str, Any]] = []
     for start in range(0, len(keys), BATCH_GET_LIMIT):
-        request: dict[str, Any] = {target.name: {"Keys": keys[start : start + BATCH_GET_LIMIT]}}
+        # DynamoDB echoes the projection in ``UnprocessedKeys``, so retries keep it.
+        request: dict[str, Any] = {
+            target.name: {"Keys": keys[start : start + BATCH_GET_LIMIT], **options}
+        }
         for attempt in range(BATCH_GET_ATTEMPTS):
             if attempt:
                 time.sleep(BATCH_GET_BACKOFF_SECONDS * 2 ** (attempt - 1) * (1 + random.random()))
