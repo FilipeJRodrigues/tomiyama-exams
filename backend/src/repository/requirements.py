@@ -153,7 +153,9 @@ def seed_requirements(requirements: Iterable[Requirement], *, deadline: float | 
     A marker in the settings table records that the load finished, so items
     deleted by an examiner are not recreated on the next deploy. If a previous
     run stopped midway, the conditional writes only add the missing items.
-    Throttled writes (low provisioned capacity) are retried with backoff.
+    Throttled writes (low provisioned capacity) are retried with backoff. The
+    marker is read with ``ConsistentRead``: a load starting right after another
+    one finished must see it, or it would recreate items deleted in between.
 
     Args:
         requirements: Seed items with deterministic ids.
@@ -164,7 +166,7 @@ def seed_requirements(requirements: Iterable[Requirement], *, deadline: float | 
         Number of items inserted.
     """
     settings = table(SETTINGS_TABLE_ENV)
-    if settings.get_item(Key={"id": SEED_MARKER_ID}).get("Item"):
+    if settings.get_item(Key={"id": SEED_MARKER_ID}, ConsistentRead=True).get("Item"):
         logger.info("Requirements seed already applied")
         return 0
 

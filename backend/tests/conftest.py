@@ -360,15 +360,45 @@ def _key_id(key: dict[str, Any]) -> str:
     return repr(sorted(key.items()))
 
 
-def lag_eventual_reads(monkeypatch: pytest.MonkeyPatch, table_env: str) -> list[dict[str, Any]]:
-    """Make the table behave like a DynamoDB replica one write behind.
+_WRITE_OPERATIONS = frozenset({"PutItem", "UpdateItem", "DeleteItem"})
+_TRANSACTION_WRITES = ("Put", "Update", "Delete")
 
-    From this call on, each ``PutItem``, ``UpdateItem`` and ``DeleteItem`` on the
-    table (PK ``id``) records the item as it was before the write. A ``GetItem``
-    without ``ConsistentRead=True`` on that key gets the recorded old version
-    (no item for one just created), as an eventually consistent read can up to
-    about one second after the write. Strongly consistent reads, keys not
-    written since the call and other tables go to moto unchanged.
+
+def _projected(api_params: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    """Apply a ``GetItem`` ``ProjectionExpression`` of top-level attributes to ``item``."""
+    projection = api_params.get("ProjectionExpression")
+    if not projection:
+        return dict(item)
+    names = api_params.get("ExpressionAttributeNames") or {}
+    wanted = {names.get(part.strip(), part.strip()) for part in projection.split(",")}
+    return {attribute: value for attribute, value in item.items() if attribute in wanted}
+
+
+def lag_eventual_reads(
+    monkeypatch: pytest.MonkeyPatch, table_env: str, *, writes_behind: int = 1
+) -> list[dict[str, Any]]:
+    """Make the table behave like a DynamoDB replica ``writes_behind`` writes behind.
+
+    From this call on, each write that lands on the table records the item as
+    it was before the write: ``PutItem``, ``UpdateItem``, ``DeleteItem`` and the
+    ``Put``/``Update``/``Delete`` items of a ``TransactWriteItems`` (attendance,
+    decision and marking only write through transactions), for any key schema
+    (``id``, or ``event_id`` + ``student_id`` on ``Exams``). A write refused by
+    its condition, or a cancelled transaction, records nothing.
+
+    A ``GetItem`` without ``ConsistentRead=True`` on a key written since the
+    call gets the version from ``writes_behind`` writes ago (no item for one
+    created within them; the version from the call when fewer writes were
+    made), with its ``ProjectionExpression`` applied, as an eventually
+    consistent read can up to about one second after the writes. Strongly
+    consistent reads, keys not written since the call and other tables go to
+    moto unchanged. Calls for different tables stack.
+
+    Args:
+        monkeypatch: The test's ``monkeypatch``.
+        table_env: Environment variable with the table name (``*_TABLE_ENV``).
+        writes_behind: How many of the latest writes of each key the
+            eventually consistent reads miss (default 1).
 
     Returns:
         The parameters of every ``GetItem`` on the table, in call order.
@@ -376,26 +406,53 @@ def lag_eventual_reads(monkeypatch: pytest.MonkeyPatch, table_env: str) -> list[
     from botocore.client import BaseClient
 
     table_name = os.environ[table_env]
-    behind: dict[str, Any] = {}
+    key_schema = boto3.client("dynamodb").describe_table(TableName=table_name)["Table"]["KeySchema"]
+    key_names = [part["AttributeName"] for part in key_schema]
+    # Per key, the item before each write that landed since the call (None: absent).
+    history: dict[str, list[dict[str, Any] | None]] = {}
     get_calls: list[dict[str, Any]] = []
     original = BaseClient._make_api_call
 
+    def written_keys(operation_name: str, api_params: dict[str, Any]) -> list[dict[str, Any]]:
+        if operation_name == "TransactWriteItems":
+            entries = [
+                entry[kind]
+                for entry in api_params.get("TransactItems", [])
+                for kind in _TRANSACTION_WRITES
+                if kind in entry
+            ]
+        elif operation_name in _WRITE_OPERATIONS:
+            entries = [api_params]
+        else:
+            return []
+        return [
+            entry.get("Key") or {name: entry["Item"][name] for name in key_names}
+            for entry in entries
+            if entry.get("TableName") == table_name
+        ]
+
     def lagging(self: BaseClient, operation_name: str, api_params: dict[str, Any]) -> Any:
-        if api_params.get("TableName") != table_name:
-            return original(self, operation_name, api_params)
-        if operation_name in {"PutItem", "UpdateItem", "DeleteItem"}:
-            key = api_params.get("Key") or {"id": api_params["Item"]["id"]}
-            before = original(
-                self, "GetItem", {"TableName": table_name, "Key": key, "ConsistentRead": True}
-            )
-            behind[_key_id(key)] = before.get("Item")
-        elif operation_name == "GetItem":
+        if operation_name == "GetItem" and api_params.get("TableName") == table_name:
             get_calls.append(dict(api_params))
-            key_id = _key_id(api_params["Key"])
-            if api_params.get("ConsistentRead") is not True and key_id in behind:
-                old = behind[key_id]
-                return {"Item": dict(old)} if old is not None else {}
-        return original(self, operation_name, api_params)
+            versions = history.get(_key_id(api_params["Key"]))
+            if api_params.get("ConsistentRead") is not True and versions:
+                old = versions[max(0, len(versions) - writes_behind)]
+                return {"Item": _projected(api_params, old)} if old is not None else {}
+            return original(self, operation_name, api_params)
+        keys = written_keys(operation_name, api_params)
+        if not keys:
+            return original(self, operation_name, api_params)
+        before = [
+            original(
+                self, "GetItem", {"TableName": table_name, "Key": key, "ConsistentRead": True}
+            ).get("Item")
+            for key in keys
+        ]
+        response = original(self, operation_name, api_params)
+        # Reached only when the write landed: a refused condition raises above.
+        for key, item in zip(keys, before, strict=True):
+            history.setdefault(_key_id(key), []).append(item)
+        return response
 
     monkeypatch.setattr(BaseClient, "_make_api_call", lagging)
     return get_calls

@@ -50,6 +50,7 @@ from repository.tables import (
     EXAMS_TABLE_ENV,
     REQUIREMENTS_TABLE_ENV,
     THROTTLING_ERRORS,
+    get_item_or_busy,
     paginate,
     table,
 )
@@ -257,23 +258,38 @@ def _guard_error(exam: Exam, reasons: list[str | None]) -> DomainError | None:
     """Translate a failed exam or event check, reading the item again.
 
     Exam deleted or replaced → 404; decided → 409 "Exame já decidido" (RN010).
-    Event deleted → 404; closed → 400 "Evento encerrado" (RN016).
+    Event deleted → 404; closed → 400 "Evento encerrado" (RN016). The re-reads
+    are strongly consistent, so they see the concurrent write that made the
+    check fail.
+
+    Raises:
+        ServiceUnavailableError: If a re-read kept throttling (503); nothing
+            was written, since the transaction was refused.
     """
     if _failed(reasons, _CHECK_EXAM):
         key = {"event_id": exam.event_id, "student_id": exam.student_id}
-        item = table(EXAMS_TABLE_ENV).get_item(Key=key).get("Item")
+        item = get_item_or_busy(table(EXAMS_TABLE_ENV), key, ConsistentRead=True)
         if not item or item.get("id") != exam.id:
             return NotFoundError(MSG_EXAM_NOT_FOUND)
         return ConflictError(MSG_EXAM_DECIDED)
     if _failed(reasons, _CHECK_EVENT):
-        item = table(EVENTS_TABLE_ENV).get_item(Key={"id": exam.event_id}).get("Item")
+        item = get_item_or_busy(table(EVENTS_TABLE_ENV), {"id": exam.event_id}, ConsistentRead=True)
         return ValidationError(MSG_EVENT_CLOSED) if item else NotFoundError(MSG_EVENT_NOT_FOUND)
     return None
 
 
 def _requirement_error(requirement_id: str) -> DomainError:
-    """Translate a failed requirement condition: deleted (404) or moved to another belt (400)."""
-    item = table(REQUIREMENTS_TABLE_ENV).get_item(Key={"id": requirement_id}).get("Item")
+    """Translate a failed requirement condition: deleted (404) or moved to another belt (400).
+
+    The re-read is strongly consistent, so a delete a moment ago is a 404.
+
+    Raises:
+        ServiceUnavailableError: If the re-read kept throttling (503); nothing
+            was written, since the transaction was refused.
+    """
+    item = get_item_or_busy(
+        table(REQUIREMENTS_TABLE_ENV), {"id": requirement_id}, ConsistentRead=True
+    )
     if not item:
         return NotFoundError(MSG_REQUIREMENT_NOT_FOUND)
     return ValidationError(MSG_ITEM_NOT_IN_BELT)
@@ -300,7 +316,8 @@ def save_answer(exam: Exam, answer: ExamAnswer) -> None:
             belt meanwhile.
         ConflictError: If the exam was decided meanwhile (RN010) or the
             transaction kept conflicting after every retry.
-        ServiceUnavailableError: If it kept being throttled after every retry.
+        ServiceUnavailableError: If it kept being throttled after every retry,
+            or the re-read after a refused condition kept throttling.
     """
     create = True
     last_error: DomainError = ConflictError(MSG_MARK_TRY_AGAIN)
@@ -339,7 +356,8 @@ def delete_answer(exam: Exam, requirement_id: str) -> bool:
         ValidationError: If the event was closed meanwhile.
         ConflictError: If the exam was decided meanwhile (RN010) or the
             transaction kept conflicting after every retry.
-        ServiceUnavailableError: If it kept being throttled after every retry.
+        ServiceUnavailableError: If it kept being throttled after every retry,
+            or the re-read after a refused condition kept throttling.
     """
     last_error: DomainError = ConflictError(MSG_MARK_TRY_AGAIN)
     for attempt in range(_MAX_ATTEMPTS):

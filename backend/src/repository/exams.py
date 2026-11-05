@@ -7,6 +7,13 @@ Two transactions write here: the attendance (``create_exam``, RN005) and the
 sensei's decision (``decide_exam``, RN008–RN010). Together they keep at most
 one exam in progress per student through the ``exam_in_progress_id`` marker on
 the student (RN005).
+
+Every read by key here is strongly consistent (``ConsistentRead=True``): the
+exam read by the handlers (``get_exam``) and the re-reads that pick the error
+of a refused transaction. An eventually consistent read may return, for about
+a second after a write, the item from before it (or none right after it was
+created), which answered a false 404, or the wrong error, right after the
+attendance or the decision (#78).
 """
 
 import logging
@@ -156,11 +163,15 @@ def event_has_exams(event_id: str) -> bool:
 def get_exam(event_id: str, student_id: str) -> Exam | None:
     """Return the exam of a student in an event, or None.
 
+    Strongly consistent: the exam sheet, a marking or the decision right after
+    the attendance must find the exam, and the sheet right after the decision
+    must show it decided (RN005–RN010).
+
     Raises:
         ServiceUnavailableError: If the exams table kept throttling (503).
     """
     key = {"event_id": event_id, "student_id": student_id}
-    item = get_item_or_busy(table(EXAMS_TABLE_ENV), key)
+    item = get_item_or_busy(table(EXAMS_TABLE_ENV), key, ConsistentRead=True)
     return _from_item(item) if item else None
 
 
@@ -327,7 +338,8 @@ def _condition_error(
     again to tell "deleted" (404) from "closed"/"inactive" (400) and, for the
     student, from "exam in progress in another event" and "graduation
     changed" (both 409). Returns None when no condition failed (e.g. only a
-    transaction conflict).
+    transaction conflict). The re-reads are strongly consistent, so they see
+    the concurrent write that made the condition fail.
 
     Raises:
         ServiceUnavailableError: If a re-read kept throttling (503).
@@ -339,10 +351,12 @@ def _condition_error(
     if failed(_PUT_EXAM):
         return ConflictError(MSG_ALREADY_CONFIRMED)
     if failed(_UPDATE_EVENT):
-        item = get_item_or_busy(table(EVENTS_TABLE_ENV), {"id": exam.event_id})
+        item = get_item_or_busy(table(EVENTS_TABLE_ENV), {"id": exam.event_id}, ConsistentRead=True)
         return ValidationError(MSG_EVENT_CLOSED) if item else NotFoundError(MSG_EVENT_NOT_FOUND)
     if failed(_UPDATE_STUDENT):
-        item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": exam.student_id})
+        item = get_item_or_busy(
+            table(STUDENTS_TABLE_ENV), {"id": exam.student_id}, ConsistentRead=True
+        )
         if not item:
             return NotFoundError(MSG_STUDENT_NOT_FOUND)
         if not item.get("active", True):
@@ -446,6 +460,11 @@ def _decision_error(exam: Exam, reasons: list[str | None]) -> DomainError | None
     → 404; marked with another exam in progress (only possible with data from
     before the marker) → 409; graduation changed since the attendance → 409.
     Returns None when no condition failed (e.g. only a transaction conflict).
+    The re-reads are strongly consistent, so they see the concurrent write that
+    made the condition fail.
+
+    Raises:
+        ServiceUnavailableError: If a re-read kept throttling (503).
     """
 
     def failed(index: int) -> bool:
@@ -453,19 +472,21 @@ def _decision_error(exam: Exam, reasons: list[str | None]) -> DomainError | None
 
     if failed(_CHECK_SENSEI):
         # Read the table directly: the settings are read again, never cached.
-        item = get_item_or_busy(table(SETTINGS_TABLE_ENV), {"id": SETTINGS_ID})
+        item = get_item_or_busy(table(SETTINGS_TABLE_ENV), {"id": SETTINGS_ID}, ConsistentRead=True)
         if not item or not item.get("sensei_user_id"):
             return ConflictError(MSG_NO_SENSEI)
         return ForbiddenError(MSG_ONLY_SENSEI)
 
     if failed(_DECIDE_EXAM):
         key = {"event_id": exam.event_id, "student_id": exam.student_id}
-        item = get_item_or_busy(table(EXAMS_TABLE_ENV), key)
+        item = get_item_or_busy(table(EXAMS_TABLE_ENV), key, ConsistentRead=True)
         if not item or item.get("id") != exam.id:
             return NotFoundError(MSG_EXAM_NOT_FOUND)
         return ConflictError(MSG_EXAM_DECIDED)
     if failed(_UPDATE_STUDENT_DECISION):
-        item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": exam.student_id})
+        item = get_item_or_busy(
+            table(STUDENTS_TABLE_ENV), {"id": exam.student_id}, ConsistentRead=True
+        )
         if not item:
             return NotFoundError(MSG_STUDENT_NOT_FOUND)
         if item.get(EXAM_IN_PROGRESS, exam.id) != exam.id:

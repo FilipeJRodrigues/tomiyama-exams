@@ -1,6 +1,14 @@
 """Persistence of students in the ``Students`` table.
 
 Keys: PK ``id``; GSI ``by_owner`` (PK ``owner_id``) lists a guardian's students.
+
+Every read by key here is strongly consistent (``ConsistentRead=True``): the
+student, the ``exam_in_progress_id`` marker and the re-read after a refused
+write. An eventually consistent read may return, for about a second after a
+write, the item from before it (or none right after it was created), which
+answered a false 404 right after the ``POST``, used an old graduation as the
+optimistic lock (false 403/409) or saw a marker already removed by the
+decision (#78). ``get_names`` (``BatchGetItem``) and the lists stay eventual.
 """
 
 from collections.abc import Iterable
@@ -69,10 +77,14 @@ def _graduation_of(student: Student) -> dict[str, Any]:
 def get_student(student_id: str) -> Student | None:
     """Return a student by id, or None.
 
+    Strongly consistent: a student created or edited a moment ago is already
+    seen, and the graduation read is the one the next conditional write and
+    the decision compare against (RN005, RN009, RN013).
+
     Raises:
         ServiceUnavailableError: If the table kept throttling (503).
     """
-    item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": student_id})
+    item = get_item_or_busy(table(STUDENTS_TABLE_ENV), {"id": student_id}, ConsistentRead=True)
     return _from_item(item) if item else None
 
 
@@ -129,11 +141,17 @@ def create_student(student: Student) -> None:
 def has_exam_in_progress(student_id: str) -> bool:
     """Return whether the student carries the ``exam_in_progress_id`` marker (RN005).
 
+    Strongly consistent, so a marker removed by a decision a moment ago no
+    longer blocks a graduation edit.
+
     Raises:
         ServiceUnavailableError: If the table kept throttling (503).
     """
     item = get_item_or_busy(
-        table(STUDENTS_TABLE_ENV), {"id": student_id}, ProjectionExpression=EXAM_IN_PROGRESS
+        table(STUDENTS_TABLE_ENV),
+        {"id": student_id},
+        ProjectionExpression=EXAM_IN_PROGRESS,
+        ConsistentRead=True,
     )
     return bool(item and item.get(EXAM_IN_PROGRESS))
 
@@ -209,7 +227,8 @@ def save_student(
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
             raise_if_throttled(exc, "UpdateItem on Students")
             raise
-        item = get_item_or_busy(students_table, {"id": student.id})
+        # Strongly consistent: the error must reflect the write that made the condition fail.
+        item = get_item_or_busy(students_table, {"id": student.id}, ConsistentRead=True)
         if item is None:
             raise NotFoundError(MSG_STUDENT_NOT_FOUND) from exc
         if require_no_exams and int(item.get(EXAM_COUNT, 0)) > 0:
