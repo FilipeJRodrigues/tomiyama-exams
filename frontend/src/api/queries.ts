@@ -41,6 +41,7 @@ import type {
   RequirementFilters,
   RequirementInput,
   StudentFilters,
+  StudentHistoryEntry,
   StudentInput,
   StudentView,
 } from './types';
@@ -51,6 +52,11 @@ export const queryKeys = {
   allStudents: ['students'] as const,
   students: (filters: StudentFilters = {}) => ['students', filters] as const,
   student: (id: string) => ['student', id] as const,
+  /**
+   * Under `student(id)`: reloading the student (after the decision, RN009, or a belt edit)
+   * also reloads the history, and forgetting a deleted student forgets it too.
+   */
+  studentExams: (id: string) => ['student', id, 'exams'] as const,
   /** Prefix of every student detail, for invalidation. */
   anyStudent: ['student'] as const,
   events: ['events'] as const,
@@ -129,6 +135,11 @@ export function updateStudent(
 
 export function deleteStudent(api: ApiClient, id: string): Promise<void> {
   return api.delete(studentPath(id));
+}
+
+/** `GET /students/{id}/exams` (RN018): every exam of the student, most recent first. */
+export function listStudentExams(api: ApiClient, id: string): Promise<StudentHistoryEntry[]> {
+  return api.get<StudentHistoryEntry[]>(`${studentPath(id)}/exams`);
 }
 
 export function listEvents(api: ApiClient): Promise<ExamEvent[]> {
@@ -363,6 +374,20 @@ export function useStudents(filters: StudentFilters = {}) {
 export function useStudent(id: string) {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.student(id), queryFn: () => getStudent(api, id) });
+}
+
+/**
+ * `GET /students/{id}/exams` (RN018): the student's exam history, in the API order. Only for
+ * examiners (a guardian gets 403): mount it only where the profile is an examiner, so a
+ * guardian never asks. The exams come from an eventually consistent index: one confirmed or
+ * decided less than a second ago may still be missing or in its previous state.
+ */
+export function useStudentExams(id: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.studentExams(id),
+    queryFn: () => listStudentExams(api, id),
+  });
 }
 
 /** `POST /students`; the owner is the signed-in user (set by the API). */

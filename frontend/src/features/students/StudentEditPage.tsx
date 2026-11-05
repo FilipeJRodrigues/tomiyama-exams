@@ -13,6 +13,8 @@ import {
 } from '../../api/queries';
 import type { StudentInput, StudentView } from '../../api/types';
 import { paths } from '../../app/navigation';
+import { useAuth } from '../../auth/useAuth';
+import { StudentExamHistory } from './StudentExamHistory';
 import { StudentForm } from './StudentForm';
 import type { StudentsPageState } from './routeState';
 import { LoadError, LoadingState } from './screenStates';
@@ -128,15 +130,20 @@ function DeleteStudent({ student }: DeleteProps) {
   );
 }
 
-/** § 6.2 student form in edit mode (`/alunos/:id`), for the owner or an examiner. */
+/**
+ * § 6.2 student form in edit mode (`/alunos/:id`), for the owner or an examiner. Examiners
+ * also see the student's exam history below the form (RN018); a guardian never asks for it.
+ */
 export function StudentEditPage() {
   const { id = '' } = useParams();
+  const { user } = useAuth();
   const student = useStudent(id);
   const belts = useBelts();
   const update = useUpdateStudent(id);
   const navigate = useNavigate();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const retryFocus = useRetryFocus([student, belts], titleRef);
+  const isExaminer = user?.role === 'examiner';
 
   if (student.isError && student.error instanceof ApiError && student.error.status === 404) {
     return <NotFound titleRef={titleRef} />;
@@ -191,12 +198,16 @@ export function StudentEditPage() {
     );
   }
 
+  const formShown = student.data !== undefined && belts.data !== undefined;
+
   return (
     <Stack gap="md">
       <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Editar aluno
       </Title>
       {content}
+      {/* Mounted while the student loads, so both are asked at once; shown with the form. */}
+      {isExaminer && <StudentExamHistory studentId={id} visible={formShown} />}
     </Stack>
   );
 }

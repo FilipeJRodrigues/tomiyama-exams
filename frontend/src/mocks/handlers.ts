@@ -2,7 +2,8 @@
  * MSW handlers that follow the contract in `backend/README.md`. They check the
  * simulated token like the JWT authorizer, filter students by owner like the API and
  * answer the student form with the backend messages (`domain/students.py`,
- * `domain/validation.py`): RN013, RN014 and RN018. The exam day (§ 6.3) gets the event
+ * `domain/validation.py`): RN013, RN014 and RN018, and the student's exam history
+ * (`list_student_exams`, `domain/history.py`: RN018). The exam day (§ 6.3) gets the event
  * list and the attendance confirmation (`handlers/events.py`, `handlers/exams.py`,
  * `domain/exams.py`): RN005 and RN016. The exam screen (§ 6.4) gets the exam sheet with the
  * RN007 summary (`get_exam_sheet`, `domain/scoring.py`), the marking of its items
@@ -39,6 +40,7 @@ import type {
   Requirement,
   RequirementKind,
   Student,
+  StudentHistoryEntry,
   StudentView,
 } from '../api/types';
 import { decodeMockToken, type MockClaims } from '../auth/mockToken';
@@ -739,6 +741,55 @@ function decisionNotes(payload: Payload): string | null {
   return trimmed || null;
 }
 
+/** Like `history_entry` in `domain/history.py`: names `null` when the event or belt is gone. */
+function historyEntry(db: MockDb, exam: Exam, event: ExamEvent | undefined): StudentHistoryEntry {
+  const beltName = (id: string) => db.belts.find((belt) => belt.id === id)?.name ?? null;
+  const { source_belt_id: sourceBelt, source_belt_since: since, source_stripes: stripes } = exam;
+  return {
+    event_id: exam.event_id,
+    event_name: event?.name ?? null,
+    exam_date: event?.exam_date ?? null,
+    target_belt_id: exam.target_belt_id,
+    target_belt_name: beltName(exam.target_belt_id),
+    kind: exam.kind,
+    status: exam.status,
+    decided_by_id: exam.decided_by_id,
+    decided_at: exam.decided_at,
+    notes: exam.notes,
+    created_at: exam.created_at,
+    source:
+      sourceBelt !== null && since !== null && stripes !== null
+        ? { belt_id: sourceBelt, belt_name: beltName(sourceBelt), belt_since: since, stripes }
+        : null,
+  };
+}
+
+/**
+ * Like `student_history`: every exam of the student (also in progress), by the event's
+ * `exam_date`, most recent first; on the same date the newest attendance (`created_at`), then
+ * `event_id`, all descending. Exams whose event is gone have no date and go last.
+ */
+function studentHistory(db: MockDb, studentId: string): StudentHistoryEntry[] {
+  const rows = db.exams
+    .filter((exam) => exam.student_id === studentId)
+    .map((exam) => ({ exam, event: db.events.find((event) => event.id === exam.event_id) }));
+  const key = ({ exam, event }: (typeof rows)[number]) => [
+    event ? '1' : '0',
+    event?.exam_date ?? '',
+    exam.created_at,
+    exam.event_id,
+  ];
+  rows.sort((a, b) => {
+    const [ka, kb] = [key(a), key(b)];
+    for (let i = 0; i < ka.length; i++) {
+      const [x = '', y = ''] = [ka[i], kb[i]];
+      if (x !== y) return x < y ? 1 : -1;
+    }
+    return 0;
+  });
+  return rows.map(({ exam, event }) => historyEntry(db, exam, event));
+}
+
 /** The student's graduation is still the one of the attendance (exams with the source). */
 function sameGraduation(exam: Exam, student: Student): boolean {
   if (exam.source_belt_id === null) return true;
@@ -861,6 +912,17 @@ export function createHandlers({
         }
         return HttpResponse.json(toView(db, item, todayIso()));
       });
+    }),
+
+    // RN018: examiners only, before any read (a guardian learns nothing, not even whether the
+    // student exists); built from the stored exams, so attendance and decision show at once.
+    http.get(url('/students/:id/exams'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (!isExaminer(claims)) return errorResponse(403, MSG_EXAMINERS_ONLY);
+      const item = db.students.find((candidate) => candidate.student.id === params.id);
+      if (!item) return errorResponse(404, MSG_STUDENT_NOT_FOUND);
+      return HttpResponse.json(studentHistory(db, item.student.id));
     }),
 
     http.delete(url('/students/:id'), ({ request, params }) => {
