@@ -2,7 +2,8 @@
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
@@ -24,11 +25,25 @@ os.environ["EVENTS_TABLE"] = "test-events"
 os.environ["ANSWERS_TABLE"] = "test-answers"
 os.environ["IMAGES_BUCKET"] = "test-academy-images"
 
+from domain import dates  # noqa: E402
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
+from domain.errors import MSG_SERVICE_BUSY  # noqa: E402
+from domain.events import EventStatus, ExamEvent  # noqa: E402
+from domain.requirements import Requirement, RequirementKind  # noqa: E402
+from domain.settings import AcademySettings  # noqa: E402
 from domain.students import Student  # noqa: E402
 from domain.users import ADMIN_GROUP, GUARDIAN_GROUP, MASTER_GROUP, User  # noqa: E402
+from handlers import belts as belt_handlers  # noqa: E402
+from handlers import events as event_handlers  # noqa: E402
+from handlers import exams as exam_handlers  # noqa: E402
+from handlers import requirements as requirement_handlers  # noqa: E402
+from handlers import students as student_handlers  # noqa: E402
 from repository import belts as belt_repo  # noqa: E402
+from repository import events as event_repo  # noqa: E402
 from repository import images as image_repo  # noqa: E402
+from repository import requirements as requirement_repo  # noqa: E402
+from repository import settings as settings_repo  # noqa: E402
+from repository import students as student_repo  # noqa: E402
 from repository import tables  # noqa: E402
 from repository import users as user_repo  # noqa: E402
 
@@ -456,3 +471,422 @@ def lag_eventual_reads(
 
     monkeypatch.setattr(BaseClient, "_make_api_call", lagging)
     return get_calls
+
+
+# --- DynamoDB capacity limit that outlasted botocore's retries (#43) ---
+
+DYNAMODB_THROTTLING_CODES = (
+    "ProvisionedThroughputExceededException",
+    "ThrottlingException",
+    "RequestLimitExceeded",
+)
+# Every DynamoDB operation that writes, so a test throttles the write whatever
+# call the repository uses for it.
+DYNAMODB_WRITES = ("PutItem", "UpdateItem", "DeleteItem", "BatchWriteItem", "TransactWriteItems")
+
+
+def dynamodb_tables_of(api_params: dict[str, Any]) -> set[str]:
+    """Return the names of the tables a DynamoDB call touches (any operation)."""
+    names = set(api_params.get("RequestItems") or {})
+    if api_params.get("TableName"):
+        names.add(api_params["TableName"])
+    for entry in api_params.get("TransactItems") or []:
+        names.update(body.get("TableName") for body in entry.values() if isinstance(body, dict))
+    return names
+
+
+class CallLimitExceededError(Exception):
+    """A stubbed DynamoDB call was repeated more times than the test allows."""
+
+
+@dataclass
+class DynamoStub:
+    """State of a stubbed DynamoDB call: on/off switch and the calls it answered.
+
+    Attributes:
+        calls: Parameters of every call the stub answered, in order.
+        max_calls: Most calls the stub answers; the next one raises
+            ``CallLimitExceededError`` (a retry loop without a limit).
+        active: While False, the calls go to moto unchanged and are not recorded.
+    """
+
+    max_calls: int
+    active: bool = True
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def answer(self, api_params: dict[str, Any]) -> None:
+        """Record a call, refusing it past ``max_calls``."""
+        self.calls.append(dict(api_params))
+        if len(self.calls) > self.max_calls:
+            raise CallLimitExceededError(f"more than {self.max_calls} calls")
+
+
+def _stub_dynamodb(
+    monkeypatch: pytest.MonkeyPatch,
+    operations: str | Iterable[str],
+    table_env: str,
+    stub: DynamoStub,
+    respond: Callable[[str, dict[str, Any]], Any],
+    matches: Callable[[dict[str, Any]], bool] | None,
+) -> None:
+    from botocore.client import BaseClient
+
+    wanted = {operations} if isinstance(operations, str) else set(operations)
+    table_name = os.environ[table_env]
+    original = BaseClient._make_api_call
+
+    def patched(self: BaseClient, operation_name: str, api_params: dict[str, Any]) -> Any:
+        if (
+            stub.active
+            and operation_name in wanted
+            and table_name in dynamodb_tables_of(api_params)
+            and (matches is None or matches(api_params))
+        ):
+            stub.answer(api_params)
+            return respond(operation_name, api_params)
+        return original(self, operation_name, api_params)
+
+    monkeypatch.setattr(BaseClient, "_make_api_call", patched)
+
+
+def throttle_dynamodb(
+    monkeypatch: pytest.MonkeyPatch,
+    operations: str | Iterable[str],
+    table_env: str,
+    *,
+    code: str = "ProvisionedThroughputExceededException",
+    matches: Callable[[dict[str, Any]], bool] | None = None,
+    active: bool = True,
+    max_calls: int = 10,
+    cancellation_reason: str | None = None,
+) -> DynamoStub:
+    """Make ``operations`` on the table fail with ``code``, as after botocore's retries.
+
+    Patches ``BaseClient._make_api_call``, so the throttling reaches the call
+    whatever path the repository takes (the ``Table`` resource or its
+    ``meta.client``, with or without ``get_item_or_busy``). Calls of other
+    operations and tables go to moto unchanged. Stubs stack.
+
+    Args:
+        monkeypatch: The test's ``monkeypatch``.
+        operations: DynamoDB operation names (``GetItem``, ``DYNAMODB_WRITES``...).
+        table_env: Environment variable with the table name (``*_TABLE_ENV``).
+        code: Error code, one of ``DYNAMODB_THROTTLING_CODES``.
+        matches: Only calls whose parameters it accepts are throttled.
+        active: Start switched on (set ``stub.active`` to change it later).
+        max_calls: Throttled calls allowed before ``CallLimitExceededError``.
+        cancellation_reason: For ``TransactWriteItems``, throttle inside the
+            transaction instead: ``TransactionCanceledException`` with this
+            reason (``ThrottlingError`` or ``ProvisionedThroughputExceeded``)
+            on every item; ``code`` is then ignored.
+
+    Returns:
+        The stub, with every throttled call's parameters in ``calls``.
+    """
+    stub = DynamoStub(max_calls=max_calls, active=active)
+
+    def respond(operation_name: str, api_params: dict[str, Any]) -> Any:
+        if cancellation_reason is not None:
+            items = api_params.get("TransactItems") or []
+            raise ClientError(
+                {
+                    "Error": {"Code": "TransactionCanceledException", "Message": "cancelled"},
+                    "CancellationReasons": [{"Code": cancellation_reason} for _ in items],
+                },
+                operation_name,
+            )
+        raise ClientError({"Error": {"Code": code, "Message": "throttled"}}, operation_name)
+
+    _stub_dynamodb(monkeypatch, operations, table_env, stub, respond, matches)
+    return stub
+
+
+def leave_batch_unprocessed(
+    monkeypatch: pytest.MonkeyPatch, table_env: str, *, times: int | None, max_calls: int = 10
+) -> DynamoStub:
+    """Answer ``BatchGetItem`` on the table with every key in ``UnprocessedKeys``.
+
+    That is what DynamoDB answers when the whole batch ran out of capacity.
+
+    Args:
+        times: How many calls get that answer before the table answers for
+            real; None for every call (capacity that never comes back).
+        max_calls: Unprocessed answers allowed before ``CallLimitExceededError``.
+    """
+    from botocore.client import BaseClient
+
+    table_name = os.environ[table_env]
+    stub = DynamoStub(max_calls=max_calls)
+    original = BaseClient._make_api_call
+
+    def patched(self: BaseClient, operation_name: str, api_params: dict[str, Any]) -> Any:
+        if (
+            stub.active
+            and operation_name == "BatchGetItem"
+            and table_name in api_params.get("RequestItems", {})
+            and (times is None or len(stub.calls) < times)
+        ):
+            stub.answer(api_params)
+            return {"Responses": {table_name: []}, "UnprocessedKeys": api_params["RequestItems"]}
+        return original(self, operation_name, api_params)
+
+    monkeypatch.setattr(BaseClient, "_make_api_call", patched)
+    return stub
+
+
+def before_dynamodb_call(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    table_env: str,
+    action: Callable[[], None],
+) -> list[dict[str, Any]]:
+    """Run ``action`` right before the first ``operation`` on the table reaches moto.
+
+    Used to change the state between the handler's reads and its write (a
+    concurrent request) or to switch a stub on only for what comes after.
+
+    Returns:
+        Parameters of the call that triggered ``action`` (empty if none did).
+    """
+    from botocore.client import BaseClient
+
+    table_name = os.environ[table_env]
+    triggered: list[dict[str, Any]] = []
+    original = BaseClient._make_api_call
+
+    def patched(self: BaseClient, operation_name: str, api_params: dict[str, Any]) -> Any:
+        if (
+            not triggered
+            and operation_name == operation
+            and table_name in dynamodb_tables_of(api_params)
+        ):
+            triggered.append(dict(api_params))
+            action()
+        return original(self, operation_name, api_params)
+
+    monkeypatch.setattr(BaseClient, "_make_api_call", patched)
+    return triggered
+
+
+def assert_service_busy(response: dict[str, Any], stub: DynamoStub) -> None:
+    """Assert the route answered 503 with only the busy message after hitting ``stub``.
+
+    Also checks the stub was reached (the test simulates what it claims) and
+    that the calls stopped within ``stub.max_calls`` (no retry loop without a
+    limit).
+    """
+    assert stub.calls, f"a chamada limitada não foi feita ({response.get('body')})"
+    assert len(stub.calls) <= stub.max_calls, (
+        f"novas tentativas sem limite: mais de {stub.max_calls} chamadas"
+    )
+    assert response["statusCode"] == 503, response.get("body")
+    assert response_json(response) == {"message": MSG_SERVICE_BUSY}
+
+
+def dynamodb_snapshot() -> dict[str, list[str]]:
+    """Return every item of every table (strongly consistent), to compare before and after.
+
+    Call it with the throttling stubs switched off (``stub.active = False``).
+    """
+    resource = boto3.resource("dynamodb")
+    snapshot: dict[str, list[str]] = {}
+    for env in (
+        "BELTS_TABLE",
+        "STUDENTS_TABLE",
+        "EXAMS_TABLE",
+        "REQUIREMENTS_TABLE",
+        "SETTINGS_TABLE",
+        "EVENTS_TABLE",
+        "ANSWERS_TABLE",
+    ):
+        target = resource.Table(os.environ[env])
+        items: list[dict[str, Any]] = []
+        kwargs: dict[str, Any] = {"ConsistentRead": True}
+        while True:
+            page = target.scan(**kwargs)
+            items.extend(page.get("Items", []))
+            if not page.get("LastEvaluatedKey"):
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        snapshot[env] = sorted(repr(sorted(item.items())) for item in items)
+    return snapshot
+
+
+# --- One exam in progress, reached by every route that reads by key (#43) ---
+
+SCENARIO_NOW = "2026-11-01T12:00:00+00:00"
+SCENARIO_EVENT_ID = "event-1"
+SCENARIO_EMPTY_EVENT_ID = "event-empty"
+SCENARIO_STUDENT_ID = "student-1"
+SCENARIO_OTHER_STUDENT_ID = "student-2"
+SCENARIO_REQUIREMENT = Requirement(
+    id="t1",
+    belt_id=seed_belt_id("Cinza/Azul"),
+    kind=RequirementKind.THEORY,
+    category="Vocabulário",
+    description="Item t1",
+    expected_answer="Resposta",
+    sort_order=1,
+)
+SCENARIO_SENSEI = User(
+    sub="sensei-1", email="sensei-1@example.com", groups=frozenset({ADMIN_GROUP})
+)
+_SCENARIO_EXAM_PATH = {"id": SCENARIO_EVENT_ID, "student_id": SCENARIO_STUDENT_ID}
+_SCENARIO_ANSWER_PATH = {**_SCENARIO_EXAM_PATH, "requirement_id": SCENARIO_REQUIREMENT.id}
+
+
+@pytest.fixture
+def exam_scenario(seeded: list[Belt], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Data every route of ``SCENARIO_ROUTES`` succeeds on, with a fixed clock (2026-11-01).
+
+    Open event ``event-1`` (2027-03-20) with Ana's exam in progress (attendance
+    confirmed through the route) and item ``t1`` of her target belt
+    (Cinza/Azul); open event ``event-empty`` without exams; Bia, eligible and
+    not confirmed; ``SCENARIO_SENSEI`` set as sensei in the settings.
+    """
+    monkeypatch.setattr(dates, "today", lambda: date(2026, 11, 1))
+    monkeypatch.setattr(dates, "utc_now_iso", lambda: SCENARIO_NOW)
+    for event_id in (SCENARIO_EVENT_ID, SCENARIO_EMPTY_EVENT_ID):
+        event_repo.create_event(
+            ExamEvent(
+                event_id,
+                "Exame março/2027",
+                date(2027, 3, 20),
+                EventStatus.OPEN,
+                SCENARIO_NOW,
+                SCENARIO_NOW,
+            )
+        )
+    for student_id, name in ((SCENARIO_STUDENT_ID, "Ana"), (SCENARIO_OTHER_STUDENT_ID, "Bia")):
+        student = make_student()
+        student_repo.create_student(
+            Student(**{**vars(student), "id": student_id, "full_name": name})
+        )
+    requirement_repo.create_requirement(SCENARIO_REQUIREMENT)
+    settings_repo.save_settings(
+        AcademySettings(
+            academy_name="Associação Tomiyama de Judô",
+            sensei_user_id=SCENARIO_SENSEI.sub,
+            certificate_city="Araraquara",
+            updated_at=SCENARIO_NOW,
+        )
+    )
+    confirmed = exam_handlers.confirm_attendance(
+        api_event(
+            EXAMINER, path={"id": SCENARIO_EVENT_ID}, body={"student_id": SCENARIO_STUDENT_ID}
+        ),
+        None,
+    )
+    assert confirmed["statusCode"] == 201, confirmed["body"]
+
+
+def _belt_edit() -> dict[str, Any]:
+    cinza = belt("Cinza")
+    body = {**cinza.to_dict(), "min_months_previous": cinza.min_months_previous + 1}
+    return belt_handlers.update_belt(api_event(EXAMINER, path={"id": cinza.id}, body=body), None)
+
+
+def _student_registration() -> dict[str, Any]:
+    body = {
+        "full_name": "Caio",
+        "birth_date": "2018-05-10",
+        "current_belt_id": seed_belt_id("Cinza"),
+        "current_belt_since": "2026-03-14",
+        "stripes": 0,
+    }
+    return student_handlers.create_student(api_event(GUARDIAN, body=body), None)
+
+
+def scenario_requirement_body(**changes: Any) -> dict[str, Any]:
+    """Body of ``PUT /requirements/{id}`` for item ``t1``, with ``changes`` applied."""
+    return {**SCENARIO_REQUIREMENT.to_dict(), **changes}
+
+
+Route = Callable[[], dict[str, Any]]
+
+# Every route of the scenario, called by a user allowed to use it. Writes
+# change data that exists only in ``exam_scenario``.
+SCENARIO_ROUTES: dict[str, Route] = {
+    "GET /belts": lambda: belt_handlers.list_belts(api_event(EXAMINER), None),
+    "PUT /belts/{id}": _belt_edit,
+    "GET /students": lambda: student_handlers.list_students(api_event(EXAMINER), None),
+    "GET /students (responsável)": lambda: student_handlers.list_students(
+        api_event(GUARDIAN), None
+    ),
+    "POST /students": _student_registration,
+    "GET /students/{id}": lambda: student_handlers.get_student(
+        api_event(GUARDIAN, path={"id": SCENARIO_STUDENT_ID}), None
+    ),
+    "GET /requirements": lambda: requirement_handlers.list_requirements(api_event(EXAMINER), None),
+    "GET /requirements?belt_id": lambda: requirement_handlers.list_requirements(
+        api_event(EXAMINER, query={"belt_id": SCENARIO_REQUIREMENT.belt_id}), None
+    ),
+    "POST /requirements": lambda: requirement_handlers.create_requirement(
+        api_event(
+            EXAMINER,
+            body={
+                "belt_id": SCENARIO_REQUIREMENT.belt_id,
+                "kind": "THEORY",
+                "category": "Vocabulário",
+                "description": "Item novo",
+            },
+        ),
+        None,
+    ),
+    "PUT /requirements/{id}": lambda: requirement_handlers.update_requirement(
+        api_event(
+            EXAMINER,
+            path={"id": SCENARIO_REQUIREMENT.id},
+            body=scenario_requirement_body(description="Item t1 (editado)"),
+        ),
+        None,
+    ),
+    "DELETE /requirements/{id}": lambda: requirement_handlers.delete_requirement(
+        api_event(EXAMINER, path={"id": SCENARIO_REQUIREMENT.id}), None
+    ),
+    "GET /events": lambda: event_handlers.list_events(api_event(EXAMINER), None),
+    "POST /events": lambda: event_handlers.create_event(
+        api_event(EXAMINER, body={"name": "Exame setembro/2027", "exam_date": "2027-09-25"}), None
+    ),
+    "GET /events/{id}": lambda: event_handlers.get_event(
+        api_event(EXAMINER, path={"id": SCENARIO_EVENT_ID}), None
+    ),
+    "PUT /events/{id}": lambda: event_handlers.update_event(
+        api_event(
+            EXAMINER,
+            path={"id": SCENARIO_EVENT_ID},
+            body={
+                "name": "Exame março/2027 (editado)",
+                "exam_date": "2027-03-20",
+                "status": "OPEN",
+            },
+        ),
+        None,
+    ),
+    "DELETE /events/{id}": lambda: event_handlers.delete_event(
+        api_event(EXAMINER, path={"id": SCENARIO_EMPTY_EVENT_ID}), None
+    ),
+    "POST /events/{id}/exams": lambda: exam_handlers.confirm_attendance(
+        api_event(
+            EXAMINER,
+            path={"id": SCENARIO_EVENT_ID},
+            body={"student_id": SCENARIO_OTHER_STUDENT_ID},
+        ),
+        None,
+    ),
+    "GET /events/{id}/exams": lambda: exam_handlers.list_event_exams(
+        api_event(EXAMINER, path={"id": SCENARIO_EVENT_ID}), None
+    ),
+    "GET /events/{id}/exams/{student_id}": lambda: exam_handlers.get_exam_sheet(
+        api_event(EXAMINER, path=_SCENARIO_EXAM_PATH), None
+    ),
+    "PUT .../answers/{requirement_id}": lambda: exam_handlers.mark_answer(
+        api_event(EXAMINER, path=_SCENARIO_ANSWER_PATH, body={"correct": True}), None
+    ),
+    "DELETE .../answers/{requirement_id}": lambda: exam_handlers.unmark_answer(
+        api_event(EXAMINER, path=_SCENARIO_ANSWER_PATH), None
+    ),
+    "POST .../decision": lambda: exam_handlers.decide_exam(
+        api_event(SCENARIO_SENSEI, path=_SCENARIO_EXAM_PATH, body={"result": "APPROVED"}), None
+    ),
+}
