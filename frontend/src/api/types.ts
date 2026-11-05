@@ -142,6 +142,43 @@ export interface ExamView extends Exam {
   student_name: string | null;
 }
 
+/**
+ * `source` of a history entry: the student's graduation when the attendance was confirmed,
+ * the one the decision checks.
+ */
+export interface StudentHistorySource {
+  belt_id: string;
+  /** The belt's current name; `null` when the belt no longer exists. */
+  belt_name: string | null;
+  belt_since: IsoDate;
+  stripes: number;
+}
+
+/**
+ * `GET /students/{id}/exams` item (RN018, examiners only): one exam of the student with the
+ * current names of its event and belts. The API sends them from the most recent to the
+ * oldest, and sends no percentage (those stay in the exam sheet).
+ */
+export interface StudentHistoryEntry {
+  event_id: string;
+  /** `null`, as `exam_date`, when the event no longer exists. */
+  event_name: string | null;
+  exam_date: IsoDate | null;
+  target_belt_id: string;
+  /** `null` when the belt no longer exists. */
+  target_belt_name: string | null;
+  kind: ExamKind;
+  status: ExamStatus;
+  /** `null` while `IN_PROGRESS`, as `decided_at` and `notes`. */
+  decided_by_id: string | null;
+  decided_at: IsoDateTime | null;
+  notes: string | null;
+  /** The attendance confirmation. */
+  created_at: IsoDateTime;
+  /** `null` for exams confirmed before the API stored it (dev only). */
+  source: StudentHistorySource | null;
+}
+
 /** Body of `POST /events/{id}/exams` (attendance confirmation, RN005). */
 export interface ConfirmAttendanceInput {
   student_id: string;

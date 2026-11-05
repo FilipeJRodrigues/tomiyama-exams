@@ -8,6 +8,7 @@ import type {
   Belt,
   ExamAnswer,
   ExamEvent,
+  ExamKind,
   ExamSheet,
   ExamSheetItem,
   ExamSheetStudent,
@@ -47,12 +48,28 @@ export function examDayPath(eventId?: string): string {
  */
 export function examTitle(sheet: Pick<ExamSheet, 'exam' | 'target_belt'>, belts?: Belt[]) {
   const target = sheet.target_belt;
-  if (!target) return sheet.exam.kind === 'BELT' ? 'Faixa —' : 'Grau';
-  if (sheet.exam.kind === 'BELT') return `Faixa ${target.name}`;
-  const current = belts && stripeBelt(sheet.exam.source_belt_id, target, belts);
-  return current
-    ? `Grau na faixa ${current.name} (rumo à ${target.name})`
-    : `Grau (rumo à ${target.name})`;
+  const current =
+    target && sheet.exam.kind === 'STRIPE' && belts
+      ? stripeBelt(sheet.exam.source_belt_id, target, belts)
+      : undefined;
+  return examTitleText(sheet.exam.kind, target?.name, current?.name);
+}
+
+/**
+ * The texts of `examTitle` from the names alone (the exam history sends names, not belts):
+ * `Faixa {alvo}`, `Grau na faixa {origem} (rumo à {alvo})`, or `Grau (rumo à {alvo})` without
+ * the belt of the stripe. Without the target belt, `Faixa —` or `Grau`.
+ */
+export function examTitleText(
+  kind: ExamKind,
+  targetName: string | null | undefined,
+  stripeBeltName?: string | null,
+): string {
+  if (!targetName) return kind === 'BELT' ? 'Faixa —' : 'Grau';
+  if (kind === 'BELT') return `Faixa ${targetName}`;
+  return stripeBeltName
+    ? `Grau na faixa ${stripeBeltName} (rumo à ${targetName})`
+    : `Grau (rumo à ${targetName})`;
 }
 
 /**

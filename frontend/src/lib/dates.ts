@@ -53,6 +53,22 @@ export function todayIso(now: Date = new Date()): string {
   return `${pad(now.getFullYear(), 4)}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** An ISO 8601 timestamp: a calendar date, `T` and a time (`2027-09-25T15:00:00+00:00`). */
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/**
+ * The calendar day of a timestamp (the API's `decided_at`) in the user's time zone, as
+ * `AAAA-MM-DD`: `2027-09-26T01:30:00+00:00` is 25/09/2027 in UTC-3. Null when the text is
+ * not a timestamp.
+ */
+export function localDateOf(timestamp: string): string | null {
+  if (!ISO_TIMESTAMP.test(timestamp)) return null;
+  const moment = new Date(timestamp);
+  if (Number.isNaN(moment.getTime())) return null;
+  const day = todayIso(moment);
+  return parseIsoDate(day) ? day : null;
+}
+
 /**
  * Age in completed years on the reference date (never negative).
  *

@@ -382,6 +382,7 @@ function exam(
   kind: 'BELT' | 'STRIPE',
   status: Exam['status'],
   [sourceBelt, sourceSince, sourceStripes]: Source,
+  notes: string | null = null,
 ): Exam {
   const decided = status !== 'IN_PROGRESS';
   return {
@@ -394,7 +395,7 @@ function exam(
     status,
     decided_by_id: decided ? examiner : null,
     decided_at: decided ? '2026-03-01T15:00:00+00:00' : null,
-    notes: null,
+    notes: decided ? notes : null,
     created_by: examiner,
     created_at: decided ? '2026-03-01T13:00:00+00:00' : '2026-11-02T12:00:00+00:00',
     source_belt_id: beltId(sourceBelt),
@@ -415,7 +416,10 @@ export const initialMockExams: readonly Exam[] = [
   ),
 ];
 
-/** Exams of the showcase students: Gabriel at the closed event, Helena at the open one. */
+/**
+ * Exams of the showcase students: Gabriel at the closed event (with a note, shown by his exam
+ * history), Helena at the open one.
+ */
 export const showcaseMockExams: readonly Exam[] = [
   exam(
     MOCK_EVENT_IDS.closed,
@@ -424,6 +428,7 @@ export const showcaseMockExams: readonly Exam[] = [
     'BELT',
     'APPROVED',
     ['Amarela', '2025-01-10', 0],
+    'Bom equilíbrio nas quedas',
   ),
   exam(
     MOCK_EVENT_IDS.open,

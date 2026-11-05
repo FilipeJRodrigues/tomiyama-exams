@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ageInYears, formatDate, parseIsoDate, todayIso } from '../../src/lib/dates';
+import { ageInYears, formatDate, localDateOf, parseIsoDate, todayIso } from '../../src/lib/dates';
 
 describe('formatDate', () => {
   it('formats AAAA-MM-DD as dd/mm/aaaa', () => {
@@ -61,5 +61,22 @@ describe('todayIso', () => {
     // 23:30 local time on 01/11/2026 is already 02/11 in UTC when the zone is UTC-3.
     const lateEvening = new Date(2026, 10, 1, 23, 30);
     expect(todayIso(lateEvening)).toBe('2026-11-01');
+  });
+});
+
+describe('localDateOf', () => {
+  it('gives the calendar day of a timestamp in the local time zone (UTC-3 in the suite)', () => {
+    expect(localDateOf('2027-09-25T15:00:00+00:00')).toBe('2027-09-25');
+    // 01:30 UTC on 26/09 is still 25/09 at 22:30 in UTC-3.
+    expect(localDateOf('2027-09-26T01:30:00+00:00')).toBe('2027-09-25');
+    expect(localDateOf('2027-09-26T03:00:00Z')).toBe('2027-09-26');
+    expect(localDateOf('2027-09-25T23:30:00-03:00')).toBe('2027-09-25');
+  });
+
+  it('is null for text that is not a timestamp', () => {
+    expect(localDateOf('2027-09-25')).toBeNull();
+    expect(localDateOf('ontem')).toBeNull();
+    expect(localDateOf('')).toBeNull();
+    expect(localDateOf('2027-13-45T99:99:00Z')).toBeNull();
   });
 });
