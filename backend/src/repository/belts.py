@@ -4,8 +4,17 @@ import logging
 from collections.abc import Iterable
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from domain.belts import Belt, BeltLevel, sort_belts
-from repository.tables import BELTS_TABLE_ENV, paginate, put_if_absent, table
+from repository.tables import (
+    BELTS_TABLE_ENV,
+    get_item_or_busy,
+    paginate,
+    put_if_absent,
+    raise_if_throttled,
+    table,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +46,28 @@ def list_belts() -> list[Belt]:
 
 
 def get_belt(belt_id: str) -> Belt | None:
-    """Return a belt by id, or None."""
-    item = table(BELTS_TABLE_ENV).get_item(Key={"id": belt_id}).get("Item")
+    """Return a belt by id, or None (eventually consistent).
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling (503).
+    """
+    item = get_item_or_busy(table(BELTS_TABLE_ENV), {"id": belt_id})
     return _from_item(item) if item else None
 
 
 def save_belt(belt: Belt) -> None:
-    """Replace an existing belt."""
-    table(BELTS_TABLE_ENV).put_item(Item=_to_item(belt), ConditionExpression="attribute_exists(id)")
+    """Replace an existing belt.
+
+    Raises:
+        ServiceUnavailableError: If the write kept throttling (503).
+    """
+    try:
+        table(BELTS_TABLE_ENV).put_item(
+            Item=_to_item(belt), ConditionExpression="attribute_exists(id)"
+        )
+    except ClientError as exc:
+        raise_if_throttled(exc, "PutItem on Belts")
+        raise
 
 
 def seed_belts(belts: Iterable[Belt], *, deadline: float | None = None) -> int:

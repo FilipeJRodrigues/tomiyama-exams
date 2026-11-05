@@ -32,6 +32,7 @@ from repository.tables import (
     EXAM_IN_PROGRESS,
     NO_EXAMS_CONDITION,
     STUDENTS_TABLE_ENV,
+    batch_get,
     get_item_or_busy,
     paginate,
     raise_if_throttled,
@@ -40,7 +41,6 @@ from repository.tables import (
 )
 
 BY_OWNER_INDEX = "by_owner"
-_BATCH_GET_LIMIT = 100
 
 
 def _to_item(student: Student) -> dict[str, Any]:
@@ -91,29 +91,17 @@ def get_student(student_id: str) -> Student | None:
 def get_names(student_ids: Iterable[str]) -> dict[str, str]:
     """Return ``{id: full_name}`` for the given students (missing ids are left out).
 
-    Reads only the two attributes with ``BatchGetItem``, 100 keys per call,
-    retrying unprocessed keys.
+    Reads only the two attributes with ``BatchGetItem`` (``tables.batch_get``):
+    100 keys per call, unprocessed keys asked again a limited number of times
+    with backoff.
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling or keys stayed
+            unprocessed (503).
     """
-    ids = sorted(set(student_ids))
-    names: dict[str, str] = {}
-    students_table = table(STUDENTS_TABLE_ENV)
-    client = students_table.meta.client
-    for start in range(0, len(ids), _BATCH_GET_LIMIT):
-        request: dict[str, Any] = {
-            students_table.name: {
-                "Keys": [
-                    {"id": student_id} for student_id in ids[start : start + _BATCH_GET_LIMIT]
-                ],
-                "ProjectionExpression": "#id, full_name",
-                "ExpressionAttributeNames": {"#id": "id"},
-            }
-        }
-        while request:
-            response = client.batch_get_item(RequestItems=request)
-            for item in response.get("Responses", {}).get(students_table.name, []):
-                names[item["id"]] = item["full_name"]
-            request = response.get("UnprocessedKeys") or {}
-    return names
+    keys = [{"id": student_id} for student_id in sorted(set(student_ids))]
+    items = batch_get(table(STUDENTS_TABLE_ENV), keys, attributes=("id", "full_name"))
+    return {item["id"]: item["full_name"] for item in items}
 
 
 def list_all() -> list[Student]:
@@ -132,10 +120,18 @@ def list_by_owner(owner_id: str) -> list[Student]:
 
 
 def create_student(student: Student) -> None:
-    """Insert a new student."""
-    table(STUDENTS_TABLE_ENV).put_item(
-        Item=_to_item(student), ConditionExpression="attribute_not_exists(id)"
-    )
+    """Insert a new student.
+
+    Raises:
+        ServiceUnavailableError: If the write kept throttling (503).
+    """
+    try:
+        table(STUDENTS_TABLE_ENV).put_item(
+            Item=_to_item(student), ConditionExpression="attribute_not_exists(id)"
+        )
+    except ClientError as exc:
+        raise_if_throttled(exc, "PutItem on Students")
+        raise
 
 
 def has_exam_in_progress(student_id: str) -> bool:
