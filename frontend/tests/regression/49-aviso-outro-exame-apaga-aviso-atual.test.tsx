@@ -12,10 +12,12 @@
  * (com "Tentar de novo") continua lá.
  * Issue: #49
  */
+import type { QueryClient } from '@tanstack/react-query';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { queryKeys } from '../../src/api/queries';
 import { examPath } from '../../src/app/navigation';
 import { MOCK_EVENT_IDS, createMockDb, type MockDb } from '../../src/mocks/data';
 import { createHandlers } from '../../src/mocks/handlers';
@@ -40,6 +42,27 @@ async function waitAskedFor(index: number) {
     expect(retryWaits).toHaveLength(index + 1);
   });
   return retryWaits[index]!;
+}
+
+/**
+ * Espera, sem tempo real, a recusa final da Helena terminar na tela: depois de guardar o aviso
+ * dela, a tela pede a releitura do exame dela (marca a consulta como desatualizada), na mesma
+ * volta em que guarda o aviso.
+ */
+function helenaRefusalEnded(queryClient: QueryClient): Promise<void> {
+  const invalidated = () =>
+    queryClient.getQueryState(queryKeys.examSheet(OPEN, HELENA))?.isInvalidated === true;
+  return new Promise((resolve) => {
+    if (invalidated()) {
+      resolve();
+      return;
+    }
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      if (!invalidated()) return;
+      unsubscribe();
+      resolve();
+    });
+  });
 }
 
 describe('aviso de recusa por exame (§ 6.4, RN006)', () => {
@@ -68,7 +91,10 @@ describe('aviso de recusa por exame (§ 6.4, RN006)', () => {
   it('rn006 a recusa final de outro exame não apaga o aviso do exame na tela', async () => {
     holdRetryWaits();
     outcomes = [503];
-    const { user } = await renderApp({ route: examPath(OPEN, HELENA), signedInAs: 'examiner' });
+    const { user, queryClient } = await renderApp({
+      route: examPath(OPEN, HELENA),
+      signedInAs: 'examiner',
+    });
     await screen.findByRole('heading', { level: 1, name: 'Helena Prado' });
     await user.click(screen.getByRole('button', { name: 'Certo: Parar' }));
     const first = await waitAskedFor(0);
@@ -93,7 +119,7 @@ describe('aviso de recusa por exame (§ 6.4, RN006)', () => {
       expect(writes).toEqual([HELENA, FABIO, HELENA, HELENA]);
     });
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await helenaRefusalEnded(queryClient);
     });
 
     expect(screen.getByRole('heading', { level: 1, name: 'Fábio Lima' })).toBeInTheDocument();

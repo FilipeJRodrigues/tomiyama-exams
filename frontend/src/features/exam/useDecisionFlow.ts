@@ -60,10 +60,16 @@ export interface DecisionFlow {
   closePanel: () => void;
   /** Ref of the decision area of each layout: where the focus goes when its opener is gone. */
   areaRef: AreaRefs;
-  /** The dialog finished closing: give the focus back (§ 6.7). */
-  dialogClosed: () => void;
-  /** The phone panel finished closing: give the focus back (§ 6.7). */
-  panelClosed: () => void;
+  /**
+   * The dialog finished closing: give the focus back (§ 6.7). `dialog` is the closing dialog:
+   * a focus still inside it counts as lost.
+   */
+  dialogClosed: (dialog: Element | null) => void;
+  /**
+   * The phone panel finished closing: give the focus back (§ 6.7). `panel` is the closing
+   * panel: a focus still inside it counts as lost.
+   */
+  panelClosed: (panel: Element | null) => void;
   /**
    * The summary changed layout (the window crossed 1024 px): the phone panel closes, and a
    * focus that was in the decision area of the layout that left (and went with it) goes to
@@ -158,8 +164,11 @@ export function useDecisionFlow(
    * After the closing renders: the opener, else the same choice in a decision area shown
    * (`choice`: its Aprovar/Reprovar, else its "Decidir"), else the first decision area shown,
    * else the title. A focus that went elsewhere on its own ("Decidido por …", a click) stays.
+   * `closing` is the dialog or panel that closed: Mantine ends the exit transition before
+   * React takes it off the screen, so a focus still inside it counts as lost (§ 6.7).
    */
   const giveFocusBack = (
+    closing: Element | null,
     opener: Element | null,
     layouts: DecisionLayout[],
     choice: DecisionResult | null = null,
@@ -174,7 +183,9 @@ export function useDecisionFlow(
                 area?.querySelector(`[data-decision-result="${choice}"]`) ??
                 area?.querySelector('[data-decision-action]'),
             );
-      focusIfLost([opener, ...sameChoice, ...areaTargets, titleRef?.current]);
+      focusIfLost([opener, ...sameChoice, ...areaTargets, titleRef?.current], {
+        leaving: [closing],
+      });
     }, 0);
   };
 
@@ -250,8 +261,9 @@ export function useDecisionFlow(
       if (asking === null) setPanelOpened(false);
     },
     areaRef,
-    dialogClosed: () => {
+    dialogClosed: (dialog) => {
       giveFocusBack(
+        dialog,
         dialogOpener.current,
         panelOpened ? ['panel'] : ['column', 'bar'],
         dialogChoice.current,
@@ -259,8 +271,8 @@ export function useDecisionFlow(
       dialogOpener.current = null;
       dialogChoice.current = null;
     },
-    panelClosed: () => {
-      giveFocusBack(panelOpener.current, ['bar']);
+    panelClosed: (panel) => {
+      giveFocusBack(panel, panelOpener.current, ['bar']);
       panelOpener.current = null;
     },
     layoutChanged,

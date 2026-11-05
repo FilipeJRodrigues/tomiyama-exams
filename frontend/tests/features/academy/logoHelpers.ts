@@ -1,7 +1,11 @@
 /** Shared steps of the logo tests (§ 6.6, RN012). */
-import { screen, within } from '@testing-library/react';
+import type { QueryClient } from '@tanstack/react-query';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http } from 'msw';
+import type { createMemoryRouter } from 'react-router';
+import { expect } from 'vitest';
 
+import { queryKeys } from '../../../src/api/queries';
 import type { LogoSlot, LogoView } from '../../../src/api/types';
 import type { MockLogo } from '../../../src/mocks/data';
 import { server, TEST_API_URL } from '../../msw-server';
@@ -109,4 +113,33 @@ export function ofMethod(requests: readonly LogoRequest[], method: string, slot?
   return requests.filter(
     (request) => request.method === method && (slot === undefined || request.slot === slot),
   );
+}
+
+const LOGO_SLOTS: readonly LogoSlot[] = ['primary', 'secondary'];
+
+/** Observers of the logo query of a slot (0 when the query is not in the cache). */
+function logoObservers(queryClient: QueryClient, slot: LogoSlot): number {
+  return (
+    queryClient
+      .getQueryCache()
+      .find({ queryKey: queryKeys.logo(slot), exact: true })
+      ?.getObserversCount() ?? 0
+  );
+}
+
+/**
+ * Leaves the logo screen (to "/alunos") and waits until it is really gone: the region of the
+ * slot left the DOM and the logo queries have no observers. React lets go of the `useQuery`
+ * in a cleanup effect that may run after the region left; a write released before that would
+ * still see the query active and read the slot again (#63).
+ */
+export async function leaveLogoScreen(
+  router: ReturnType<typeof createMemoryRouter>,
+  queryClient: QueryClient,
+): Promise<void> {
+  await router.navigate('/alunos');
+  await waitFor(() => {
+    expect(screen.queryByRole('region', { name: SLOT_TITLES.primary })).not.toBeInTheDocument();
+    for (const slot of LOGO_SLOTS) expect(logoObservers(queryClient, slot)).toBe(0);
+  });
 }

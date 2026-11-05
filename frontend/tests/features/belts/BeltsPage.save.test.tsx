@@ -5,7 +5,7 @@
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createMockDb } from '../../../src/mocks/data';
@@ -20,15 +20,31 @@ interface PutControl {
   count: number;
   /** How the PUT answers: the mock saves (`ok`), a 400 or a network failure. */
   answer: 'ok' | 'error400' | 'network';
-  wait: number;
+  /** From now on the PUTs wait, on their way, until `release`. */
+  hold: () => void;
+  /** The PUTs held answer, and the next ones answer right away. */
+  release: () => void;
 }
 
 function controlPuts(): PutControl {
-  const control: PutControl = { count: 0, answer: 'ok', wait: 50 };
+  let held = Promise.resolve();
+  let open: () => void = () => undefined;
+  const control: PutControl = {
+    count: 0,
+    answer: 'ok',
+    hold: () => {
+      held = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+    },
+    release: () => {
+      open();
+    },
+  };
   server.use(
     http.put(`${BELTS_URL}/:id`, async () => {
       control.count += 1;
-      await delay(control.wait);
+      await held;
       if (control.answer === 'error400') {
         return HttpResponse.json({ message: 'Ordem: deve estar entre 0 e 99' }, { status: 400 });
       }
@@ -54,7 +70,7 @@ describe('belts screen, one PUT by every path (§ 6.5)', () => {
 
   it('Esc, close and cancel in the same tick as the save keep the dialog until the answer', async () => {
     const puts = controlPuts();
-    puts.wait = 150;
+    puts.hold();
     const { dialog } = await openCinza();
     act(() => {
       fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
@@ -64,7 +80,13 @@ describe('belts screen, one PUT by every path (§ 6.5)', () => {
       fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     });
     expect(screen.getByRole('dialog', { name: 'Editar faixa Cinza' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(puts.count).toBe(1);
+    });
+    // The PUT is on its way: the dialog stays.
+    expect(screen.getByRole('dialog', { name: 'Editar faixa Cinza' })).toBeInTheDocument();
 
+    puts.release();
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
@@ -74,13 +96,20 @@ describe('belts screen, one PUT by every path (§ 6.5)', () => {
 
   it('Esc while the PUT is on its way does not close the dialog nor send again', async () => {
     const puts = controlPuts();
-    puts.wait = 150;
+    puts.hold();
     const { user, dialog } = await openCinza();
     await user.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => {
+      expect(puts.count).toBe(1);
+    });
     await user.keyboard('{Escape}');
     expect(screen.getByRole('dialog', { name: 'Editar faixa Cinza' })).toBeInTheDocument();
     await user.keyboard('{Enter}');
+    // Still on its way: the dialog stays and nothing was sent again.
+    expect(screen.getByRole('dialog', { name: 'Editar faixa Cinza' })).toBeInTheDocument();
+    expect(puts.count).toBe(1);
 
+    puts.release();
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
@@ -99,7 +128,13 @@ describe('belts screen, one PUT by every path (§ 6.5)', () => {
     expect(puts.count).toBe(1);
 
     puts.answer = 'ok';
+    puts.hold();
     await user.dblClick(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => {
+      expect(puts.count).toBe(2);
+    });
+    expect(screen.getByRole('dialog', { name: 'Editar faixa Cinza' })).toBeInTheDocument();
+    puts.release();
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
@@ -124,7 +159,13 @@ describe('belts screen, one PUT by every path (§ 6.5)', () => {
     await user.click(screen.getByRole('button', { name: 'Editar faixa Cinza' }));
     const again = await screen.findByRole('dialog', { name: 'Editar faixa Cinza' });
     expect(within(again).queryByRole('alert')).not.toBeInTheDocument();
+    puts.hold();
     await user.dblClick(within(again).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => {
+      expect(puts.count).toBe(2);
+    });
+    expect(screen.getByRole('dialog', { name: 'Editar faixa Cinza' })).toBeInTheDocument();
+    puts.release();
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
@@ -173,7 +214,13 @@ describe('belts screen on the phone (§ 6.7)', () => {
 
     await user.clear(months);
     await user.type(months, '240');
+    puts.hold();
     await user.dblClick(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => {
+      expect(puts.count).toBe(1);
+    });
+    expect(screen.getByRole('dialog', { name: 'Editar faixa Verde' })).toBeInTheDocument();
+    puts.release();
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });

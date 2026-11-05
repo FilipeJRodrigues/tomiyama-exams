@@ -7,11 +7,13 @@
  * Helena (open event, Marrom belt, exam in progress): Teórico 1/3 marked (Professor certo;
  * Parar and Nome do fundador não marcados), 33,3%; Prático 2/4, 25%.
  */
+import type { QueryClient } from '@tanstack/react-query';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ExamSummary } from '../../../src/api/types';
+import { queryKeys } from '../../../src/api/queries';
+import type { ExamSheet, ExamSummary } from '../../../src/api/types';
 import { examPath } from '../../../src/app/navigation';
 import {
   MOCK_EVENT_IDS,
@@ -98,6 +100,34 @@ async function release(write: HeldWrite | undefined) {
   await act(async () => {
     write.release();
     await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+}
+
+/**
+ * Release a held mark and wait, without real time, until the screen saved its answer
+ * (`correct`) in the cached exam: the answer came back and the screen took it.
+ */
+async function releaseUntilSaved(
+  queryClient: QueryClient,
+  write: HeldWrite | undefined,
+  correct: boolean,
+) {
+  if (!write) throw new Error('Nenhuma marcação retida');
+  const cache = queryClient.getQueryCache();
+  const saved = () =>
+    queryClient
+      .getQueryData<ExamSheet>(queryKeys.examSheet(OPEN, HELENA))
+      ?.items.find((item) => item.id === write.requirementId)?.answer?.correct === correct;
+  await act(async () => {
+    const landed = new Promise<void>((resolve) => {
+      const unsubscribe = cache.subscribe(() => {
+        if (!saved()) return;
+        unsubscribe();
+        resolve();
+      });
+    });
+    write.release();
+    await landed;
   });
 }
 
@@ -402,19 +432,19 @@ describe('marking the exam items (§ 6.4)', () => {
 
     it('rn007 keeps every item right when answers of several items come out of order', async () => {
       const held = holdWrites();
-      const { user } = await openHelena();
+      const { user, queryClient } = await openHelena();
       await user.click(button('Certo: Parar'));
       await user.click(button('Certo: Nome do fundador do Judô'));
       expect(within(theoryScore()).getByText('100%')).toBeInTheDocument();
       expect(held.map((write) => write.requirementId)).toEqual([PARAR, FOUNDER]);
 
       // The newer one comes back first, then the older one.
-      await release(held[1]);
+      await releaseUntilSaved(queryClient, held[1], true);
       expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'true');
       expect(button('Certo: Nome do fundador do Judô')).toHaveAttribute('aria-pressed', 'true');
       expect(within(theoryScore()).getByText('100%')).toBeInTheDocument();
       const reads = sheetReads;
-      await release(held[0]);
+      await releaseUntilSaved(queryClient, held[0], true);
 
       expect(button('Certo: Parar')).toHaveAttribute('aria-pressed', 'true');
       expect(button('Certo: Nome do fundador do Judô')).toHaveAttribute('aria-pressed', 'true');

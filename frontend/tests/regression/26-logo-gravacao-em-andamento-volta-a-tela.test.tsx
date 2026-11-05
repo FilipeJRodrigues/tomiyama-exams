@@ -30,6 +30,7 @@ import {
   logoView,
   slotButton,
   slotRegion,
+  leaveLogoScreen,
 } from '../features/academy/logoHelpers';
 import { server, TEST_API_URL } from '../msw-server';
 import { renderApp } from '../render';
@@ -76,11 +77,8 @@ function oldPreviewShownAsCurrent(): boolean {
   return image?.getAttribute('src') === OLD_URL && image.closest('[aria-busy="true"]') === null;
 }
 
-async function leaveAndComeBack(router: Awaited<ReturnType<typeof renderApp>>['router']) {
-  await router.navigate('/alunos');
-  await waitFor(() => {
-    expect(screen.queryByRole('region', { name: 'Logo principal' })).not.toBeInTheDocument();
-  });
+async function leaveAndComeBack({ router, queryClient }: Awaited<ReturnType<typeof renderApp>>) {
+  await leaveLogoScreen(router, queryClient);
   await router.navigate(ROUTE);
   await screen.findByRole('region', { name: 'Logo principal' });
   await act(
@@ -103,14 +101,15 @@ describe('gravação do logo ainda em andamento ao voltar à tela', () => {
         return HttpResponse.json(STORED_META);
       }),
     );
-    const { user, router } = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const app = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const { user } = app;
     await screen.findByRole('img', { name: ALT });
     await user.upload(fileInput('primary'), imageFile(JPEG_BYTES, 'logo.jpg', 'image/jpeg'));
     await waitFor(() => {
       expect(putArrived).toBe(true);
     });
 
-    await leaveAndComeBack(router);
+    await leaveAndComeBack(app);
 
     // The PUT is still on its way.
     expect(oldPreviewShownAsCurrent()).toBe(false);
@@ -137,7 +136,8 @@ describe('gravação do logo ainda em andamento ao voltar à tela', () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    const { user, router } = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const app = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const { user } = app;
     await screen.findByRole('img', { name: ALT });
     await user.click(slotButton('primary', 'Remover'));
     const dialog = await screen.findByRole('dialog', { name: 'Remover logo principal' });
@@ -146,7 +146,7 @@ describe('gravação do logo ainda em andamento ao voltar à tela', () => {
       expect(deleteArrived).toBe(true);
     });
 
-    await leaveAndComeBack(router);
+    await leaveAndComeBack(app);
 
     // The DELETE is still on its way.
     expect(oldPreviewShownAsCurrent()).toBe(false);

@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { render, type RenderResult } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { RouterProvider, createMemoryRouter } from 'react-router';
@@ -24,6 +25,7 @@ export interface RenderAppResult extends RenderResult {
   user: UserEvent;
   auth: AuthService;
   router: ReturnType<typeof createMemoryRouter>;
+  queryClient: QueryClient;
 }
 
 /** Render the whole app (providers + routes) at a route, with the simulated login. */
@@ -51,5 +53,5 @@ export async function renderApp({
       <RouterProvider router={router} />
     </AppProviders>,
   );
-  return { ...result, user, auth, router };
+  return { ...result, user, auth, router, queryClient };
 }

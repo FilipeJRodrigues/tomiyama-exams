@@ -6,7 +6,7 @@
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createMockDb, mockRequirementId, type MockDb } from '../../../src/mocks/data';
@@ -14,6 +14,7 @@ import { createHandlers } from '../../../src/mocks/handlers';
 import { server, TEST_API_URL } from '../../msw-server';
 import { setViewportWidth } from '../../viewport';
 import { renderApp } from '../../render';
+import { gate } from '../academy/helpers';
 import {
   REQUIREMENTS_URL,
   beltFilter,
@@ -322,10 +323,11 @@ describe('requirements screen, create and edit (§ 6.5)', () => {
 
   it('a double click on "Salvar" sends one POST; the dialog is locked meanwhile', async () => {
     let posts = 0;
+    const held = gate();
     server.use(
       http.post(REQUIREMENTS_URL, async () => {
         posts += 1;
-        await delay(100);
+        await held.wait;
         return undefined;
       }),
     );
@@ -343,7 +345,14 @@ describe('requirements screen, create and edit (§ 6.5)', () => {
     });
     expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
     expect(screen.getByRole('dialog', { name: 'Novo requisito' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(posts).toBe(1);
+    });
+    // The POST is still on its way: the dialog stays locked.
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    expect(screen.getByRole('dialog', { name: 'Novo requisito' })).toBeInTheDocument();
 
+    held.release();
     await dialogGone();
     expect(posts).toBe(1);
     expect(db.requirements.filter((item) => item.description === 'Começar')).toHaveLength(1);
@@ -351,10 +360,11 @@ describe('requirements screen, create and edit (§ 6.5)', () => {
 
   it('a double Enter in the edit sends one PUT', async () => {
     let puts = 0;
+    const held = gate();
     server.use(
       http.put(`${REQUIREMENTS_URL}/:id`, async () => {
         puts += 1;
-        await delay(100);
+        await held.wait;
         return undefined;
       }),
     );
@@ -365,6 +375,13 @@ describe('requirements screen, create and edit (§ 6.5)', () => {
       fireEvent.submit(form);
       fireEvent.submit(form);
     });
+    await waitFor(() => {
+      expect(puts).toBe(1);
+    });
+    // The PUT is on its way: the dialog stays.
+    expect(screen.getByRole('dialog', { name: 'Editar requisito' })).toBeInTheDocument();
+
+    held.release();
     await dialogGone();
     expect(puts).toBe(1);
   });
@@ -498,10 +515,11 @@ describe('requirements screen, delete (§ 6.5)', () => {
 
   it('a double click on "Excluir" sends one DELETE; Esc waits for the answer', async () => {
     let deletes = 0;
+    const held = gate();
     server.use(
       http.delete(`${REQUIREMENTS_URL}/:id`, async () => {
         deletes += 1;
-        await delay(100);
+        await held.wait;
         return undefined;
       }),
     );
@@ -517,6 +535,13 @@ describe('requirements screen, delete (§ 6.5)', () => {
       expect(confirm).toHaveAttribute('data-loading', 'true');
     });
     expect(screen.getByRole('dialog', { name: 'Excluir requisito' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(deletes).toBe(1);
+    });
+    // The DELETE is still on its way: Esc did not close the dialog.
+    expect(screen.getByRole('dialog', { name: 'Excluir requisito' })).toBeInTheDocument();
+
+    held.release();
     await dialogGone();
     expect(deletes).toBe(1);
     expect(rowDescriptions()).not.toContain('Osoto gari');

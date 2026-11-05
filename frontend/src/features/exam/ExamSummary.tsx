@@ -189,6 +189,8 @@ export function SummaryColumn(props: ExamSummaryProps) {
 export function SummaryBar(props: ExamSummaryProps) {
   const { ref, height } = useElementSize();
   const { flow } = props;
+  // Mantine ends the exit transition before the panel leaves the screen (§ 6.7).
+  const panelRef = useRef<HTMLDivElement>(null);
   // The measured height leaves out the padding and the border of the bar.
   const barHeight = `calc(${height}px + 2 * var(--mantine-spacing-xs) + 2px)`;
   // A focused item never ends up under the bar (§ 6.7).
@@ -218,6 +220,7 @@ export function SummaryBar(props: ExamSummaryProps) {
         <SummaryContent {...props} layout="bar" />
       </Paper>
       <Drawer
+        ref={panelRef}
         opened={flow.panelOpened && props.exam.status === 'IN_PROGRESS' && !props.studentDeleted}
         onClose={flow.closePanel}
         position="bottom"
@@ -225,7 +228,9 @@ export function SummaryBar(props: ExamSummaryProps) {
         closeOnEscape={flow.asking === null}
         // "Decidir" may be gone after a refusal: the flow gives the focus back (§ 6.7).
         returnFocus={false}
-        onExitTransitionEnd={flow.panelClosed}
+        onExitTransitionEnd={() => {
+          flow.panelClosed(panelRef.current);
+        }}
         closeButtonProps={{ 'aria-label': 'Fechar' }}
         styles={{ content: { height: 'auto', maxHeight: '90dvh' } }}
       >

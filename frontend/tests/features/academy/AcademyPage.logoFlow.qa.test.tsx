@@ -22,6 +22,7 @@ import {
   logoUrl,
   slotButton,
   slotRegion,
+  leaveLogoScreen,
 } from './logoHelpers';
 
 let consoleError: MockInstance;
@@ -75,11 +76,8 @@ function notices(slot: 'primary' | 'secondary') {
     .map((node) => node.textContent);
 }
 
-async function leaveAndComeBack(router: Awaited<ReturnType<typeof renderApp>>['router']) {
-  await router.navigate('/alunos');
-  await waitFor(() => {
-    expect(screen.queryByRole('region', { name: 'Logo principal' })).not.toBeInTheDocument();
-  });
+async function leaveAndComeBack({ router, queryClient }: Awaited<ReturnType<typeof renderApp>>) {
+  await leaveLogoScreen(router, queryClient);
   await router.navigate(ROUTE);
   await screen.findByRole('region', { name: 'Logo principal' });
   await act(
@@ -135,12 +133,13 @@ describe('common flow of a slot, with the writes followed by slot', () => {
   });
 
   it('after ended writes, leaving and coming back shows no old notice and the slot works as usual', async () => {
-    const { user, router } = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const app = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const { user } = app;
     await openSlots();
     await user.upload(fileInput('primary'), png());
     await within(slotRegion('primary')).findByText('Logo principal salvo.');
 
-    await leaveAndComeBack(router);
+    await leaveAndComeBack(app);
 
     await waitFor(() => {
       expect(slotButton('primary', 'Trocar')).toBeEnabled();
@@ -155,7 +154,7 @@ describe('common flow of a slot, with the writes followed by slot', () => {
     await within(slotRegion('primary')).findByText('Nenhum logo');
     expect(notices('primary')).toEqual(['Logo principal removido.']);
 
-    await leaveAndComeBack(router);
+    await leaveAndComeBack(app);
     await within(slotRegion('primary')).findByText('Nenhum logo');
     expect(notices('primary')).toEqual([]);
     expect(redAlert('primary')).toBeNull();
@@ -175,11 +174,12 @@ describe('common flow of a slot, with the writes followed by slot', () => {
         return undefined;
       }),
     );
-    const { user, router } = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const app = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const { user } = app;
     await openSlots();
     await user.upload(fileInput('primary'), png());
 
-    await leaveAndComeBack(router);
+    await leaveAndComeBack(app);
     expect(slotButton('primary', 'Carregar')).toBeDisabled();
 
     held.release();
@@ -207,11 +207,12 @@ describe('common flow of a slot, with the writes followed by slot', () => {
         return undefined;
       }),
     );
-    const { user, router } = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const app = await renderApp({ route: ROUTE, signedInAs: 'examiner' });
+    const { user } = app;
     await openSlots();
     await user.upload(fileInput('primary'), png());
 
-    await leaveAndComeBack(router);
+    await leaveAndComeBack(app);
     expect(slotButton('primary', 'Carregar')).toBeDisabled();
     await within(slotRegion('secondary')).findByText('Nenhum logo');
     expect(slotButton('secondary', 'Carregar')).toBeEnabled();

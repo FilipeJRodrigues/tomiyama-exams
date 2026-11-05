@@ -37,6 +37,7 @@ import {
   logoView,
   slotButton,
   slotRegion,
+  leaveLogoScreen,
 } from './logoHelpers';
 
 const BUSY = 'Sistema ocupado no momento. Tente de novo em instantes.';
@@ -119,13 +120,6 @@ function slotButtonNames(): string[] {
   return within(slotRegion('primary'))
     .queryAllByRole('button')
     .map((button) => button.getAttribute('aria-label') ?? button.textContent);
-}
-
-async function leaveAndWait(router: ReturnType<typeof createMemoryRouter>) {
-  await router.navigate('/alunos');
-  await waitFor(() => {
-    expect(screen.queryByRole('region', { name: 'Logo principal' })).not.toBeInTheDocument();
-  });
 }
 
 /** One more turn of the timer queue: TanStack notifies the screen in a `setTimeout(0)`. */
@@ -289,11 +283,11 @@ describe('academy logos, the mark "the logo may have changed"', () => {
         return HttpResponse.json({ message: 'Endpoint request timed out' }, { status: 504 });
       }),
     );
-    const { user, router } = await openScreen();
+    const { user, queryClient, router } = await openScreen();
     await user.upload(fileInput('primary'), imageFile(JPEG_BYTES, 'logo.jpg', 'image/jpeg'));
     await within(slotRegion('primary')).findByRole('button', { name: 'Tentar de novo' });
 
-    await leaveAndWait(router);
+    await leaveLogoScreen(router, queryClient);
     await router.navigate(ROUTE);
     await screen.findByRole('region', { name: 'Logo principal' });
 
@@ -330,7 +324,7 @@ describe('academy logos, the mark "the logo may have changed"', () => {
       expect(slotButton('primary', 'Trocar')).toBeDisabled();
     });
 
-    await leaveAndWait(router);
+    await leaveLogoScreen(router, queryClient);
     held.release();
     await waitFor(() => {
       expect(queryClient.isMutating()).toBe(0);
@@ -383,7 +377,7 @@ describe('academy logos, the mark "the logo may have changed"', () => {
     await waitFor(() => {
       expect(slotButton('primary', 'Trocar')).toBeDisabled();
     });
-    await leaveAndWait(router);
+    await leaveLogoScreen(router, queryClient);
     putHeld.release();
     await waitFor(() => {
       expect(queryClient.isMutating()).toBe(0);

@@ -100,8 +100,13 @@ describe('sensei decision, focus after the dialog, QA cases (§ 6.7)', () => {
     await user.click(within(modal).getByRole('button', { name: 'Reprovar' }));
     await waitDialogGone();
     const decided = await within(summary()).findByText('Decidido por Sensei Simulado');
-    // Both closings (dialog and panel) have run their focus give-back by now.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Mantine calls `onExitTransitionEnd` before taking a dialog out of the DOM: once the
+    // dialog and the panel are both out, each closing asked for its focus give-back (a
+    // `setTimeout(0)`), and the next turn of the timers comes after both.
+    await waitFor(() => {
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(decided.closest('[data-slot="decision"]')).toHaveFocus();
   });
 
