@@ -12,6 +12,7 @@ import {
   type LogoWriteKind,
 } from '../../api/queries';
 import type { LogoSlot } from '../../api/types';
+import { useSendLock } from '../../lib/sendLock';
 import { markOutcomeUnknown } from '../exam/examModel';
 import { focusIfLost } from '../exam/focus';
 import { LoadError } from '../students/screenStates';
@@ -121,8 +122,11 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const loadRetry = useRetryFocus([logo], chooseRef);
   const { buttonRef: loadRetryRef } = loadRetry;
   const dialogRef = useRef<HTMLDivElement>(null);
-  /** Synchronous lock of the slot: `isPending` only arrives on the next render. */
-  const busy = useRef(false);
+  /**
+   * Lock of the slot's writes (sending and removing). A removal that worked keeps it until its
+   * confirmation is gone (#88).
+   */
+  const lock = useSendLock();
   /** Whether the slot was already read again because its image failed to load. */
   const reloadedForImage = useRef(false);
 
@@ -176,13 +180,12 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   };
 
   const openPicker = () => {
-    if (busy.current || sending || removing) return;
+    if (lock.held() || sending || removing) return;
     inputRef.current?.click();
   };
 
   const send = async (file: File) => {
-    if (busy.current) return;
-    busy.current = true;
+    if (!lock.take()) return;
     clearMessages();
     setPreparing(true);
     try {
@@ -201,7 +204,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
       // logo that may have changed is already marked.
     } finally {
       setPreparing(false);
-      busy.current = false;
+      lock.release();
       setWritesEnded((count) => count + 1);
     }
   };
@@ -247,14 +250,14 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   };
 
   const openRemove = () => {
-    if (busy.current || sending || removing) return;
+    if (lock.held() || sending || removing) return;
     clearMessages();
     remove.reset();
     setRemoveOpened(true);
   };
 
   const closeRemove = () => {
-    if (busy.current || removing) return;
+    if (lock.held() || removing) return;
     setRemoveOpened(false);
   };
 
@@ -263,23 +266,24 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
    * novo" when the removal may have happened and the slot could not be read again.
    */
   const removeClosed = () => {
+    lock.closed();
     focusIfLost([removeRef.current, chooseRef.current, loadRetryRef.current], {
       leaving: [dialogRef.current],
     });
   };
 
   const confirmRemove = () => {
-    if (busy.current || removing) return;
-    busy.current = true;
+    if (removing || !lock.take()) return;
     remove.mutate(undefined, {
       onSuccess: () => {
+        // No new DELETE (nor sending) while the confirmation fades out: until `removeClosed`.
+        lock.keepUntilClosed();
         setBrokenUrl(null);
         setNotice(`${label} removido.`);
         setRemoveOpened(false);
       },
-      onSettled: () => {
-        busy.current = false;
-      },
+      // The confirmation stays open with the API message: a new try may go.
+      onError: lock.release,
     });
   };
 

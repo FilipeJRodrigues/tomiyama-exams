@@ -6,6 +6,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { useBelts, useUpdateBelt } from '../../api/queries';
 import type { Belt, BeltInput } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
+import { useSendLock } from '../../lib/sendLock';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { BeltSwatch, Field } from '../students/studentCells';
@@ -176,24 +177,26 @@ export function BeltsPage() {
   const retryFocus = useRetryFocus([belts], titleRef);
   const dialogRef = useRef<HTMLDivElement>(null);
   const openings = useRef(0);
-  /** Synchronous lock: `update.isPending` only arrives on the next render (double click). */
-  const busy = useRef(false);
+  /** The PUT's lock: also held while the dialog closes after a PUT that worked (#88). */
+  const lock = useSendLock();
 
   const openEditor = (belt: Belt) => {
     update.reset();
     setSavedName(null);
+    lock.release();
     openings.current += 1;
     setDialog({ belt, opened: true, key: openings.current });
   };
 
   const closeEditor = () => {
     // Nothing closes the dialog while the belt is on its way to the API.
-    if (busy.current || update.isPending) return;
+    if (lock.held() || update.isPending) return;
     setDialog((current) => current && { ...current, opened: false });
   };
 
   /** The dialog is gone: the focus goes back to the belt's edit button (§ 6.7). */
   const dialogClosed = () => {
+    lock.closed();
     const beltId = dialog?.belt.id;
     setDialog(null);
     focusIfLost([beltId ? editButtonOf(beltId) : null, titleRef.current], {
@@ -202,18 +205,18 @@ export function BeltsPage() {
   };
 
   const save = (input: BeltInput) => {
-    if (!dialog || busy.current || update.isPending) return;
-    busy.current = true;
+    if (!dialog || update.isPending || !lock.take()) return;
     update.mutate(
       { id: dialog.belt.id, input },
       {
         onSuccess: (saved) => {
+          // No new PUT while the dialog fades out: until `dialogClosed`.
+          lock.keepUntilClosed();
           setSavedName(saved.name);
           setDialog((current) => current && { ...current, opened: false });
         },
-        onSettled: () => {
-          busy.current = false;
-        },
+        // The dialog stays open with the API message: a new try may go.
+        onError: lock.release,
       },
     );
   };

@@ -13,6 +13,7 @@ import {
 } from '../../api/queries';
 import type { Belt, Requirement, RequirementInput, RequirementKind } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
+import { useSendLock } from '../../lib/sendLock';
 import { sortBelts } from '../belts/beltText';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
@@ -112,8 +113,9 @@ export function RequirementsPage() {
   const createdId = useRef<string | null>(null);
   /** Last row button with the focus, to find it again after a change of layout. */
   const lastAction = useRef<string | null>(null);
-  /** Synchronous lock: `isPending` only arrives on the next render (double click). */
-  const busy = useRef(false);
+  /** Each dialog's lock: also held while it closes after a request that worked (#88). */
+  const editorLock = useSendLock();
+  const deleteLock = useSendLock();
 
   const saving = create.isPending || update.isPending;
   const beltsById = new Map((belts.data ?? []).map((belt) => [belt.id, belt]));
@@ -133,6 +135,7 @@ export function RequirementsPage() {
     create.reset();
     update.reset();
     setNotice(null);
+    editorLock.release();
     createdId.current = null;
     openings.current += 1;
     setEditor({ requirement, opened: true, key: openings.current });
@@ -140,12 +143,13 @@ export function RequirementsPage() {
 
   const closeEditor = () => {
     // Nothing closes the dialog while the item is on its way to the API.
-    if (busy.current || saving) return;
+    if (editorLock.held() || saving) return;
     setEditor((current) => current && { ...current, opened: false });
   };
 
   /** The dialog is gone: the focus goes back to the row (or to "Novo requisito"). */
   const editorClosed = () => {
+    editorLock.closed();
     const editedId = editor?.requirement?.id ?? createdId.current;
     setEditor(null);
     focusIfLost(
@@ -167,18 +171,18 @@ export function RequirementsPage() {
   };
 
   const save = (input: RequirementInput) => {
-    if (!editor || busy.current || saving) return;
-    busy.current = true;
+    if (!editor || saving || !editorLock.take()) return;
     const current = editor.requirement;
     const done = {
       onSuccess: (saved: Requirement) => {
+        // No new request while the dialog fades out: until `editorClosed`.
+        editorLock.keepUntilClosed();
         if (!current) createdId.current = saved.id;
         setNotice(savedNotice(saved, current === null));
         setEditor((state) => state && { ...state, opened: false });
       },
-      onSettled: () => {
-        busy.current = false;
-      },
+      // The dialog stays open with the API message: a new try may go.
+      onError: editorLock.release,
     };
     if (current) update.mutate({ id: current.id, input }, done);
     else create.mutate(input, done);
@@ -187,16 +191,18 @@ export function RequirementsPage() {
   const openDelete = (requirement: Requirement) => {
     remove.reset();
     setNotice(null);
+    deleteLock.release();
     setDeleting({ requirement, opened: true });
   };
 
   const closeDelete = () => {
-    if (busy.current || remove.isPending) return;
+    if (deleteLock.held() || remove.isPending) return;
     setDeleting((current) => current && { ...current, opened: false });
   };
 
   /** The confirmation is gone: back to the row's button, or to the title once deleted. */
   const deleteClosed = () => {
+    deleteLock.closed();
     const id = deleting?.requirement.id;
     setDeleting(null);
     focusIfLost([id ? actionButton(actionKey('delete', id)) : null, titleRef.current], {
@@ -205,16 +211,16 @@ export function RequirementsPage() {
   };
 
   const confirmDelete = () => {
-    if (!deleting || busy.current || remove.isPending) return;
-    busy.current = true;
+    if (!deleting || remove.isPending || !deleteLock.take()) return;
     remove.mutate(deleting.requirement.id, {
       onSuccess: () => {
+        // No new DELETE while the confirmation fades out: until `deleteClosed`.
+        deleteLock.keepUntilClosed();
         setNotice('Requisito excluído.');
         setDeleting((current) => current && { ...current, opened: false });
       },
-      onSettled: () => {
-        busy.current = false;
-      },
+      // The confirmation stays open with the API message: a new try may go.
+      onError: deleteLock.release,
     });
   };
 
