@@ -73,7 +73,7 @@ def confirm_attendance(event: Event, context: Any) -> Response:
     """Confirm a student's attendance at an open event (RN005)."""
     user = current_user(event)
     require_examiner(user)
-    exam_event = _event_or_404(path_param(event, "id"))
+    exam_event = _event_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
     student_id = validation.required_str(json_body(event), "student_id", "Aluno", 64)
     student = student_repo.get_student(student_id)
     if student is None:
@@ -105,7 +105,7 @@ def confirm_attendance(event: Event, context: Any) -> Response:
 def list_event_exams(event: Event, context: Any) -> Response:
     """List the exams of an event, sorted by student name."""
     require_examiner(current_user(event))
-    exam_event = _event_or_404(path_param(event, "id"))
+    exam_event = _event_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
     exams = exam_repo.list_by_event(exam_event.id)
     names = student_repo.get_names(exam.student_id for exam in exams)
     views = [_exam_view(exam, names.get(exam.student_id)) for exam in exams]
@@ -135,8 +135,10 @@ def _correct_by_item(answers: dict[str, ExamAnswer]) -> dict[str, bool]:
 def get_exam_sheet(event: Event, context: Any) -> Response:
     """Return everything the exam screen shows (§ 6.4) in one call."""
     require_examiner(current_user(event))
-    exam_event = _event_or_404(path_param(event, "id"))
-    exam = _exam_or_404(exam_event.id, path_param(event, "student_id"))
+    exam_event = _event_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
+    exam = _exam_or_404(
+        exam_event.id, path_param(event, "student_id", not_found=MSG_EXAM_NOT_FOUND)
+    )
     student = student_repo.get_student(exam.student_id)
     target_belt = belt_repo.get_belt(exam.target_belt_id)
     requirements = requirement_repo.list_by_belt(exam.target_belt_id)
@@ -167,9 +169,17 @@ def get_exam_sheet(event: Event, context: Any) -> Response:
 
 
 def _marking_context(event: Event) -> tuple[ExamEvent, Exam, Requirement]:
-    exam_event = _event_or_404(path_param(event, "id"))
-    exam = _exam_or_404(exam_event.id, path_param(event, "student_id"))
-    return exam_event, exam, _requirement_or_404(path_param(event, "requirement_id"))
+    exam_event = _event_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
+    exam = _exam_or_404(
+        exam_event.id, path_param(event, "student_id", not_found=MSG_EXAM_NOT_FOUND)
+    )
+    return (
+        exam_event,
+        exam,
+        _requirement_or_404(
+            path_param(event, "requirement_id", not_found=MSG_REQUIREMENT_NOT_FOUND)
+        ),
+    )
 
 
 def _summary_after(exam: Exam, requirement_id: str, answer: ExamAnswer | None) -> dict[str, Any]:
@@ -235,8 +245,10 @@ def decide_exam(event: Event, context: Any) -> Response:
     """
     user = current_user(event)
     require_examiner(user)
-    exam_event = _event_or_404(path_param(event, "id"))
-    exam = _exam_or_404(exam_event.id, path_param(event, "student_id"))
+    exam_event = _event_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
+    exam = _exam_or_404(
+        exam_event.id, path_param(event, "student_id", not_found=MSG_EXAM_NOT_FOUND)
+    )
     settings = settings_repo.get_settings()
     decision_rules.ensure_is_sensei(user, settings.sensei_user_id if settings else None)
     decision_rules.ensure_in_progress(exam)

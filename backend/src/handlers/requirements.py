@@ -106,7 +106,7 @@ def update_requirement(event: Event, context: Any) -> Response:
     """Edit an item; belt and kind are locked while it has answers (checked in the write)."""
     user = current_user(event)
     require_examiner(user)
-    existing = _get_or_404(path_param(event, "id"))
+    existing = _get_or_404(path_param(event, "id", not_found=MSG_REQUIREMENT_NOT_FOUND))
     updated = build_requirement(
         json_body(event),
         {belt.id: belt for belt in belt_repo.list_belts()},
@@ -123,7 +123,7 @@ def delete_requirement(event: Event, context: Any) -> Response:
     """Remove an item that has no answers (conditional delete on ``answer_count``)."""
     user = current_user(event)
     require_examiner(user)
-    requirement = _get_or_404(path_param(event, "id"))
+    requirement = _get_or_404(path_param(event, "id", not_found=MSG_REQUIREMENT_NOT_FOUND))
     requirement_repo.delete_requirement(requirement.id)
     logger.info("Requirement %s deleted by %s", requirement.id, user.sub)
     return no_content()

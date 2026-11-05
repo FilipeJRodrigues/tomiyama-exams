@@ -111,7 +111,7 @@ def get_student(event: Event, context: Any) -> Response:
     """Return a student visible to the caller."""
     user = current_user(event)
     student = student_rules.ensure_can_access(
-        student_repo.get_student(path_param(event, "id")), user
+        student_repo.get_student(path_param(event, "id", not_found=MSG_STUDENT_NOT_FOUND)), user
     )
     return json_response(
         200, _student_view(student, belt_repo.list_belts(), _reference_date(event))
@@ -123,7 +123,7 @@ def update_student(event: Event, context: Any) -> Response:
     """Edit a student visible to the caller."""
     user = current_user(event)
     existing = student_rules.ensure_can_access(
-        student_repo.get_student(path_param(event, "id")), user
+        student_repo.get_student(path_param(event, "id", not_found=MSG_STUDENT_NOT_FOUND)), user
     )
     payload = json_body(event)
     belts = belt_repo.list_belts()
@@ -160,7 +160,7 @@ def delete_student(event: Event, context: Any) -> Response:
     """Delete a student without exams; exams are never deleted in cascade."""
     user = current_user(event)
     student = student_rules.ensure_can_access(
-        student_repo.get_student(path_param(event, "id")), user
+        student_repo.get_student(path_param(event, "id", not_found=MSG_STUDENT_NOT_FOUND)), user
     )
     # Quick answer for exams already visible; the conditional delete on
     # ``exam_count`` is what guarantees RN018 under concurrency.
@@ -181,7 +181,7 @@ def list_student_exams(event: Event, context: Any) -> Response:
     never decide the status code.
     """
     require_examiner(current_user(event))
-    student = student_repo.get_student(path_param(event, "id"))
+    student = student_repo.get_student(path_param(event, "id", not_found=MSG_STUDENT_NOT_FOUND))
     if student is None:
         raise NotFoundError(MSG_STUDENT_NOT_FOUND)
     exams = exam_repo.list_by_student(student.id)

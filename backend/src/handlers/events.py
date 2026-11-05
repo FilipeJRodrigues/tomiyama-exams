@@ -62,7 +62,9 @@ def create_event(event: Event, context: Any) -> Response:
 def get_event(event: Event, context: Any) -> Response:
     """Return an event."""
     require_examiner(current_user(event))
-    return json_response(200, _get_or_404(path_param(event, "id")).to_dict())
+    return json_response(
+        200, _get_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND)).to_dict()
+    )
 
 
 @api_handler
@@ -70,7 +72,7 @@ def update_event(event: Event, context: Any) -> Response:
     """Edit an event's name and status."""
     user = current_user(event)
     require_examiner(user)
-    existing = _get_or_404(path_param(event, "id"))
+    existing = _get_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
     updated = event_rules.update_event(existing, json_body(event), now_iso=dates.utc_now_iso())
     event_repo.save_event(updated)
     logger.info("Event %s updated by %s (status %s)", updated.id, user.sub, updated.status)
@@ -82,7 +84,7 @@ def delete_event(event: Event, context: Any) -> Response:
     """Delete an event without exams (RN016)."""
     user = current_user(event)
     require_examiner(user)
-    exam_event = _get_or_404(path_param(event, "id"))
+    exam_event = _get_or_404(path_param(event, "id", not_found=MSG_EVENT_NOT_FOUND))
     # Quick answer for exams already visible; the conditional delete on
     # ``exam_count`` is what guarantees it under concurrency.
     if exam_repo.event_has_exams(exam_event.id):

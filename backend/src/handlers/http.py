@@ -18,6 +18,7 @@ from domain.errors import (
     MSG_SERVICE_BUSY,
     DomainError,
     ForbiddenError,
+    NotFoundError,
     PayloadTooLargeError,
     UnauthorizedError,
     ValidationError,
@@ -263,9 +264,33 @@ def json_body(event: Event) -> dict[str, Any]:
     return body
 
 
-def path_param(event: Event, name: str) -> str:
-    """Return a path parameter (always present when the route matched)."""
-    return event["pathParameters"][name]
+# Longest id accepted in the path, in UTF-8 bytes: the sort key limit of
+# DynamoDB (the partition key allows 2048). No id the API creates comes near
+# it, and a longer one never exists, so the answer is the resource's 404.
+MAX_PATH_ID_BYTES = 1024
+
+
+def path_param(event: Event, name: str, *, not_found: str) -> str:
+    """Return a path id (always present when the route matched).
+
+    An empty id, or one above MAX_PATH_ID_BYTES in UTF-8, cannot exist and
+    would be refused by DynamoDB as a key (500): it is answered with the
+    resource's 404 (``not_found``) before any read. Call it after the
+    permission check, so the order of the answers stays that of an id that
+    does not exist.
+
+    Raises:
+        NotFoundError: With ``not_found`` if the id is empty or too long.
+    """
+    value = (event.get("pathParameters") or {}).get(name) or ""
+    try:
+        size = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        # Lone surrogates cannot be a DynamoDB key either.
+        raise NotFoundError(not_found) from None
+    if not value or size > MAX_PATH_ID_BYTES:
+        raise NotFoundError(not_found)
+    return value
 
 
 def query_param(event: Event, name: str) -> str | None:
