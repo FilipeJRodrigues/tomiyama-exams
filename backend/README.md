@@ -21,6 +21,8 @@ uv sync --python 3.12
 uv run pytest
 ```
 
+Os testes de aceitação ficam em `tests/acceptance/` (hoje, o fluxo completo do § 9 dos requisitos até a aprovação e a lista do dia sem leituras por aluno do § 8, em `test_flow_section9.py`) e rodam junto com os demais no `uv run pytest`; os de regressão ficam em `tests/regression/`.
+
 ## Deploy
 
 Precisa do [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html). Os comandos rodam dentro de `infra/`.
