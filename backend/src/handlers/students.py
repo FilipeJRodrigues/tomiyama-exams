@@ -9,6 +9,8 @@ Guardians see and edit only their own students; examiners see all (RN013).
 - ``PUT /students/{id}``: edit (graduation lock after the first exam, RN013,
   and while an exam is in progress, RN005).
 - ``DELETE /students/{id}``: delete a student without exams (RN018).
+- ``GET /students/{id}/exams``: the student's exam history, examiners only
+  (RN018); kept apart from the detail so the edit form never pays for it.
 """
 
 import logging
@@ -16,11 +18,12 @@ from datetime import date
 from typing import Any
 
 from domain import dates, eligibility
+from domain import history as history_rules
 from domain import students as student_rules
 from domain.belts import Belt
-from domain.errors import ValidationError
+from domain.errors import NotFoundError, ValidationError
 from domain.names import name_sort_key
-from domain.students import Student
+from domain.students import MSG_STUDENT_NOT_FOUND, Student
 from domain.validation import parse_date
 from handlers.http import (
     Event,
@@ -32,8 +35,10 @@ from handlers.http import (
     no_content,
     path_param,
     query_param,
+    require_examiner,
 )
 from repository import belts as belt_repo
+from repository import events as event_repo
 from repository import exams as exam_repo
 from repository import students as student_repo
 
@@ -163,3 +168,25 @@ def delete_student(event: Event, context: Any) -> Response:
     student_repo.delete_student(student.id)
     logger.info("Student %s deleted by %s", student.id, user.sub)
     return no_content()
+
+
+@api_handler
+def list_student_exams(event: Event, context: Any) -> Response:
+    """Return the student's exams, newest first; examiners only (RN018).
+
+    The permission comes before any read, so a guardian learns nothing, not
+    even whether the student exists. The student is read by key and strongly
+    consistent (it decides the 404); the exams come from the ``by_student``
+    index, and the event and belt names from eventually consistent reads that
+    never decide the status code.
+    """
+    require_examiner(current_user(event))
+    student = student_repo.get_student(path_param(event, "id"))
+    if student is None:
+        raise NotFoundError(MSG_STUDENT_NOT_FOUND)
+    exams = exam_repo.list_by_student(student.id)
+    if not exams:
+        return json_response(200, [])
+    events_by_id = event_repo.get_events(exam.event_id for exam in exams)
+    belts_by_id = {belt.id: belt for belt in belt_repo.list_belts()}
+    return json_response(200, history_rules.student_history(exams, events_by_id, belts_by_id))

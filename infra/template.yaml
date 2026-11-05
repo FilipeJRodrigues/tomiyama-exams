@@ -585,6 +585,36 @@ Resources:
             Path: /students/{id}
             Method: DELETE
 
+  # Exam history of a student (examiners only, RN018). Read-only: GetItem of
+  # the student (decides the 404), Query on the by_student index (every
+  # page), BatchGetItem of the exams' events (names and dates) and Scan of
+  # the belts (names). The answers are never read.
+  ListStudentExamsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.list_student_exams
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt StudentsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${ExamsTable.Arn}/index/by_student
+            - Effect: Allow
+              Action: dynamodb:BatchGetItem
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt BeltsTable.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students/{id}/exams
+            Method: GET
+
   # Requirements (examiners only)
   ListRequirementsFunction:
     Type: AWS::Serverless::Function

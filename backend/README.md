@@ -99,6 +99,7 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 | GET | /students | examinador: todos; responsável: os próprios |
 | POST | /students | qualquer usuário logado (dono = usuário do token) |
 | GET/PUT/DELETE | /students/{id} | dono ou examinador |
+| GET | /students/{id}/exams | examinador (histórico, RN018) |
 | GET | /requirements | examinador |
 | POST | /requirements | examinador |
 | PUT/DELETE | /requirements/{id} | examinador |
@@ -159,7 +160,7 @@ No `POST /requirements` sem `sort_order`, a ordem padrão (a maior da faixa + 1)
 | evento (`Events`) | 404 de `GET`/`PUT`/`DELETE /events/{id}`; nas rotas de exame (presença, lista, ficha, marcação e decisão), o 404 e a situação do evento (RN016) | presença, `PUT` ou `DELETE` logo depois de criar o evento → 404 "Evento não encontrado"; marcação logo depois de reabrir → "Evento encerrado" (#64) |
 | requisito (`Requirements`) | 404 do `PUT`/`DELETE /requirements/{id}` e da marcação; 404 ou 409 quando a gravação condicional do `PUT` falha (RN017) | "Requisito não encontrado" logo depois do `POST /requirements` (#64) |
 | exame (`Exams`) | 404 da ficha, da marcação (`PUT`/`DELETE`) e da decisão; 409 da presença repetida; a situação do exame na ficha (RN005–RN010) | ficha, marcação ou decisão logo depois da presença → 404 "Exame não encontrado"; ficha logo depois da decisão ainda "Em andamento" (#78) |
-| aluno (`Students`) | 404 de `GET`/`PUT`/`DELETE /students/{id}` e da presença; a graduação que a edição usa na trava otimista e que a decisão compara com a da presença (RN009, RN013) | 404 logo depois do `POST /students`; segunda edição logo depois de corrigir a graduação recusada sem motivo; decisão logo depois da correção → 409 "A graduação do aluno mudou desde a presença" (#78) |
+| aluno (`Students`) | 404 de `GET`/`PUT`/`DELETE /students/{id}`, do histórico (`GET /students/{id}/exams`) e da presença; a graduação que a edição usa na trava otimista e que a decisão compara com a da presença (RN009, RN013) | 404 logo depois do `POST /students`; segunda edição logo depois de corrigir a graduação recusada sem motivo; decisão logo depois da correção → 409 "A graduação do aluno mudou desde a presença" (#78) |
 | marcador `exam_in_progress_id` do aluno (`Students`) | a trava da graduação com exame em andamento no `PUT /students/{id}` (RN005) | corrigir a graduação logo depois da decisão → 409 "Não é possível alterar a graduação com exame em andamento" (#78) |
 | configurações (`Settings`, registro `academy`) | quem é o sensei na decisão (RN008); o `GET /settings` | quem o master acabou de escolher como sensei → 403 "Somente o sensei pode decidir o exame"; `GET` logo depois do `PUT` com os campos antigos (#78) |
 | marcador da carga inicial (`Settings`, `seed:requirements:v1`) | se a carga dos requisitos já foi feita (RN017) | uma carga logo depois de outra recriava os itens excluídos no intervalo (#78) |
@@ -175,7 +176,7 @@ No `POST /requirements` sem `sort_order`, a ordem padrão (a maior da faixa + 1)
 | `Students` (3) | nenhuma na marcação; uma por ficha, presença e decisão; duas por `PUT /students/{id}` | abaixo de 0,3 RCU/s |
 | `Settings` (1) | uma por decisão e por `GET /settings` (a tela do exame o chama ao abrir) | 0,1 a 0,2 RCU/s, com uma decisão a cada 30 a 60 s |
 
-Leituras que passam da capacidade num mesmo segundo (por exemplo, duas ou três em `Settings`) usam o burst do DynamoDB (até 300 segundos de capacidade não usada); se ele acabar, o botocore repete e, se persistir, a resposta é 503. A capacidade não mudou, e o ensaio de carga no dev (#33) confere esses números. O prod é `PAY_PER_REQUEST`. As listas (`GET /events`, `GET /requirements`, `GET /students`, `GET /events/{id}/exams`), os nomes dos alunos (`BatchGetItem`) e o índice `by_belt` continuam com leitura eventual (veja "Limitação: o `total` vem de um GSI").
+Leituras que passam da capacidade num mesmo segundo (por exemplo, duas ou três em `Settings`) usam o burst do DynamoDB (até 300 segundos de capacidade não usada); se ele acabar, o botocore repete e, se persistir, a resposta é 503. A capacidade não mudou, e o ensaio de carga no dev (#33) confere esses números. O prod é `PAY_PER_REQUEST`. As listas (`GET /events`, `GET /requirements`, `GET /students`, `GET /events/{id}/exams`), os nomes dos alunos (`BatchGetItem`), o índice `by_belt` e as leituras do histórico do aluno além do próprio aluno (índice `by_student`, eventos e faixas) continuam com leitura eventual (veja "Limitação: o `total` vem de um GSI" e "Histórico de exames do aluno (RN018)").
 
 `POST /events/{id}/exams` confirma a presença (RN005) com o corpo `{"student_id": "..."}` e devolve 201 com o exame criado: faixa-alvo (`target_belt_id`) e tipo (`kind`: `STRIPE` ou `BELT`) calculados na **data do evento**, `status` `IN_PROGRESS` e quem confirmou (`created_by`). Recusa com 400 se o evento estiver encerrado ("Evento encerrado"), se o aluno estiver inativo ("Aluno inativo não pode fazer exame") ou inelegível (os motivos da elegibilidade, separados por `; `); 404 para evento ou aluno inexistente; 409 se a presença já foi confirmada ("Presença já confirmada neste evento") ou se o aluno já tem um exame `IN_PROGRESS` em outro evento ("O aluno já tem um exame em andamento em outro evento."; nada é gravado). A gravação é uma única transação (`TransactWriteItems`): o exame só entra se ainda não existir e se, no mesmo instante, o evento existir e estiver aberto e o aluno existir e estiver ativo. Por isso confirmações simultâneas do mesmo aluno resultam em um 201 e um 409, e um evento apagado ou encerrado no meio do caminho nunca recebe exame. Conflitos de transação são repetidos algumas vezes; se persistirem, a resposta é 409 "Outra confirmação está em andamento. Tente de novo.". A transação também exige que a faixa atual, a data da faixa e os graus do aluno ainda sejam os lidos ao calcular a faixa-alvo; se mudaram no meio do caminho, a resposta é 409 "Os dados do aluno mudaram. Tente de novo." e nada é gravado.
 
@@ -496,3 +497,47 @@ A resposta (200) traz o exame decidido e, na aprovação, o aluno já com a nova
 Sem sensei a resposta é 409, e não 400, porque o corpo está certo: o que falta é configurar a academia. As verificações seguem a ordem da tabela. A troca de sensei entre a leitura e a gravação também é barrada: quem deixou de ser o sensei recebe 403 "Somente o sensei pode decidir o exame" e, se o sensei foi removido, 409 "Defina o sensei nas configurações da academia"; nada é gravado.
 
 **Gravação atômica.** A decisão é uma transação (`TransactWriteItems`) com três itens: o `UpdateItem` do exame, condicionado a ainda ser o mesmo exame (`id`) e estar `IN_PROGRESS`; no aluno, um `UpdateItem` condicionado a que a faixa, a data da faixa e os graus ainda sejam os esperados e a que `exam_in_progress_id` seja o do exame decidido (ou não exista): ele remove `exam_in_progress_id` (RN005) e, na aprovação, grava também os campos da graduação; e um `ConditionCheck` em `Settings` de que `sensei_user_id` ainda é quem decide (RN008). Se essa condição falhar, as configurações são relidas para separar a troca de sensei (403) da remoção (409). Por isso duas decisões simultâneas resultam em um 200 e um 409 "Exame já decidido", e a aprovação nunca é aplicada duas vezes. As marcações (RN006) conferem o mesmo `status` na própria transação: uma marcação que leu o exame antes da decisão e grava depois recebe 409 "Exame já decidido" e não entra. Uma marcação gravada antes da decisão fica como está. O evento não entra na transação: um evento com exames não pode ser apagado (`exam_count`), e o encerrado aceita a decisão. Conflitos de transação e limite de capacidade dentro da transação são repetidos algumas vezes com espera crescente; se persistirem, 409 ou 503 (a mesma requisição pode ser reenviada). Cada decisão custa 2 WCU em `Exams`, 2 em `Students` e 2 em `Settings` (o `ConditionCheck`, que numa transação também conta em dobro), o mesmo de antes: na reprovação o `ConditionCheck` no aluno virou `UpdateItem`, que custa o mesmo numa transação.
+
+### Histórico de exames do aluno (RN018)
+
+`GET /students/{id}/exams` devolve todos os exames do aluno, do mais recente para o mais antigo. Nenhum exame é apagado (RN018), então o histórico tem também os exames em andamento e os de aluno inativo. A rota é só dos examinadores: o responsável, mesmo dono do aluno, recebe 403 "Esta área é dos examinadores" antes de qualquer leitura, sem saber nem se o aluno existe. Se os pais vão ver o histórico é um ponto em aberto da arquitetura (card #39).
+
+```json
+[
+  {"event_id": "…", "event_name": "Exame setembro/2027", "exam_date": "2027-09-25",
+   "target_belt_id": "…", "target_belt_name": "Azul", "kind": "BELT", "status": "FAILED",
+   "decided_by_id": "<sub do sensei>", "decided_at": "2027-09-25T15:00:00+00:00",
+   "notes": "Treinar as quedas", "created_at": "2027-09-25T12:00:00+00:00",
+   "source": {"belt_id": "…", "belt_name": "Cinza/Azul", "belt_since": "2027-03-20", "stripes": 0}},
+  {"event_id": "…", "event_name": "Exame março/2027", "exam_date": "2027-03-20",
+   "target_belt_id": "…", "target_belt_name": "Cinza/Azul", "kind": "BELT", "status": "APPROVED",
+   "decided_by_id": "<sub do sensei>", "decided_at": "2027-03-20T15:00:00+00:00",
+   "notes": "Ótimo ukemi", "created_at": "2027-03-20T12:00:00+00:00",
+   "source": {"belt_id": "…", "belt_name": "Cinza", "belt_since": "2026-03-14", "stripes": 0}}
+]
+```
+
+- A resposta é um array, como nas outras listas (`GET /students`, `GET /events/{id}/exams`). Aluno sem exames → `[]`.
+- Cada item traz os campos do exame (§ 3.5) com o nome e a data do evento e o nome da faixa-alvo. `kind`: `STRIPE` (grau) ou `BELT` (faixa). `status`: `IN_PROGRESS` (em andamento; `decided_by_id`, `decided_at` e `notes` vêm `null`), `APPROVED` ou `FAILED`. `created_at` é a confirmação da presença. **Sem percentuais:** as marcações não são lidas; o percentual de cada exame continua na ficha (`GET /events/{id}/exams/{student_id}`).
+- `source` é a graduação do aluno na presença (faixa, data da faixa e graus), a mesma que a decisão confere; `null` em exames confirmados antes de ela ser guardada (só no dev). Ajuda a ler o exame de grau (`STRIPE`): a faixa-alvo é a seguinte, de onde vêm os itens, mas o aluno continua na faixa de origem.
+- **Histórico preservado:** faixa-alvo, tipo e origem são os gravados no exame na presença. Trocar a faixa do aluno depois, pela aprovação ou pela edição, não muda nenhum exame antigo. Os nomes (`event_name`, `target_belt_name`, `source.belt_name`) são os atuais do evento e da faixa.
+- Evento ou faixa que não existe mais → o nome vem `null`, sem erro. Isso só acontece com dado apagado à mão: evento com exames não pode ser excluído (RN016) e nenhuma rota apaga faixa. Sem o evento, `exam_date` também vem `null`, e o exame vai para o fim da lista.
+- **Ordem:** pela `exam_date` do evento, da mais recente para a mais antiga; na mesma data, a presença mais nova primeiro (`created_at`); por fim `event_id`, para a ordem ser estável.
+
+| Situação | Resposta |
+| --- | --- |
+| sem login / responsável (mesmo o dono do aluno) | 401 "Faça login para continuar" / 403 "Esta área é dos examinadores" |
+| aluno inexistente | 404 "Aluno não encontrado" |
+| limite de capacidade do DynamoDB que persistiu em qualquer leitura (aluno, índice `by_student`, eventos ou faixas) | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+
+Outros erros do DynamoDB respondem 500 "Erro interno. Tente de novo.", como nas demais rotas.
+
+**Leituras.** O aluno é lido por chave, com `ConsistentRead=True`, porque decide o 404 (veja "Leitura consistente nas leituras por chave"). Os exames vêm do índice `by_student` de `Exams`: um `Query` que segue `LastEvaluatedKey` até a última página, sem `Limit`. Os eventos vêm num `BatchGetItem`, até 100 por chamada; as chaves que o DynamoDB devolve em `UnprocessedKeys` por falta de capacidade são pedidas de novo até 3 vezes, com espera crescente (de 0,05 a 0,4 s, no máximo 0,7 s somadas), e, se ainda sobrarem, a resposta é 503. As faixas vêm de um `Scan` em `Belts`. Eventos e faixas usam leitura eventual porque não decidem o código da resposta, e a `exam_date`, que decide a ordem, não muda depois da criação do evento. No pior caso, um nome editado há menos de um segundo aparece com o valor anterior. Aluno sem exames não lê eventos nem faixas.
+
+**Limitação: o índice `by_student` é um GSI.** O DynamoDB não aceita leitura consistente em GSI. Um exame recém-criado pela presença pode demorar um pouco (normalmente menos de um segundo) a aparecer, e um exame recém-decidido pode aparecer ainda com a situação anterior. Recarregar a tela resolve.
+
+**Rota própria (decisão do usuário, 2026-11-05).** A arquitetura descreve `GET /alunos/{id}` como "Detalhe do aluno e histórico de exames". O histórico ficou numa rota separada para que o `GET /students/{id}`, usado pelo formulário de edição, não fique mais caro nem falhe por causa do histórico; a resposta dele não mudou. O desvio é só de formato: o conteúdo é o que a arquitetura pede.
+
+**Permissões** (`ListStudentExamsFunction`): `dynamodb:GetItem` em `Students`, `dynamodb:Query` só no índice `by_student` de `Exams` (não na tabela), `dynamodb:BatchGetItem` em `Events` e `dynamodb:Scan` em `Belts`. Nenhum acesso a `Answers`, a `Settings`, ao Cognito ou ao S3, e nenhuma gravação.
+
+**Custo no dev.** Cada histórico custa 1 RCU no aluno (`Students`, 3 RCU), cerca de 0,5 no índice `by_student` (1 RCU; a consulta soma o tamanho dos exames, cerca de 0,5 KB cada), 0,5 por evento no `BatchGetItem` (`Events`, 2 RCU; cada item conta como 4 KB) e cerca de 0,5 no `Scan` das faixas (`Belts`, 3 RCU). Um aluno com 10 exames lê cerca de 5 RCU de `Events` de uma vez, o que o burst do DynamoDB cobre. A capacidade não mudou.
