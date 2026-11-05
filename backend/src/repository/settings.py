@@ -51,11 +51,19 @@ def _raise_busy(exc: ClientError) -> None:
 def get_settings() -> AcademySettings | None:
     """Return the settings, or None before the first save.
 
+    Strongly consistent: the decision reads the sensei here (RN008), so a
+    sensei chosen a moment ago may already decide, and ``GET /settings`` right
+    after the ``PUT`` shows the saved fields.
+
     Raises:
         ServiceUnavailableError: If the table kept throttling.
     """
     try:
-        item = table(SETTINGS_TABLE_ENV).get_item(Key={"id": SETTINGS_ID}).get("Item")
+        item = (
+            table(SETTINGS_TABLE_ENV)
+            .get_item(Key={"id": SETTINGS_ID}, ConsistentRead=True)
+            .get("Item")
+        )
     except ClientError as exc:
         _raise_busy(exc)
         raise

@@ -257,23 +257,36 @@ def _guard_error(exam: Exam, reasons: list[str | None]) -> DomainError | None:
     """Translate a failed exam or event check, reading the item again.
 
     Exam deleted or replaced → 404; decided → 409 "Exame já decidido" (RN010).
-    Event deleted → 404; closed → 400 "Evento encerrado" (RN016).
+    Event deleted → 404; closed → 400 "Evento encerrado" (RN016). The re-reads
+    are strongly consistent, so they see the concurrent write that made the
+    check fail.
     """
     if _failed(reasons, _CHECK_EXAM):
         key = {"event_id": exam.event_id, "student_id": exam.student_id}
-        item = table(EXAMS_TABLE_ENV).get_item(Key=key).get("Item")
+        item = table(EXAMS_TABLE_ENV).get_item(Key=key, ConsistentRead=True).get("Item")
         if not item or item.get("id") != exam.id:
             return NotFoundError(MSG_EXAM_NOT_FOUND)
         return ConflictError(MSG_EXAM_DECIDED)
     if _failed(reasons, _CHECK_EVENT):
-        item = table(EVENTS_TABLE_ENV).get_item(Key={"id": exam.event_id}).get("Item")
+        item = (
+            table(EVENTS_TABLE_ENV)
+            .get_item(Key={"id": exam.event_id}, ConsistentRead=True)
+            .get("Item")
+        )
         return ValidationError(MSG_EVENT_CLOSED) if item else NotFoundError(MSG_EVENT_NOT_FOUND)
     return None
 
 
 def _requirement_error(requirement_id: str) -> DomainError:
-    """Translate a failed requirement condition: deleted (404) or moved to another belt (400)."""
-    item = table(REQUIREMENTS_TABLE_ENV).get_item(Key={"id": requirement_id}).get("Item")
+    """Translate a failed requirement condition: deleted (404) or moved to another belt (400).
+
+    The re-read is strongly consistent, so a delete a moment ago is a 404.
+    """
+    item = (
+        table(REQUIREMENTS_TABLE_ENV)
+        .get_item(Key={"id": requirement_id}, ConsistentRead=True)
+        .get("Item")
+    )
     if not item:
         return NotFoundError(MSG_REQUIREMENT_NOT_FOUND)
     return ValidationError(MSG_ITEM_NOT_IN_BELT)
