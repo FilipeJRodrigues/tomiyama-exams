@@ -83,19 +83,30 @@ describe('historyExamTitle (§ 6.4 texts)', () => {
       },
       'Grau na faixa Roxa (rumo à Marrom)',
     ],
-    ['stripe exam without source', { kind: 'STRIPE', source: null }, 'Grau (rumo à Azul)'],
+    [
+      'stripe exam without source',
+      { kind: 'STRIPE', source: null },
+      'Grau na faixa Cinza/Azul (rumo à Azul)',
+    ],
     [
       'stripe exam whose source belt is gone',
       {
         kind: 'STRIPE',
         source: { belt_id: 'apagada', belt_name: null, belt_since: '2027-03-20', stripes: 1 },
       },
-      'Grau (rumo à Azul)',
+      'Grau na faixa Cinza/Azul (rumo à Azul)',
     ],
     ['belt exam whose target belt is gone', { target_belt_name: null }, 'Faixa —'],
     ['stripe exam whose target belt is gone', { kind: 'STRIPE', target_belt_name: null }, 'Grau'],
   ])('%s', (_case, overrides, text) => {
-    expect(historyExamTitle(entry(overrides))).toBe(text);
+    expect(historyExamTitle(entry(overrides), mockBelts)).toBe(text);
+  });
+
+  it('without the belts yet, uses the names the API sends', () => {
+    expect(historyExamTitle(entry({ kind: 'STRIPE', source: null }))).toBe('Grau (rumo à Azul)');
+    expect(historyExamTitle(entry({ kind: 'STRIPE' }))).toBe(
+      'Grau na faixa Cinza/Azul (rumo à Azul)',
+    );
   });
 
   it('gives the same text as the exam screen for the same exam', () => {
@@ -107,10 +118,15 @@ describe('historyExamTitle (§ 6.4 texts)', () => {
     } as Pick<ExamSheet, 'exam' | 'target_belt'>;
     const history = entry({
       kind: 'STRIPE',
+      target_belt_id: marrom.id,
       target_belt_name: marrom.name,
       source: { belt_id: roxa.id, belt_name: roxa.name, belt_since: '2025-06-30', stripes: 3 },
     });
-    expect(historyExamTitle(history)).toBe(examTitle(sheet, mockBelts));
+    expect(historyExamTitle(history, mockBelts)).toBe(examTitle(sheet, mockBelts));
+    const noSource = { ...sheet, exam: { ...sheet.exam, source_belt_id: null } };
+    expect(historyExamTitle({ ...history, source: null }, mockBelts)).toBe(
+      examTitle(noSource, mockBelts),
+    );
     expect(historyExamTitle(entry({ target_belt_name: null }))).toBe(
       examTitle({ ...sheet, exam: { ...sheet.exam, kind: 'BELT' }, target_belt: null }),
     );
@@ -172,7 +188,7 @@ describe('decisionLabel (RN008, criterion of the exam screen)', () => {
     );
   });
 
-  it('rn008 says "não está mais ativo" only once both reads answered', () => {
+  it('rn008 says "não está mais ativo" only once the examiners answered', () => {
     expect(decisionLabel(entry({ decided_by_id: 'quem-saiu' }), LOADED)?.who).toBe(
       'Decidido por um examinador que não está mais ativo',
     );

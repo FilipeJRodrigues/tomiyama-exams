@@ -3,10 +3,16 @@
  * labelled. Order, target belt, kind and status come from the API and are never recalculated;
  * the exam texts and who decided follow the exam screen (§ 6.4).
  */
-import type { ExamStatus, Examiner, SettingsSensei, StudentHistoryEntry } from '../../api/types';
+import type {
+  Belt,
+  ExamStatus,
+  Examiner,
+  SettingsSensei,
+  StudentHistoryEntry,
+} from '../../api/types';
 import { localDateOf } from '../../lib/dates';
 import { decidedByText, deciderName } from '../exam/decisionModel';
-import { examTitleText } from '../exam/examModel';
+import { examTitleText, stripeBelt } from '../exam/examModel';
 import { dateLabel } from './studentText';
 
 /** Shown for an exam whose event no longer exists (removed by hand: RN016 keeps it). */
@@ -31,14 +37,29 @@ export function historyDateLabel(entry: EventFields): string {
   return entry.exam_date === null ? '—' : dateLabel(entry.exam_date);
 }
 
+type TitleFields = Pick<
+  StudentHistoryEntry,
+  'kind' | 'target_belt_id' | 'target_belt_name' | 'source'
+>;
+
 /**
- * `Faixa Azul`, `Grau na faixa Roxa (rumo à Marrom)` or, without the belt of the stripe,
- * `Grau (rumo à Marrom)`: the texts of `examTitle` (§ 6.4), from the names the API sends.
+ * `Faixa Azul` or `Grau na faixa Roxa (rumo à Marrom)`: the texts of `examTitle` (§ 6.4). The
+ * belt of the stripe comes from `stripeBelt`, as on the exam screen: the source belt, else
+ * (no source, or its belt was removed) the belt right before the target in the order. The
+ * target's name is the one the API sends. Without the belts (or the target among them), the
+ * names the API sends: `Grau (rumo à Marrom)` when the source has no name.
  */
-export function historyExamTitle(
-  entry: Pick<StudentHistoryEntry, 'kind' | 'target_belt_name' | 'source'>,
-): string {
-  return examTitleText(entry.kind, entry.target_belt_name, entry.source?.belt_name);
+export function historyExamTitle(entry: TitleFields, belts?: readonly Belt[]): string {
+  const target =
+    entry.kind === 'STRIPE' && belts
+      ? belts.find((belt) => belt.id === entry.target_belt_id)
+      : undefined;
+  const current = target && belts ? stripeBelt(entry.source?.belt_id, target, belts) : undefined;
+  return examTitleText(
+    entry.kind,
+    entry.target_belt_name,
+    current ? current.name : entry.source?.belt_name,
+  );
 }
 
 /**
@@ -46,12 +67,10 @@ export function historyExamTitle(
  * says which exam it opens (every row has one), and starts with the text on screen.
  */
 export function openExamLabel(
-  entry: Pick<
-    StudentHistoryEntry,
-    'event_name' | 'exam_date' | 'kind' | 'target_belt_name' | 'source'
-  >,
+  entry: TitleFields & Pick<StudentHistoryEntry, 'event_name' | 'exam_date'>,
+  belts?: readonly Belt[],
 ): string {
-  return `Abrir exame: ${historyExamTitle(entry)}, ${historyEventName(entry)}, ${historyDateLabel(entry)}`;
+  return `Abrir exame: ${historyExamTitle(entry, belts)}, ${historyEventName(entry)}, ${historyDateLabel(entry)}`;
 }
 
 /** What the screen has to name who decided: the active examiners and the sensei. */
@@ -61,8 +80,10 @@ export interface DeciderNames {
   /** The sensei of `GET /settings`; undefined while it loads or when it failed. */
   sensei: SettingsSensei | null | undefined;
   /**
-   * Both reads answered. Only then a decider that neither names is "no longer active"; while
-   * one loads or after it failed, the text stays neutral ("Decidido").
+   * As on the exam screen: `GET /examiners` answered and `GET /settings` is no longer loading
+   * (answered or failed). Then a decider that neither names is "no longer active"; while the
+   * examiners load or after they failed, the text stays neutral ("Decidido"). The settings
+   * only name the sensei.
    */
   loaded: boolean;
 }

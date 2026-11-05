@@ -247,6 +247,7 @@ describe('histórico de exames: textos de cada exame', () => {
         event_id: 'grau',
         event_name: 'Exame novembro/2026',
         kind: 'STRIPE',
+        target_belt_id: beltId('Marrom'),
         target_belt_name: 'Marrom',
         source: {
           belt_id: beltId('Roxa'),
@@ -259,6 +260,7 @@ describe('histórico de exames: textos de cada exame', () => {
         event_id: 'grau-sem-origem',
         event_name: 'Exame junho/2026',
         kind: 'STRIPE',
+        target_belt_id: beltId('Verde'),
         target_belt_name: 'Verde',
         source: null,
       }),
@@ -268,7 +270,8 @@ describe('histórico de exames: textos de cada exame', () => {
     expect(tableRows(table).map((cells) => cells[2])).toEqual([
       'Faixa Azul',
       'Grau na faixa Roxa (rumo à Marrom)',
-      'Grau (rumo à Verde)',
+      // Without the source, the belt right before the target, as `examTitle`.
+      'Grau na faixa Laranja (rumo à Verde)',
     ]);
   });
 
@@ -409,7 +412,7 @@ describe('histórico de exames: quem decidiu e quando (RN008)', () => {
     expect(within(section()).queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('shows the history when GET /settings fails, naming the active examiners', async () => {
+  it('rn008 shows the history when GET /settings fails, naming the active examiners', async () => {
     server.use(http.get(SETTINGS_URL, busy));
     answerHistory([
       entry({ event_id: 'a', event_name: 'Exame A' }),
@@ -420,8 +423,35 @@ describe('histórico de exames: quem decidiu e quando (RN008)', () => {
     expect(
       await within(rowOf(table, 'Exame A')).findByText('Decidido por Sensei Simulado'),
     ).toBeInTheDocument();
-    expect(within(rowOf(table, 'Exame B')).getByText('Decidido')).toBeInTheDocument();
+    // As on the exam screen: the examiners answered, so who is not among them is no longer
+    // active; the settings only name the sensei.
+    expect(
+      await within(rowOf(table, 'Exame B')).findByText(
+        'Decidido por um examinador que não está mais ativo',
+      ),
+    ).toBeInTheDocument();
     expect(within(section()).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('says only "Decidido" while GET /settings loads, even with the examiners answered', async () => {
+    const settings = hold(SETTINGS_URL);
+    answerHistory([
+      entry({ event_id: 'a', event_name: 'Exame A' }),
+      entry({ event_id: 'b', event_name: 'Exame B', decided_by_id: 'quem-saiu' }),
+    ]);
+    await openEdit(ELIDA);
+    const table = await historyTable();
+    expect(
+      await within(rowOf(table, 'Exame A')).findByText('Decidido por Sensei Simulado'),
+    ).toBeInTheDocument();
+    // The decider may still be the sensei of the settings.
+    expect(within(rowOf(table, 'Exame B')).getByText('Decidido')).toBeInTheDocument();
+    await settings.release();
+    expect(
+      await within(rowOf(table, 'Exame B')).findByText(
+        'Decidido por um examinador que não está mais ativo',
+      ),
+    ).toBeInTheDocument();
   });
 });
 

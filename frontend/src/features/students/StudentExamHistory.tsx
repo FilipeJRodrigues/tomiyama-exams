@@ -18,8 +18,8 @@ import {
 import { useRef, type ReactNode } from 'react';
 import { Link } from 'react-router';
 
-import { useExaminers, useSettings, useStudentExams } from '../../api/queries';
-import type { ExamStatus, StudentHistoryEntry } from '../../api/types';
+import { useBelts, useExaminers, useSettings, useStudentExams } from '../../api/queries';
+import type { Belt, ExamStatus, StudentHistoryEntry } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { examPath } from '../../app/navigation';
 import { EXAM_STATUS_LABELS } from '../../lib/labels';
@@ -98,12 +98,13 @@ function DecisionText({ entry, names }: EntryProps) {
 interface LinkProps {
   entry: StudentHistoryEntry;
   studentId: string;
+  belts: readonly Belt[] | undefined;
   /** Phone cards: a touch target of 44 px. */
   touch?: boolean;
 }
 
 /** The exam screen (§ 6.4) of this exam; nothing when the event no longer exists. */
-function OpenExamLink({ entry, studentId, touch = false }: LinkProps) {
+function OpenExamLink({ entry, studentId, belts, touch = false }: LinkProps) {
   if (!hasEvent(entry)) return null;
   return (
     <Button
@@ -113,7 +114,7 @@ function OpenExamLink({ entry, studentId, touch = false }: LinkProps) {
       size="xs"
       style={touch ? TOUCH_TARGET : undefined}
       leftSection={<IconClipboardList size={16} aria-hidden />}
-      aria-label={openExamLabel(entry)}
+      aria-label={openExamLabel(entry, belts)}
     >
       Abrir exame
     </Button>
@@ -124,9 +125,11 @@ interface ListProps {
   entries: readonly StudentHistoryEntry[];
   studentId: string;
   names: DeciderNames;
+  /** `GET /belts`, for the belt of a stripe exam as on the exam screen. */
+  belts: readonly Belt[] | undefined;
 }
 
-function HistoryTable({ entries, studentId, names }: ListProps) {
+function HistoryTable({ entries, studentId, names, belts }: ListProps) {
   return (
     <Table.ScrollContainer
       type="native"
@@ -156,7 +159,7 @@ function HistoryTable({ entries, studentId, names }: ListProps) {
                 <Table.Th scope="row" fw={500} style={WRAP}>
                   {historyEventName(entry)}
                 </Table.Th>
-                <Table.Td>{historyExamTitle(entry)}</Table.Td>
+                <Table.Td>{historyExamTitle(entry, belts)}</Table.Td>
                 <Table.Td>
                   <HistoryStatus status={entry.status} />
                 </Table.Td>
@@ -171,7 +174,7 @@ function HistoryTable({ entries, studentId, names }: ListProps) {
                   </Stack>
                 </Table.Td>
                 <Table.Td>
-                  <OpenExamLink entry={entry} studentId={studentId} />
+                  <OpenExamLink entry={entry} studentId={studentId} belts={belts} />
                 </Table.Td>
               </Table.Tr>
             );
@@ -182,7 +185,7 @@ function HistoryTable({ entries, studentId, names }: ListProps) {
   );
 }
 
-function HistoryCards({ entries, studentId, names }: ListProps) {
+function HistoryCards({ entries, studentId, names, belts }: ListProps) {
   return (
     <Stack
       component="ul"
@@ -203,7 +206,7 @@ function HistoryCards({ entries, studentId, names }: ListProps) {
             </Title>
             <Stack component="dl" gap="xs" m={0} mb={hasEvent(entry) ? 'sm' : 0}>
               <Field label="Data">{historyDateLabel(entry)}</Field>
-              <Field label="Exame">{historyExamTitle(entry)}</Field>
+              <Field label="Exame">{historyExamTitle(entry, belts)}</Field>
               <Field label="Situação">
                 <HistoryStatus status={entry.status} />
               </Field>
@@ -218,7 +221,7 @@ function HistoryCards({ entries, studentId, names }: ListProps) {
                 </Field>
               )}
             </Stack>
-            <OpenExamLink entry={entry} studentId={studentId} touch />
+            <OpenExamLink entry={entry} studentId={studentId} belts={belts} touch />
           </Card>
         );
       })}
@@ -240,6 +243,8 @@ interface StudentExamHistoryProps {
 export function StudentExamHistory({ studentId, visible }: StudentExamHistoryProps) {
   const history = useStudentExams(studentId);
   const examiners = useExaminers();
+  // Already loaded by the edit form (the section shows with it): the same cached read.
+  const belts = useBelts();
   const settings = useSettings();
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -250,7 +255,7 @@ export function StudentExamHistory({ studentId, visible }: StudentExamHistoryPro
   const names: DeciderNames = {
     examiners: examiners.data,
     sensei: settings.data?.sensei,
-    loaded: examiners.data !== undefined && settings.data !== undefined,
+    loaded: examiners.data !== undefined && !settings.isPending,
   };
 
   // An error replaces the history only while there is none yet: a failed background reload
@@ -271,9 +276,13 @@ export function StudentExamHistory({ studentId, visible }: StudentExamHistoryPro
   } else if (history.data.length === 0) {
     content = <Text>{EMPTY_HISTORY}</Text>;
   } else if (isMobile) {
-    content = <HistoryCards entries={history.data} studentId={studentId} names={names} />;
+    content = (
+      <HistoryCards entries={history.data} studentId={studentId} names={names} belts={belts.data} />
+    );
   } else {
-    content = <HistoryTable entries={history.data} studentId={studentId} names={names} />;
+    content = (
+      <HistoryTable entries={history.data} studentId={studentId} names={names} belts={belts.data} />
+    );
   }
 
   return (
