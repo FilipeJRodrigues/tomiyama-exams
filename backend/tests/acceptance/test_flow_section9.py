@@ -11,13 +11,16 @@ RN011, the last item of the roadmap (card #98).
 
 Clock: the academy, the event and the students are set up on ``SCENARIO_NOW``
 (2026-11-01, after Ana's belt date of 2026-03-14 and both birth dates, so
-RN014 accepts them); the exam day runs on the event date, 2027-03-13.
+RN014 accepts them); the exam day runs on the event date, 2027-03-13, and the
+sensei decides two days later (2027-03-15), with the event still open, so the
+new belt date (RN009) can only be the event's.
 
 Also here, § 8 ("a lista do dia e a navegação entre exames não podem fazer
 consultas por aluno em laço"): the DynamoDB calls of the exam-day screen (and
-of opening one exam) with 80 students present are the same as with 2. Only
-those reads go through the handlers; the 80 students and attendances are set
-up through the repository, to keep the test fast.
+of opening one exam) with 80 students, present ones mixed with absent, blocked
+and inactive ones, are the same as with 2 present. Only those reads go through
+the handlers; the 80 students and attendances are set up through the
+repository, to keep the test fast.
 """
 
 import base64
@@ -26,7 +29,9 @@ import struct
 import zlib
 from collections import Counter
 from collections.abc import Callable
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -47,7 +52,6 @@ from domain import dates
 from domain import exams as exam_rules
 from domain.belts import Belt, seed_belt_id
 from domain.requirements import seed_requirements
-from domain.students import Student
 from domain.users import ADMIN_GROUP, MASTER_GROUP, User
 from handlers import belts as belt_handlers
 from handlers import cognito_triggers
@@ -69,11 +73,16 @@ Handler = Callable[[dict[str, Any], Any], dict[str, Any]]
 
 EVENT_NAME = "Exame março/2027"
 EVENT_DATE = "2027-03-13"
-# Exam day (UTC; 09:00, 10:00 and 12:00 in Brasília, UTC-3).
+# Exam day (UTC; 09:00 and 10:00 in Brasília, UTC-3). The sensei decides two days
+# later, with the event still open: Ana's new belt date is the event's, not the
+# decision's (RN009).
 ATTENDANCE_AT = "2027-03-13T12:00:00+00:00"
 MARKING_AT = "2027-03-13T13:00:00+00:00"
-DECISION_AT = "2027-03-13T15:00:00+00:00"
+DECISION_AT = "2027-03-15T13:00:00+00:00"
 
+# The master saves a provisional name with the sensei; an examiner fills in the
+# academy's own data afterwards.
+PROVISIONAL_NAME = "Academia"
 ACADEMY_NAME = "Associação Tomiyama de Judô"
 CITY = "Araraquara"
 
@@ -234,6 +243,21 @@ def _counts(summary: dict[str, Any]) -> dict[str, tuple[int, int, int]]:
     }
 
 
+def _percents(summary: dict[str, Any]) -> dict[str, float | None]:
+    """``percent`` per kind of a ``summary`` (RN007)."""
+    return {kind: score["percent"] for kind, score in summary.items()}
+
+
+def _percent(correct: int, total: int) -> float:
+    """RN007: ``correct ÷ items of the kind × 100``, one decimal rounded half up.
+
+    The same rounding as ``domain.scoring`` (the requirement fixes one decimal, not
+    the rounding mode).
+    """
+    exact = Decimal(correct) * 100 / Decimal(total)
+    return float(exact.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
 # --- § 9 -----------------------------------------------------------------------------------
 
 
@@ -258,11 +282,16 @@ def test_section9_full_flow_until_approval(
     examiners = _ok(user_handlers.list_examiners, master)
     sensei_id = next(item["id"] for item in examiners if item["name"] == "Tomiyama")
     assert sensei_id == sensei.sub
-    # The form sends every field and the name is required, so the master fills it too.
+    # The form sends every field and the name is required, so the master sends a
+    # provisional one with the sensei.
     chosen = _ok(
         settings_handlers.update_settings,
         master,
-        body={"academy_name": ACADEMY_NAME, "sensei_user_id": sensei_id, "certificate_city": None},
+        body={
+            "academy_name": PROVISIONAL_NAME,
+            "sensei_user_id": sensei_id,
+            "certificate_city": None,
+        },
     )
     assert chosen["sensei"] == {
         "id": sensei.sub,
@@ -271,12 +300,18 @@ def test_section9_full_flow_until_approval(
         "active": True,
     }
 
+    # The examiner sets up the academy: its name and city, resending the stored sensei.
     form = _ok(settings_handlers.get_settings, examiner)
+    assert (form["academy_name"], form["sensei_user_id"], form["certificate_city"]) == (
+        PROVISIONAL_NAME,
+        sensei.sub,
+        None,
+    )
     _ok(
         settings_handlers.update_settings,
         examiner,
         body={
-            "academy_name": form["academy_name"],
+            "academy_name": ACADEMY_NAME,
             "sensei_user_id": form["sensei_user_id"],
             "certificate_city": CITY,
         },
@@ -434,6 +469,9 @@ def test_section9_full_flow_until_approval(
     assert Counter(item["kind"] for item in items) == {"THEORY": 11, "PRACTICE": 13}
     assert all(item["answer"] is None for item in items)
     assert _counts(sheet["summary"]) == {"THEORY": (11, 0, 0), "PRACTICE": (13, 0, 0)}
+    assert _percents(sheet["summary"]) == {"THEORY": 0.0, "PRACTICE": 0.0}
+    # The helper below agrees with the percentages of step 6, written by hand.
+    assert (_percent(9, 11), _percent(10, 13)) == (THEORY_PERCENT, PRACTICE_PERCENT)
 
     clock.set(MARKING_AT)
     position = {"THEORY": 0, "PRACTICE": 0}
@@ -459,6 +497,13 @@ def test_section9_full_flow_until_approval(
         expected[kind][2] += correct
         # "marcados X de N", item by item.
         assert _counts(marked["summary"]) == {key: tuple(value) for key, value in expected.items()}
+        # The percentage, item by item: over every item of the kind, not over the
+        # marked ones, and rounded, not truncated (the first correct theory item
+        # gives 9.1, not 100.0 nor 9.0).
+        assert _percents(marked["summary"]) == {
+            key: _percent(correct_so_far, total)
+            for key, (total, _, correct_so_far) in expected.items()
+        }
 
     # --- Step 6: the summary shows both percentages; only the sensei decides.
     sheet = _ok(exam_handlers.get_exam_sheet, sensei, path=exam_path)
@@ -490,13 +535,12 @@ def test_section9_full_flow_until_approval(
             body={"result": "APPROVED"},
             path=exam_path,
         )
-    assert _ok(exam_handlers.get_exam_sheet, examiner, path=exam_path)["exam"]["status"] == (
-        "IN_PROGRESS"
-    )
+    before = _ok(exam_handlers.get_exam_sheet, examiner, path=exam_path)
+    assert (before["exam"]["status"], before["event"]["status"]) == ("IN_PROGRESS", "OPEN")
     decided = _ok(exam_handlers.decide_exam, sensei, body={"result": "APPROVED"}, path=exam_path)
 
-    # --- Step 7: Ana is Cinza/Azul since the event date, with 0 stripes; the exam keeps
-    # who decided and when, and nothing changes after the decision.
+    # --- Step 7: Ana is Cinza/Azul since the event date (not the decision's), with 0
+    # stripes; the exam keeps who decided and when, and nothing changes after the decision.
     assert (decided["exam"]["status"], decided["exam"]["student_name"]) == ("APPROVED", "Ana")
     assert (decided["exam"]["decided_by_id"], decided["exam"]["decided_at"]) == (
         sensei.sub,
@@ -587,8 +631,24 @@ def _record_dynamodb_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, s
     return calls
 
 
-def _students_present(event_id: str, first: int, last: int) -> list[str]:
-    """Students ``first..last``, eligible like Ana, with the attendance confirmed.
+# The cases of a student on the exam-day screen. Mixed among the 80 students, so a
+# read per student limited to one of the cases is caught as well.
+PRESENT = "present"  # active and eligible, attendance confirmed
+ABSENT = "absent"  # active and eligible, no attendance
+BLOCKED = "blocked"  # active, 5 months on the Cinza on the event date (Cinza/Azul asks 6)
+INACTIVE = "inactive"  # left out of the list of active students
+LEFT = "left"  # attendance confirmed, made inactive afterwards (still in the event)
+
+
+def _case(number: int) -> str:
+    """Students 1 and 2 are present; from 3 on, one in ten of each other case."""
+    if number <= 2:
+        return PRESENT
+    return {0: ABSENT, 1: BLOCKED, 2: INACTIVE, 3: LEFT}.get(number % 10, PRESENT)
+
+
+def _add_students(event_id: str, first: int, last: int) -> Counter[str]:
+    """Students ``first..last``, like Ana, each in the case of its number; return the cases.
 
     Set up through the repository and the attendance rule (``POST /students`` and
     ``POST /events/{id}/exams`` already run in § 9): only the reads of the exam-day
@@ -597,26 +657,34 @@ def _students_present(event_id: str, first: int, last: int) -> list[str]:
     exam_event = event_repo.get_event(event_id)
     assert exam_event is not None
     belts = belt_repo.list_belts()
-    ids = []
+    cases: Counter[str] = Counter()
     for number in range(first, last + 1):
-        student = Student(
-            **{
-                **vars(make_student()),
-                "id": f"student-{number:02d}",
-                "full_name": f"Aluno {number:02d}",
-            }
+        case = _case(number)
+        cases[case] += 1
+        student = replace(
+            make_student(
+                since=date(2026, 10, 1) if case == BLOCKED else date(2026, 3, 14),
+                active=case != INACTIVE,
+            ),
+            id=f"student-{number:02d}",
+            full_name=f"Aluno {number:02d}",
         )
         student_repo.create_student(student)
-        exam = exam_rules.confirm_attendance(
-            exam_event, student, belts, confirmed_by=EXAMINER.sub, now_iso=SCENARIO_NOW
-        )
-        exam_repo.create_exam(exam, student)
-        ids.append(student.id)
-    return ids
+        if case in (PRESENT, LEFT):
+            exam = exam_rules.confirm_attendance(
+                exam_event, student, belts, confirmed_by=EXAMINER.sub, now_iso=SCENARIO_NOW
+            )
+            exam_repo.create_exam(exam, student)
+        if case == LEFT:
+            student_repo.save_student(replace(student, active=False), write_graduation=False)
+    return cases
 
 
 def _exam_day_reads(
-    calls: list[tuple[str, str]], event_path: dict[str, str], student_id: str, size: int
+    calls: list[tuple[str, str]],
+    event_path: dict[str, str],
+    student_id: str,
+    cases: Counter[str],
 ) -> Counter[tuple[str, str]]:
     """The DynamoDB calls of the exam-day screen and of opening one exam (§ 6.3, § 6.4)."""
     calls.clear()
@@ -630,9 +698,12 @@ def _exam_day_reads(
     sheet = _ok(
         exam_handlers.get_exam_sheet, EXAMINER, path={**event_path, "student_id": student_id}
     )
-    assert (len(roster), len(present), len(sheet["items"])) == (size, size, 24)
-    assert all(student["eligibility"]["eligible"] for student in roster)
+    eligible = cases[PRESENT] + cases[ABSENT]
+    assert len(roster) == eligible + cases[BLOCKED]
+    assert sum(student["eligibility"]["eligible"] for student in roster) == eligible
+    assert len(present) == cases[PRESENT] + cases[LEFT]
     assert all(exam["student_name"] for exam in present)
+    assert len(sheet["items"]) == 24
     return Counter(calls)
 
 
@@ -653,10 +724,12 @@ def test_section8_exam_day_list_does_not_read_per_student(
     event_path = {"id": exam_event["id"]}
     calls = _record_dynamodb_calls(monkeypatch)
 
-    first = _students_present(exam_event["id"], 1, 2)
-    with_two = _exam_day_reads(calls, event_path, first[0], 2)
-    _students_present(exam_event["id"], 3, 80)
-    with_eighty = _exam_day_reads(calls, event_path, first[0], 80)
+    cases = _add_students(exam_event["id"], 1, 2)
+    assert cases == {PRESENT: 2}
+    with_two = _exam_day_reads(calls, event_path, "student-01", cases)
+    cases += _add_students(exam_event["id"], 3, 80)
+    assert cases == {PRESENT: 50, ABSENT: 8, BLOCKED: 7, INACTIVE: 7, LEFT: 8}
+    with_eighty = _exam_day_reads(calls, event_path, "student-01", cases)
 
     assert with_eighty == with_two
     # The only read by key of a student is the one of the exam opened (its sheet).
