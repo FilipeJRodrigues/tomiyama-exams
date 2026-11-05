@@ -1,6 +1,6 @@
 import { Alert, Anchor, Button, Group, Modal, Stack, Text, Title } from '@mantine/core';
 import { IconAlertCircle, IconTrash } from '@tabler/icons-react';
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode, type Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
 import { ApiError, errorMessage } from '../../api/client';
@@ -17,13 +17,15 @@ import { StudentForm } from './StudentForm';
 import type { StudentsPageState } from './routeState';
 import { LoadError, LoadingState } from './screenStates';
 import { formValuesOf } from './studentFormModel';
+import { useRetryFocus } from './useRetryFocus';
 
 const TITLE_ID = 'student-edit-title';
 
-function NotFound() {
+/** `titleRef`: a "Tentar de novo" that ends in a 404 gives the focus to this title (§ 6.7). */
+function NotFound({ titleRef }: { titleRef: Ref<HTMLHeadingElement> }) {
   return (
     <Stack gap="sm">
-      <Title order={1} size="h2">
+      <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
         Aluno não encontrado
       </Title>
       <Text>O aluno não existe ou não está entre os que você acompanha.</Text>
@@ -133,9 +135,11 @@ export function StudentEditPage() {
   const belts = useBelts();
   const update = useUpdateStudent(id);
   const navigate = useNavigate();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([student, belts], titleRef);
 
   if (student.isError && student.error instanceof ApiError && student.error.status === 404) {
-    return <NotFound />;
+    return <NotFound titleRef={titleRef} />;
   }
 
   const handleSubmit = async (input: StudentInput) => {
@@ -154,6 +158,7 @@ export function StudentEditPage() {
         error={student.error}
         retrying={student.isFetching}
         onRetry={() => void student.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (belts.data === undefined && belts.isError) {
@@ -163,6 +168,7 @@ export function StudentEditPage() {
         error={belts.error}
         retrying={belts.isFetching}
         onRetry={() => void belts.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (student.data === undefined || belts.data === undefined) {
@@ -187,7 +193,7 @@ export function StudentEditPage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2" id={TITLE_ID}>
+      <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Editar aluno
       </Title>
       {content}

@@ -15,6 +15,7 @@ import type { LogoSlot } from '../../api/types';
 import { markOutcomeUnknown } from '../exam/examModel';
 import { focusIfLost } from '../exam/focus';
 import { LoadError } from '../students/screenStates';
+import { useRetryFocus } from '../students/useRetryFocus';
 import { RemoveLogoDialog } from './RemoveLogoDialog';
 import {
   LOGO_ACCEPT,
@@ -115,7 +116,10 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const chooseRef = useRef<HTMLButtonElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
-  const loadRetryRef = useRef<HTMLButtonElement>(null);
+  // "Tentar de novo" of the read error: once the read it asked for ends, the focus goes to it
+  // again (failed again) or stays in the slot ("Carregar"/"Trocar") (§ 6.7).
+  const loadRetry = useRetryFocus([logo], chooseRef);
+  const { buttonRef: loadRetryRef } = loadRetry;
   const dialogRef = useRef<HTMLDivElement>(null);
   /** Synchronous lock of the slot: `isPending` only arrives on the next render. */
   const busy = useRef(false);
@@ -208,7 +212,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
   useEffect(() => {
     if (writesEnded === 0 || sending) return;
     focusIfLost([chooseRef.current, loadRetryRef.current], { leaving: [inputRef.current] });
-  }, [writesEnded, sending]);
+  }, [writesEnded, sending, loadRetryRef]);
 
   // "Tentar de novo" goes away once pressed (§ 6.7): the focus stays in the slot.
   useEffect(() => {
@@ -313,7 +317,7 @@ export function LogoSlotPanel({ slot, fullScreenDialog }: Props) {
         error={logo.error ?? OFFLINE_ERROR}
         retrying={logo.isFetching}
         onRetry={() => void logo.refetch()}
-        retryRef={loadRetryRef}
+        retryFocus={loadRetry}
       />
     );
   } else if (logo.data === undefined || mayHaveChanged) {

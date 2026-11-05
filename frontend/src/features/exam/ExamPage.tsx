@@ -16,6 +16,7 @@ import {
   type CSSProperties,
   type MouseEvent,
   type ReactNode,
+  type Ref,
   type RefObject,
 } from 'react';
 import { Link, useParams } from 'react-router';
@@ -25,6 +26,7 @@ import { useBelts, useExamSheet, useExaminers } from '../../api/queries';
 import type { ExamSheet, ExamSheetItem, RequirementKind } from '../../api/types';
 import { EXAM_SIDE_SUMMARY_QUERY } from '../../app/breakpoints';
 import { LoadError, LoadingState } from '../students/screenStates';
+import { useRetryFocus } from '../students/useRetryFocus';
 import { DecisionDialog } from './ExamDecision';
 import { ExamHeader, ExamNav } from './ExamHeader';
 import { ExamItems, MarkButtons, MarkText, type RenderMark } from './ExamItems';
@@ -50,21 +52,33 @@ const NOTHING_KEPT: ReadonlySet<string> = new Set();
 /** Decided exam or closed event: every item read-only (§ 6.4). */
 const renderReadOnlyMark: RenderMark = (item) => <MarkText state={markState(item)} />;
 
+/**
+ * The page title (`h1`) of each state of the screen shares the screen's `titleRef`: the focus
+ * goes to the one on the screen (§ 6.7).
+ */
+interface TitleRefProps {
+  titleRef: Ref<HTMLHeadingElement>;
+}
+
 /** Title while there is no exam to name the page after. */
-function PageTitle() {
+function PageTitle({ titleRef }: TitleRefProps) {
   return (
-    <Title order={1} size="h2">
+    <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
       Exame do aluno
     </Title>
   );
 }
 
 /** 404 of the exam or of the event, with the API message and a way back to the exam day. */
-function NotFound({ error, eventId }: { error: ApiError; eventId: string }) {
+function NotFound({
+  error,
+  eventId,
+  titleRef,
+}: { error: ApiError; eventId: string } & TitleRefProps) {
   const eventMissing = error.message === MSG_EVENT_NOT_FOUND;
   return (
     <Stack gap="sm" align="flex-start">
-      <Title order={1} size="h2">
+      <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
         {error.message}
       </Title>
       <Text>
@@ -330,8 +344,11 @@ function useLastItemActedOn(): RefObject<string | null> {
  * Otherwise (reload on window focus, the refusal of another item while the examiner works
  * elsewhere in the list) the title takes the focus without moving the page.
  */
-function useReadOnlyFocus(readOnly: boolean, failure: MarkFailure | null) {
-  const titleRef = useRef<HTMLHeadingElement>(null);
+function useReadOnlyFocus(
+  titleRef: RefObject<HTMLHeadingElement | null>,
+  readOnly: boolean,
+  failure: MarkFailure | null,
+) {
   const wasReadOnly = useRef(readOnly);
   const lastItem = useLastItemActedOn();
   useEffect(() => {
@@ -340,8 +357,7 @@ function useReadOnlyFocus(readOnly: boolean, failure: MarkFailure | null) {
     if (!turned) return;
     const ownMark = failure !== null && failure.outdated && failure.itemId === lastItem.current;
     focusIfLost(titleRef.current, ownMark ? {} : { preventScroll: true });
-  }, [readOnly, failure, lastItem]);
-  return titleRef;
+  }, [titleRef, readOnly, failure, lastItem]);
 }
 
 /**
@@ -422,6 +438,8 @@ interface ExamContentProps {
   onDismissFailure: () => void;
   /** "Tentar de novo" of the notice; undefined while the exam is read-only. */
   onRetryFailure: (() => void) | undefined;
+  /** The exam title (`h1`), the screen's: the other states of the screen use it too. */
+  titleRef: RefObject<HTMLHeadingElement | null>;
 }
 
 function ExamContent({
@@ -431,11 +449,12 @@ function ExamContent({
   failure,
   onDismissFailure,
   onRetryFailure,
+  titleRef,
   ...itemProps
 }: ExamContentProps) {
   const belts = useBelts();
   const examiners = useExaminers();
-  const titleRef = useReadOnlyFocus(onMark === undefined, failure);
+  useReadOnlyFocus(titleRef, onMark === undefined, failure);
   const flow = useDecisionFlow(sheet.exam.event_id, sheet.exam.student_id, titleRef);
   const layout = useSummaryLayout(flow);
   useScrollPadding('top', HEADER_SCROLL_PADDING);
@@ -529,6 +548,8 @@ export function ExamPage() {
   const sheet = useExamSheet(eventId, studentId, {
     canReloadOnFocus: marking.canReloadOnFocus,
   });
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([sheet], titleRef);
   // Kept while moving to the previous/next student.
   const [kind, setKind] = useState<RequirementKind>('THEORY');
   const [onlyUnmarked, setOnlyUnmarked] = useState(false);
@@ -550,22 +571,23 @@ export function ExamPage() {
     const error = sheet.error;
     content =
       error instanceof ApiError && error.status === 404 ? (
-        <NotFound error={error} eventId={eventId} />
+        <NotFound error={error} eventId={eventId} titleRef={titleRef} />
       ) : (
         <>
-          <PageTitle />
+          <PageTitle titleRef={titleRef} />
           <LoadError
             title="Não foi possível carregar o exame"
             error={error}
             retrying={sheet.isFetching}
             onRetry={() => void sheet.refetch()}
+            retryFocus={retryFocus}
           />
         </>
       );
   } else if (data === undefined) {
     content = (
       <>
-        <PageTitle />
+        <PageTitle titleRef={titleRef} />
         <LoadingState label="Carregando exame…" />
       </>
     );
@@ -608,6 +630,7 @@ export function ExamPage() {
         failure={failure}
         onDismissFailure={marking.dismissFailure}
         onRetryFailure={markable ? onRetryFailure : undefined}
+        titleRef={titleRef}
       />
     );
   }

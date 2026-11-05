@@ -14,6 +14,7 @@ import type { ExamEvent } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
+import { useRetryFocus } from '../students/useRetryFocus';
 import { DeleteEventDialog } from './DeleteEventDialog';
 import { EventForm } from './EventForm';
 import { EventsCards, EventsTable } from './EventsList';
@@ -58,6 +59,7 @@ export function EventsPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([events], titleRef);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const deleteRef = useRef<HTMLDivElement>(null);
@@ -179,6 +181,7 @@ export function EventsPage() {
         error={events.error}
         retrying={events.isFetching}
         onRetry={() => void events.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (events.data === undefined) {
