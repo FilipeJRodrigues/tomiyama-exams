@@ -12,6 +12,7 @@ import {
 } from '../../api/queries';
 import type { ExamEvent } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
+import { useSendLock } from '../../lib/sendLock';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { useRetryFocus } from '../students/useRetryFocus';
@@ -68,8 +69,9 @@ export function EventsPage() {
   const createdId = useRef<string | null>(null);
   /** Last row button with the focus, to find it again after a change of layout. */
   const lastAction = useRef<string | null>(null);
-  /** Synchronous lock: `isPending` only arrives on the next render (double click). */
-  const busy = useRef(false);
+  /** Each dialog's lock: also held while it closes after a request that worked (#88). */
+  const editorLock = useSendLock();
+  const deleteLock = useSendLock();
 
   const saving = create.isPending || update.isPending;
 
@@ -88,6 +90,7 @@ export function EventsPage() {
     create.reset();
     update.reset();
     setNotice(null);
+    editorLock.release();
     createdId.current = null;
     openings.current += 1;
     setEditor({ event, opened: true, key: openings.current });
@@ -95,12 +98,13 @@ export function EventsPage() {
 
   const closeEditor = () => {
     // Nothing closes the dialog while the event is on its way to the API.
-    if (busy.current || saving) return;
+    if (editorLock.held() || saving) return;
     setEditor((current) => current && { ...current, opened: false });
   };
 
   /** The dialog is gone: the focus goes back to the row (or to "Novo evento"). */
   const editorClosed = () => {
+    editorLock.closed();
     const editedId = editor?.event?.id ?? createdId.current;
     setEditor(null);
     focusIfLost(
@@ -114,18 +118,18 @@ export function EventsPage() {
   };
 
   const save = (values: EventFormValues) => {
-    if (!editor || busy.current || saving) return;
-    busy.current = true;
+    if (!editor || saving || !editorLock.take()) return;
     const current = editor.event;
     const done = {
       onSuccess: (saved: ExamEvent) => {
+        // No new request while the dialog fades out: until `editorClosed`.
+        editorLock.keepUntilClosed();
         if (!current) createdId.current = saved.id;
         setNotice(current ? 'Evento salvo.' : 'Evento criado.');
         setEditor((state) => state && { ...state, opened: false });
       },
-      onSettled: () => {
-        busy.current = false;
-      },
+      // The dialog stays open with the API message: a new try may go.
+      onError: editorLock.release,
     };
     if (current) update.mutate({ id: current.id, input: updateInputOf(values) }, done);
     else create.mutate(createInputOf(values), done);
@@ -134,16 +138,18 @@ export function EventsPage() {
   const openDelete = (event: ExamEvent) => {
     remove.reset();
     setNotice(null);
+    deleteLock.release();
     setDeleting({ event, opened: true });
   };
 
   const closeDelete = () => {
-    if (busy.current || remove.isPending) return;
+    if (deleteLock.held() || remove.isPending) return;
     setDeleting((current) => current && { ...current, opened: false });
   };
 
   /** The confirmation is gone: back to the row's button, or to the title once deleted. */
   const deleteClosed = () => {
+    deleteLock.closed();
     const id = deleting?.event.id;
     setDeleting(null);
     focusIfLost([id ? actionButton(actionKey('delete', id)) : null, titleRef.current], {
@@ -152,16 +158,16 @@ export function EventsPage() {
   };
 
   const confirmDelete = () => {
-    if (!deleting || busy.current || remove.isPending) return;
-    busy.current = true;
+    if (!deleting || remove.isPending || !deleteLock.take()) return;
     remove.mutate(deleting.event.id, {
       onSuccess: () => {
+        // No new DELETE while the confirmation fades out: until `deleteClosed`.
+        deleteLock.keepUntilClosed();
         setNotice('Evento excluído.');
         setDeleting((current) => current && { ...current, opened: false });
       },
-      onSettled: () => {
-        busy.current = false;
-      },
+      // The confirmation stays open with the API message: a new try may go.
+      onError: deleteLock.release,
     });
   };
 
