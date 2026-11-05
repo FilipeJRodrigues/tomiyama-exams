@@ -26,8 +26,10 @@ from repository.tables import (
     NO_ANSWERS_CONDITION,
     REQUIREMENTS_TABLE_ENV,
     SETTINGS_TABLE_ENV,
+    get_item_or_busy,
     paginate,
     put_if_absent,
+    raise_if_throttled,
     replace_fields,
     table,
 )
@@ -56,11 +58,13 @@ def _from_item(item: dict[str, Any]) -> Requirement:
 
 
 def get_requirement(requirement_id: str) -> Requirement | None:
-    """Return an item by id, or None."""
-    item = (
-        table(REQUIREMENTS_TABLE_ENV)
-        .get_item(Key={"id": requirement_id}, ConsistentRead=True)
-        .get("Item")
+    """Return an item by id, or None (strongly consistent).
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling (503).
+    """
+    item = get_item_or_busy(
+        table(REQUIREMENTS_TABLE_ENV), {"id": requirement_id}, ConsistentRead=True
     )
     return _from_item(item) if item else None
 
@@ -81,10 +85,18 @@ def list_all() -> list[Requirement]:
 
 
 def create_requirement(requirement: Requirement) -> None:
-    """Insert a new item."""
-    table(REQUIREMENTS_TABLE_ENV).put_item(
-        Item=_to_item(requirement), ConditionExpression="attribute_not_exists(id)"
-    )
+    """Insert a new item.
+
+    Raises:
+        ServiceUnavailableError: If the write kept throttling (503).
+    """
+    try:
+        table(REQUIREMENTS_TABLE_ENV).put_item(
+            Item=_to_item(requirement), ConditionExpression="attribute_not_exists(id)"
+        )
+    except ClientError as exc:
+        raise_if_throttled(exc, "PutItem on Requirements")
+        raise
 
 
 def save_requirement(requirement: Requirement) -> None:
@@ -99,6 +111,8 @@ def save_requirement(requirement: Requirement) -> None:
     Raises:
         NotFoundError: If the item was deleted meanwhile.
         ConflictError: If the item has answers and the belt or kind changes.
+        ServiceUnavailableError: If the write, or the re-read after a failed
+            condition, kept throttling (503).
     """
     arguments = replace_fields(requirement.to_dict())
     arguments["ExpressionAttributeNames"].update(
@@ -119,6 +133,7 @@ def save_requirement(requirement: Requirement) -> None:
         table(REQUIREMENTS_TABLE_ENV).update_item(**arguments, ConditionExpression=condition)
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise_if_throttled(exc, "UpdateItem on Requirements")
             raise
         if get_requirement(requirement.id) is None:
             raise NotFoundError(MSG_REQUIREMENT_NOT_FOUND) from exc
@@ -134,6 +149,7 @@ def delete_requirement(requirement_id: str) -> None:
 
     Raises:
         ConflictError: If the item has answers.
+        ServiceUnavailableError: If the delete kept throttling (503).
     """
     try:
         table(REQUIREMENTS_TABLE_ENV).delete_item(
@@ -143,6 +159,7 @@ def delete_requirement(requirement_id: str) -> None:
         )
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise_if_throttled(exc, "DeleteItem on Requirements")
             raise
         raise ConflictError(MSG_REQUIREMENT_HAS_ANSWERS) from exc
 

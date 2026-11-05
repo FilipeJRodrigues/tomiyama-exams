@@ -12,7 +12,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from domain.errors import (
+    MSG_SERVICE_BUSY,
     DomainError,
     ForbiddenError,
     PayloadTooLargeError,
@@ -20,6 +23,7 @@ from domain.errors import (
     ValidationError,
 )
 from domain.users import User
+from repository.tables import THROTTLING_ERRORS
 
 Event = dict[str, Any]
 Response = dict[str, Any]
@@ -51,11 +55,24 @@ def no_content() -> Response:
     return {"statusCode": 204}
 
 
+def _error_code(exc: ClientError) -> str | None:
+    """Return the AWS error code of ``exc``, or None if the answer has none."""
+    return (exc.response.get("Error") or {}).get("Code")
+
+
 def api_handler(func: Handler) -> Handler:
     """Turn domain errors into JSON error responses and log unexpected failures.
 
     Domain errors become ``{"message": ...}`` with their status code; anything
     else becomes a generic 500 so internal details never reach the client.
+
+    Safety net (#43): a ``ClientError`` whose code is in ``THROTTLING_ERRORS``
+    that escaped the handler answers 503 with only MSG_SERVICE_BUSY, as the
+    ``repository.tables`` helpers do. It means a call that skipped them, so it
+    is logged at ERROR with the stack trace, the operation and the code, to be
+    found and fixed. Only the exception itself counts, not its cause, and a
+    cancelled transaction (``TransactionCanceledException``) stays a 500
+    whatever its reasons: transactions handle those where they run.
     """
 
     @functools.wraps(func)
@@ -65,7 +82,16 @@ def api_handler(func: Handler) -> Handler:
         except DomainError as exc:
             logger.info("Request rejected (%d): %s", exc.status_code, exc.message)
             return json_response(exc.status_code, {"message": exc.message})
-        except Exception:
+        except Exception as exc:
+            if isinstance(exc, ClientError) and (code := _error_code(exc)) in THROTTLING_ERRORS:
+                logger.error(
+                    "Throttling escaped the repository helpers (operation %s, code %s), "
+                    "answered 503: handle it with raise_if_throttled",
+                    exc.operation_name,
+                    code,
+                    exc_info=True,
+                )
+                return json_response(503, {"message": MSG_SERVICE_BUSY})
             logger.exception("Unhandled error")
             return json_response(500, {"message": "Erro interno. Tente de novo."})
 

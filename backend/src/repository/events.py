@@ -12,7 +12,9 @@ from repository.tables import (
     EVENTS_TABLE_ENV,
     NO_EXAMS_CONDITION,
     batch_get,
+    get_item_or_busy,
     paginate,
+    raise_if_throttled,
     replace_fields,
     table,
 )
@@ -30,8 +32,12 @@ def _from_item(item: dict[str, Any]) -> ExamEvent:
 
 
 def get_event(event_id: str) -> ExamEvent | None:
-    """Return an event by id, or None."""
-    item = table(EVENTS_TABLE_ENV).get_item(Key={"id": event_id}, ConsistentRead=True).get("Item")
+    """Return an event by id, or None (strongly consistent).
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling (503).
+    """
+    item = get_item_or_busy(table(EVENTS_TABLE_ENV), {"id": event_id}, ConsistentRead=True)
     return _from_item(item) if item else None
 
 
@@ -56,10 +62,18 @@ def list_all() -> list[ExamEvent]:
 
 
 def create_event(event: ExamEvent) -> None:
-    """Insert a new event."""
-    table(EVENTS_TABLE_ENV).put_item(
-        Item=event.to_dict(), ConditionExpression="attribute_not_exists(id)"
-    )
+    """Insert a new event.
+
+    Raises:
+        ServiceUnavailableError: If the write kept throttling (503).
+    """
+    try:
+        table(EVENTS_TABLE_ENV).put_item(
+            Item=event.to_dict(), ConditionExpression="attribute_not_exists(id)"
+        )
+    except ClientError as exc:
+        raise_if_throttled(exc, "PutItem on Events")
+        raise
 
 
 def save_event(event: ExamEvent) -> None:
@@ -67,6 +81,7 @@ def save_event(event: ExamEvent) -> None:
 
     Raises:
         NotFoundError: If the event was deleted meanwhile.
+        ServiceUnavailableError: If the write kept throttling (503).
     """
     try:
         table(EVENTS_TABLE_ENV).update_item(
@@ -74,6 +89,7 @@ def save_event(event: ExamEvent) -> None:
         )
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise_if_throttled(exc, "UpdateItem on Events")
             raise
         raise NotFoundError(MSG_EVENT_NOT_FOUND) from exc
 
@@ -86,6 +102,7 @@ def delete_event(event_id: str) -> None:
 
     Raises:
         ConflictError: If the event has exams.
+        ServiceUnavailableError: If the delete kept throttling (503).
     """
     try:
         table(EVENTS_TABLE_ENV).delete_item(
@@ -95,5 +112,6 @@ def delete_event(event_id: str) -> None:
         )
     except ClientError as exc:
         if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise_if_throttled(exc, "DeleteItem on Events")
             raise
         raise ConflictError(MSG_EVENT_HAS_EXAMS) from exc
