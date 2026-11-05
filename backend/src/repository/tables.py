@@ -4,7 +4,7 @@ import logging
 import os
 import random
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from functools import lru_cache
 from typing import Any
 
@@ -163,6 +163,59 @@ def get_item_or_busy(target: Any, key: dict[str, Any], **options: Any) -> dict[s
     except ClientError as exc:
         raise_if_throttled(exc, f"GetItem on {getattr(target, 'name', 'table')}")
         raise
+
+
+BATCH_GET_LIMIT = 100
+# Calls per block of keys in ``batch_get``: the first plus up to 3 retries of
+# the unprocessed keys, waiting 0.05-0.1 s, 0.1-0.2 s and 0.2-0.4 s (at most
+# 0.7 s in all), well inside the functions' 10 s timeout.
+BATCH_GET_ATTEMPTS = 4
+BATCH_GET_BACKOFF_SECONDS = 0.05
+
+
+def batch_get(target: Any, keys: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Read items by key from the ``target`` table with ``BatchGetItem``.
+
+    Eventually consistent, 100 keys per call; missing keys are left out of the
+    result, in no particular order. Keys that DynamoDB returns as unprocessed
+    (part of the batch ran out of capacity) are asked again with a short
+    exponential backoff and jitter, as AWS recommends.
+
+    Args:
+        target: DynamoDB ``Table`` resource.
+        keys: Distinct keys (``BatchGetItem`` refuses a repeated key).
+
+    Raises:
+        ServiceUnavailableError: If the whole call kept throttling after
+            botocore's retries, or keys were still unprocessed after
+            ``BATCH_GET_ATTEMPTS`` calls (503).
+        ClientError: Any other DynamoDB error, unchanged.
+    """
+    keys = list(keys)
+    client = target.meta.client
+    items: list[dict[str, Any]] = []
+    for start in range(0, len(keys), BATCH_GET_LIMIT):
+        request: dict[str, Any] = {target.name: {"Keys": keys[start : start + BATCH_GET_LIMIT]}}
+        for attempt in range(BATCH_GET_ATTEMPTS):
+            if attempt:
+                time.sleep(BATCH_GET_BACKOFF_SECONDS * 2 ** (attempt - 1) * (1 + random.random()))
+            try:
+                response = client.batch_get_item(RequestItems=request)
+            except ClientError as exc:
+                raise_if_throttled(exc, f"BatchGetItem on {target.name}")
+                raise
+            items.extend(response.get("Responses", {}).get(target.name, []))
+            request = response.get("UnprocessedKeys") or {}
+            if not request:
+                break
+        if request:
+            logger.warning(
+                "BatchGetItem on %s still had unprocessed keys after %d calls",
+                target.name,
+                BATCH_GET_ATTEMPTS,
+            )
+            raise ServiceUnavailableError(MSG_SERVICE_BUSY)
+    return items
 
 
 BACKOFF_BASE_SECONDS = 0.1

@@ -184,6 +184,24 @@ def list_by_event(event_id: str) -> list[Exam]:
     return [_from_item(item) for item in items]
 
 
+def list_by_student(student_id: str) -> list[Exam]:
+    """Return every exam of a student, from the ``by_student`` index (RN018).
+
+    Follows ``LastEvaluatedKey`` to the last page, with no ``Limit``. A GSI
+    only allows eventually consistent reads: an exam written about a second
+    ago may still be missing.
+
+    Raises:
+        ServiceUnavailableError: If the index kept throttling (503).
+    """
+    items = paginate(
+        table(EXAMS_TABLE_ENV).query,
+        IndexName=BY_STUDENT_INDEX,
+        KeyConditionExpression=Key("student_id").eq(student_id),
+    )
+    return [_from_item(item) for item in items]
+
+
 def create_exam(exam: Exam, student: Student | None = None) -> None:
     """Insert the exam born from an attendance confirmation (RN005).
 

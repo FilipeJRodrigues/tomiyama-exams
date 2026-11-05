@@ -429,3 +429,51 @@ def test_rn008_decision_route_with_least_privilege(template: dict[str, Any]) -> 
     # No Cognito call: the sensei's group membership comes from the token.
     variables = function["Properties"].get("Environment", {}).get("Variables", {})
     assert "USER_POOL_ID" not in variables
+
+
+def _resource_name(resource: Any) -> str:
+    """Name a table (``!GetAtt X.Arn``) or an index (``!Sub ${X.Arn}/index/y``)."""
+    if "Fn::GetAtt" in resource:
+        table_name, attribute = resource["Fn::GetAtt"]
+        assert attribute == "Arn"
+        return table_name
+    return resource["Fn::Sub"].replace("${", "").replace(".Arn}", "")
+
+
+def test_rn018_history_route_with_least_privilege(template: dict[str, Any]) -> None:
+    function = template["Resources"]["ListStudentExamsFunction"]
+    granted: set[tuple[str, str]] = set()
+    for statement in _statements(function):
+        assert statement["Effect"] == "Allow"
+        assert "Condition" not in statement
+        resources = statement["Resource"]
+        for resource in resources if isinstance(resources, list) else [resources]:
+            actions = statement["Action"]
+            for action in [actions] if isinstance(actions, str) else actions:
+                granted.add((action, _resource_name(resource)))
+
+    assert function["Properties"]["Handler"] == "handlers.students.list_student_exams"
+    assert _route(function) == ("GET", "/students/{id}/exams")
+    # Read-only: the student, the by_student index (never the whole Exams
+    # table, nor Answers: no scores), the events and the belts.
+    assert granted == {
+        ("dynamodb:GetItem", "StudentsTable"),
+        ("dynamodb:Query", "ExamsTable/index/by_student"),
+        ("dynamodb:BatchGetItem", "EventsTable"),
+        ("dynamodb:Scan", "BeltsTable"),
+    }
+    assert "Environment" not in function["Properties"]
+
+
+def test_rn018_history_does_not_change_the_student_detail_route(
+    template: dict[str, Any],
+) -> None:
+    # GET /students/{id} (the edit form) keeps its function and permissions.
+    function = template["Resources"]["GetStudentFunction"]
+
+    assert function["Properties"]["Handler"] == "handlers.students.get_student"
+    assert _route(function) == ("GET", "/students/{id}")
+    assert function["Properties"]["Policies"] == [
+        {"DynamoDBReadPolicy": {"TableName": {"Ref": "BeltsTable"}}},
+        {"DynamoDBReadPolicy": {"TableName": {"Ref": "StudentsTable"}}},
+    ]

@@ -1,5 +1,6 @@
 """Persistence of exam events in the ``Events`` table (PK ``id``)."""
 
+from collections.abc import Iterable
 from datetime import date
 from typing import Any
 
@@ -10,6 +11,7 @@ from domain.events import MSG_EVENT_HAS_EXAMS, MSG_EVENT_NOT_FOUND, EventStatus,
 from repository.tables import (
     EVENTS_TABLE_ENV,
     NO_EXAMS_CONDITION,
+    batch_get,
     paginate,
     replace_fields,
     table,
@@ -31,6 +33,21 @@ def get_event(event_id: str) -> ExamEvent | None:
     """Return an event by id, or None."""
     item = table(EVENTS_TABLE_ENV).get_item(Key={"id": event_id}, ConsistentRead=True).get("Item")
     return _from_item(item) if item else None
+
+
+def get_events(event_ids: Iterable[str]) -> dict[str, ExamEvent]:
+    """Return ``{id: event}`` for the given ids; missing events are left out.
+
+    One ``BatchGetItem`` per 100 ids, eventually consistent: used only to show
+    names and dates, which never decide a route's status code (``exam_date``
+    never changes after creation).
+
+    Raises:
+        ServiceUnavailableError: If the table kept throttling (503).
+    """
+    keys = [{"id": event_id} for event_id in sorted(set(event_ids))]
+    items = batch_get(table(EVENTS_TABLE_ENV), keys)
+    return {item["id"]: _from_item(item) for item in items}
 
 
 def list_all() -> list[ExamEvent]:
