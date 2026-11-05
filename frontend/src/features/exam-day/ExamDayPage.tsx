@@ -21,7 +21,7 @@ import {
   IconSearch,
   IconUserCheck,
 } from '@tabler/icons-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import { errorMessage } from '../../api/client';
@@ -37,9 +37,11 @@ import type { Belt, ExamEvent, ExamView, StudentView } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { examPath, paths } from '../../app/navigation';
 import { EVENT_STATUS_LABELS, EXAM_STATUS_LABELS } from '../../lib/labels';
+import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { BeltCell, Field, StatusText } from '../students/studentCells';
 import { ageLabel, dateLabel, nextExamLabel, studentStatus } from '../students/studentText';
+import { useRetryFocus } from '../students/useRetryFocus';
 import {
   EVENT_PARAM,
   FILTER_LABELS,
@@ -344,11 +346,14 @@ interface EventRosterProps {
   /** Exams this session created in the event (201 of the confirmation). */
   created: readonly ExamView[];
   onCreated: (exam: ExamView) => void;
+  /** The title of the screen: the focus goes there when a notice closes or the list loads. */
+  titleRef: RefObject<HTMLHeadingElement | null>;
 }
 
-function EventRoster({ event, created, onCreated }: EventRosterProps) {
+function EventRoster({ event, created, onCreated, titleRef }: EventRosterProps) {
   const students = useStudents({ active: true, reference_date: event.exam_date });
   const exams = useEventExams(event.id);
+  const retryFocus = useRetryFocus([students, exams], titleRef);
   // Belts only feed the decorative color sample; the list does not wait for them.
   const belts = useBelts();
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
@@ -401,6 +406,7 @@ function EventRoster({ event, created, onCreated }: EventRosterProps) {
             if (students.isError) void students.refetch();
             if (exams.isError) void exams.refetch();
           }}
+          retryFocus={retryFocus}
         />
       </Stack>
     );
@@ -456,6 +462,13 @@ function EventRoster({ event, created, onCreated }: EventRosterProps) {
     },
   };
 
+  // The close button went away with the notice: the focus goes to the title (§ 6.7).
+  const focusTitleOnceClosed = () => {
+    window.setTimeout(() => {
+      focusIfLost(titleRef.current);
+    }, 0);
+  };
+
   const listProps: ListProps = { event, entries: shown, beltsById, ...handlers };
   let list: ReactNode;
   if (shown.length === 0) {
@@ -505,6 +518,7 @@ function EventRoster({ event, created, onCreated }: EventRosterProps) {
           closeButtonLabel="Fechar aviso"
           onClose={() => {
             setConfirmed(null);
+            focusTitleOnceClosed();
           }}
         >
           Presença de {confirmed.full_name} confirmada.
@@ -521,6 +535,7 @@ function EventRoster({ event, created, onCreated }: EventRosterProps) {
           closeButtonLabel="Fechar aviso"
           onClose={() => {
             setFailure(null);
+            focusTitleOnceClosed();
           }}
         >
           {failure.message}
@@ -537,6 +552,8 @@ function EventRoster({ event, created, onCreated }: EventRosterProps) {
  */
 export function ExamDayPage() {
   const events = useEvents();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([events], titleRef);
   const [searchParams, setSearchParams] = useSearchParams();
   const chosenId = searchParams.get(EVENT_PARAM);
   const selected = events.data ? selectEvent(events.data, chosenId) : undefined;
@@ -564,6 +581,7 @@ export function ExamDayPage() {
         error={events.error}
         retrying={events.isFetching}
         onRetry={() => void events.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (events.data === undefined) {
@@ -588,6 +606,7 @@ export function ExamDayPage() {
             key={selected.id}
             event={selected}
             created={createdByEvent[selected.id] ?? NO_EXAMS}
+            titleRef={titleRef}
             onCreated={(exam) => {
               setCreatedByEvent((current) => ({
                 ...current,
@@ -604,7 +623,7 @@ export function ExamDayPage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2">
+      <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
         Dia do exame
       </Title>
       {content}

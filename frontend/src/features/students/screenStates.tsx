@@ -1,8 +1,8 @@
 import { Alert, Button, Group, Loader, Stack, Text } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
-import type { Ref } from 'react';
 
 import { ApiError, errorMessage } from '../../api/client';
+import type { RetryFocus } from './useRetryFocus';
 
 /** Loading state announced to screen readers. */
 export function LoadingState({ label }: { label: string }) {
@@ -20,12 +20,21 @@ interface LoadErrorProps {
   error: unknown;
   retrying: boolean;
   onRetry: () => void;
-  /** The "Tentar de novo" button, for a screen that moves the focus to it. */
-  retryRef?: Ref<HTMLButtonElement>;
+  /**
+   * The screen's `useRetryFocus`: where the focus goes once the reload asked by "Tentar de
+   * novo" ends (§ 6.7). Its `buttonRef` is the "Tentar de novo" of this error.
+   */
+  retryFocus: RetryFocus;
 }
 
 /** Error loading data: the API message, with "Tentar de novo" unless it is a 403. */
-export function LoadError({ title, error, retrying, onRetry, retryRef }: LoadErrorProps) {
+export function LoadError({
+  title,
+  error,
+  retrying,
+  onRetry,
+  retryFocus: { buttonRef, pressed },
+}: LoadErrorProps) {
   const forbidden = error instanceof ApiError && error.status === 403;
   return (
     <Alert
@@ -38,7 +47,15 @@ export function LoadError({ title, error, retrying, onRetry, retryRef }: LoadErr
       <Stack gap="sm" align="flex-start">
         <Text size="sm">{errorMessage(error)}</Text>
         {!forbidden && (
-          <Button ref={retryRef} variant="default" loading={retrying} onClick={onRetry}>
+          <Button
+            ref={buttonRef}
+            variant="default"
+            loading={retrying}
+            onClick={() => {
+              pressed();
+              onRetry();
+            }}
+          >
             Tentar de novo
           </Button>
         )}

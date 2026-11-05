@@ -9,6 +9,7 @@ import { MOBILE_QUERY } from '../../app/breakpoints';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { BeltSwatch, Field } from '../students/studentCells';
+import { useRetryFocus } from '../students/useRetryFocus';
 import { BeltForm } from './BeltForm';
 import {
   colorsLabel,
@@ -172,6 +173,7 @@ export function BeltsPage() {
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [savedName, setSavedName] = useState<string | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([belts], titleRef);
   const dialogRef = useRef<HTMLDivElement>(null);
   const openings = useRef(0);
   /** Synchronous lock: `update.isPending` only arrives on the next render (double click). */
@@ -232,6 +234,7 @@ export function BeltsPage() {
         error={belts.error}
         retrying={belts.isFetching}
         onRetry={() => void belts.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (belts.data === undefined) {

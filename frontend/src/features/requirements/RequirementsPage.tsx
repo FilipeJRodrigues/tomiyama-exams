@@ -16,6 +16,7 @@ import { MOBILE_QUERY } from '../../app/breakpoints';
 import { sortBelts } from '../belts/beltText';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
+import { useRetryFocus } from '../students/useRetryFocus';
 import { DeleteRequirementDialog } from './DeleteRequirementDialog';
 import { RequirementForm } from './RequirementForm';
 import { RequirementsCards, RequirementsTable } from './RequirementsList';
@@ -101,6 +102,8 @@ export function RequirementsPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const titleRef = useRef<HTMLHeadingElement>(null);
+  // Also waits for the requirements, read once the belts come.
+  const retryFocus = useRetryFocus([belts, requirements], titleRef);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const deleteRef = useRef<HTMLDivElement>(null);
@@ -232,6 +235,7 @@ export function RequirementsPage() {
         error={belts.error}
         retrying={belts.isFetching}
         onRetry={() => void belts.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (belts.data === undefined) {
@@ -255,6 +259,7 @@ export function RequirementsPage() {
           error={requirements.error}
           retrying={requirements.isFetching}
           onRetry={() => void requirements.refetch()}
+          retryFocus={retryFocus}
         />
       );
     } else if (requirements.data === undefined) {

@@ -7,6 +7,7 @@ import type { AcademySettings, AcademySettingsInput } from '../../api/types';
 import { useAuth } from '../../auth/useAuth';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
+import { useRetryFocus } from '../students/useRetryFocus';
 import { AcademyForm } from './AcademyForm';
 import { LogosSection } from './LogosSection';
 import { isFirstUse } from './academyFormModel';
@@ -29,6 +30,7 @@ export function AcademyPage() {
   const update = useUpdateSettings();
   const [saved, setSaved] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([settings, examiners], titleRef);
   /** Synchronous lock: `update.isPending` only arrives on the next render (double click). */
   const busy = useRef(false);
 
@@ -66,6 +68,7 @@ export function AcademyPage() {
         error={settings.error}
         retrying={settings.isFetching}
         onRetry={() => void settings.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (isMaster && examiners.data === undefined && examiners.isError) {
@@ -75,6 +78,7 @@ export function AcademyPage() {
         error={examiners.error}
         retrying={examiners.isFetching}
         onRetry={() => void examiners.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (settings.data === undefined || (isMaster && examiners.data === undefined)) {

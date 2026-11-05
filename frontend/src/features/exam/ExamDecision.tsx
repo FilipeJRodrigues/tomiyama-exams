@@ -31,6 +31,7 @@ import {
   Textarea,
   VisuallyHidden,
 } from '@mantine/core';
+import { useMergedRef } from '@mantine/hooks';
 import {
   IconAlertCircle,
   IconCircleCheck,
@@ -39,7 +40,7 @@ import {
   IconUserExclamation,
   IconUserOff,
 } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 
 import { errorMessage } from '../../api/client';
@@ -49,6 +50,7 @@ import { paths } from '../../app/navigation';
 import { useAuth } from '../../auth/useAuth';
 import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
 import { LoadError } from '../students/screenStates';
+import { useRetryFocus } from '../students/useRetryFocus';
 import {
   NOTES_MAX_LENGTH,
   confirmationText,
@@ -173,12 +175,15 @@ interface InProgressProps {
   flow: DecisionFlow;
   layout: DecisionLayout;
   studentDeleted: boolean;
+  /** The decision area around it: the focus goes there once "quem é o sensei" loads (§ 6.7). */
+  area: RefObject<HTMLElement | null>;
 }
 
 /** While the exam is in progress: who decides, from the settings (RN008). */
-function InProgress({ flow, layout, studentDeleted }: InProgressProps) {
+function InProgress({ flow, layout, studentDeleted, area }: InProgressProps) {
   const settings = useSettings();
   const { user } = useAuth();
+  const retryFocus = useRetryFocus([settings], area);
   if (studentDeleted) return <StudentDeleted />;
   if (settings.data === undefined) {
     if (settings.isError) {
@@ -188,6 +193,7 @@ function InProgress({ flow, layout, studentDeleted }: InProgressProps) {
           error={settings.error}
           retrying={settings.isFetching}
           onRetry={() => void settings.refetch()}
+          retryFocus={retryFocus}
         />
       );
     }
@@ -248,8 +254,10 @@ interface DecisionAreaProps {
 export function DecisionArea({ exam, examiners, flow, layout, studentDeleted }: DecisionAreaProps) {
   const decided = exam.status !== 'IN_PROGRESS';
   const noticeRef = useRef<HTMLDivElement>(null);
+  const areaElement = useRef<HTMLDivElement>(null);
+  const areaRef = useMergedRef(areaElement, flow.areaRef[layout]);
   return (
-    <Stack gap="xs" ref={flow.areaRef[layout]} tabIndex={-1} data-decision-area={layout}>
+    <Stack gap="xs" ref={areaRef} tabIndex={-1} data-decision-area={layout}>
       {flow.notice && layout !== 'panel' && (
         <Alert
           color="red"
@@ -270,7 +278,12 @@ export function DecisionArea({ exam, examiners, flow, layout, studentDeleted }: 
       {decided ? (
         <Decided exam={exam} examiners={examiners} flow={flow} takesFocus={layout !== 'panel'} />
       ) : (
-        <InProgress flow={flow} layout={layout} studentDeleted={studentDeleted} />
+        <InProgress
+          flow={flow}
+          layout={layout}
+          studentDeleted={studentDeleted}
+          area={areaElement}
+        />
       )}
     </Stack>
   );

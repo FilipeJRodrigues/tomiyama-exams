@@ -1,28 +1,19 @@
-import {
-  Alert,
-  Anchor,
-  Button,
-  Card,
-  Group,
-  Loader,
-  Stack,
-  Table,
-  Text,
-  Title,
-} from '@mantine/core';
+import { Alert, Anchor, Button, Card, Group, Stack, Table, Text, Title } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconAlertCircle, IconCircleCheck, IconPlus } from '@tabler/icons-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { IconCircleCheck, IconPlus } from '@tabler/icons-react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 
-import { ApiError, errorMessage } from '../../api/client';
 import { useBelts, useStudents } from '../../api/queries';
 import type { Belt, StudentView } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { paths, studentPath } from '../../app/navigation';
+import { focusIfLost } from '../exam/focus';
 import { NOTICE_TEXTS, noticeOf } from './routeState';
+import { LoadError, LoadingState } from './screenStates';
 import { BeltCell, Field, StatusText } from './studentCells';
 import { ageLabel, dateLabel, nextExamLabel, studentStatus } from './studentText';
+import { useRetryFocus } from './useRetryFocus';
 
 const TITLE_ID = 'students-title';
 
@@ -122,50 +113,12 @@ function StudentsCards({ students, beltsById }: ListProps) {
   );
 }
 
-function LoadingState() {
-  return (
-    <Group role="status" gap="sm" py="xl" justify="center">
-      <Loader size="sm" aria-hidden />
-      <Text>Carregando alunos…</Text>
-    </Group>
-  );
-}
-
-function ErrorState({
-  error,
-  retrying,
-  onRetry,
-}: {
-  error: unknown;
-  retrying: boolean;
-  onRetry: () => void;
-}) {
-  const forbidden = error instanceof ApiError && error.status === 403;
-  return (
-    <Alert
-      color="red"
-      variant="light"
-      role="alert"
-      icon={<IconAlertCircle aria-hidden />}
-      title={forbidden ? 'Sem permissão' : 'Não foi possível carregar os alunos'}
-    >
-      <Stack gap="sm" align="flex-start">
-        <Text size="sm">{errorMessage(error)}</Text>
-        {!forbidden && (
-          <Button variant="default" loading={retrying} onClick={onRetry}>
-            Tentar de novo
-          </Button>
-        )}
-      </Stack>
-    </Alert>
-  );
-}
-
 /**
  * Notice left by the student form after saving or deleting. It takes focus so screen
  * readers read it, and the router state is cleared so it does not come back on reload.
+ * Closing it gives the focus to the title of the list (`titleRef`, § 6.7).
  */
-function SavedNotice() {
+function SavedNotice({ titleRef }: { titleRef: RefObject<HTMLHeadingElement | null> }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [notice, setNotice] = useState(() => noticeOf(location.state));
@@ -190,6 +143,10 @@ function SavedNotice() {
       closeButtonLabel="Fechar aviso"
       onClose={() => {
         setNotice(null);
+        // The close button went away with the notice.
+        window.setTimeout(() => {
+          focusIfLost(titleRef.current);
+        }, 0);
       }}
     >
       {NOTICE_TEXTS[notice]}
@@ -206,18 +163,22 @@ export function StudentsPage() {
   // Belts only feed the decorative color sample; the list does not wait for them.
   const belts = useBelts();
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([students], titleRef);
 
   const beltsById = new Map((belts.data ?? []).map((belt) => [belt.id, belt]));
 
   let content: ReactNode;
   if (students.isPending) {
-    content = <LoadingState />;
+    content = <LoadingState label="Carregando alunos…" />;
   } else if (students.isError) {
     content = (
-      <ErrorState
+      <LoadError
+        title="Não foi possível carregar os alunos"
         error={students.error}
         retrying={students.isFetching}
         onRetry={() => void students.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (students.data.length === 0) {
@@ -231,7 +192,7 @@ export function StudentsPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between" gap="sm">
-        <Title order={1} size="h2" id={TITLE_ID}>
+        <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
           Alunos
         </Title>
         {/* A link (it opens another page), drawn as a button. */}
@@ -243,7 +204,7 @@ export function StudentsPage() {
           Novo aluno
         </Button>
       </Group>
-      <SavedNotice />
+      <SavedNotice titleRef={titleRef} />
       {content}
     </Stack>
   );

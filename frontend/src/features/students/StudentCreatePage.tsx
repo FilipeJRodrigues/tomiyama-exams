@@ -1,4 +1,5 @@
 import { Stack, Title } from '@mantine/core';
+import { useRef } from 'react';
 import { useNavigate } from 'react-router';
 
 import { useBelts, useCreateStudent } from '../../api/queries';
@@ -8,6 +9,7 @@ import { StudentForm } from './StudentForm';
 import type { StudentsPageState } from './routeState';
 import { LoadError, LoadingState } from './screenStates';
 import { EMPTY_STUDENT_FORM } from './studentFormModel';
+import { useRetryFocus } from './useRetryFocus';
 
 const TITLE_ID = 'student-create-title';
 
@@ -16,6 +18,8 @@ export function StudentCreatePage() {
   const belts = useBelts();
   const create = useCreateStudent();
   const navigate = useNavigate();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRetryFocus([belts], titleRef);
 
   const handleSubmit = async (input: StudentInput) => {
     await create.mutateAsync(input);
@@ -33,6 +37,7 @@ export function StudentCreatePage() {
         error={belts.error}
         retrying={belts.isFetching}
         onRetry={() => void belts.refetch()}
+        retryFocus={retryFocus}
       />
     );
   } else if (belts.data === undefined) {
@@ -52,7 +57,7 @@ export function StudentCreatePage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2" id={TITLE_ID}>
+      <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Novo aluno
       </Title>
       {content}
