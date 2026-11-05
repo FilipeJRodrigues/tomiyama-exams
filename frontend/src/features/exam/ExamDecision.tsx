@@ -305,6 +305,8 @@ interface DecisionDialogProps {
 export function DecisionDialog({ flow, sheet, belts, settled }: DecisionDialogProps) {
   const { asking } = flow;
   const [notes, setNotes] = useState('');
+  // Mantine ends the exit transition before the dialog leaves the screen (§ 6.7).
+  const dialogRef = useRef<HTMLDivElement>(null);
   // The texts stay while the dialog fades out; a new opening starts with an empty note.
   const [previous, setPrevious] = useState(asking);
   const [shown, setShown] = useState<DecisionResult>(asking ?? 'APPROVED');
@@ -326,6 +328,7 @@ export function DecisionDialog({ flow, sheet, belts, settled }: DecisionDialogPr
 
   return (
     <Modal
+      ref={dialogRef}
       opened={asking !== null}
       onClose={flow.cancel}
       title={decisionTitle(result)}
@@ -333,7 +336,9 @@ export function DecisionDialog({ flow, sheet, belts, settled }: DecisionDialogPr
       zIndex={300}
       // The opener may be gone after a refusal: the flow gives the focus back (§ 6.7).
       returnFocus={false}
-      onExitTransitionEnd={flow.dialogClosed}
+      onExitTransitionEnd={() => {
+        flow.dialogClosed(dialogRef.current);
+      }}
       closeButtonProps={{ 'aria-label': 'Fechar' }}
     >
       <Stack gap="md">

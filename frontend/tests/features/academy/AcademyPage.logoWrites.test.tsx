@@ -34,6 +34,7 @@ import {
   logoView,
   slotButton,
   slotRegion,
+  leaveLogoScreen,
 } from './logoHelpers';
 
 const BUSY = 'Sistema ocupado no momento. Tente de novo em instantes.';
@@ -110,13 +111,6 @@ async function nextTurn() {
   );
 }
 
-async function leave(router: ReturnType<typeof createMemoryRouter>) {
-  await router.navigate('/alunos');
-  await waitFor(() => {
-    expect(screen.queryByRole('region', { name: 'Logo principal' })).not.toBeInTheDocument();
-  });
-}
-
 async function comeBack(router: ReturnType<typeof createMemoryRouter>) {
   await router.navigate(ROUTE);
   await screen.findByRole('region', { name: 'Logo principal' });
@@ -154,12 +148,13 @@ async function sendAndComeBack(
   put: ReturnType<typeof holdPut>,
   user: ReturnType<typeof userEvent.setup>,
   router: ReturnType<typeof createMemoryRouter>,
+  queryClient: QueryClient,
 ) {
   await user.upload(fileInput('primary'), imageFile(JPEG_BYTES, 'logo.jpg', 'image/jpeg'));
   await waitFor(() => {
     expect(put.arrived()).toBe(true);
   });
-  await leave(router);
+  await leaveLogoScreen(router, queryClient);
   await comeBack(router);
   expect(slotButton('primary', 'Trocar')).toBeDisabled();
 }
@@ -168,6 +163,7 @@ async function removeAndComeBack(
   del: ReturnType<typeof holdDelete>,
   user: ReturnType<typeof userEvent.setup>,
   router: ReturnType<typeof createMemoryRouter>,
+  queryClient: QueryClient,
 ) {
   await user.click(slotButton('primary', 'Remover'));
   const dialog = await screen.findByRole('dialog', { name: 'Remover logo principal' });
@@ -175,7 +171,7 @@ async function removeAndComeBack(
   await waitFor(() => {
     expect(del.arrived()).toBe(true);
   });
-  await leave(router);
+  await leaveLogoScreen(router, queryClient);
   await comeBack(router);
   expect(slotButton('primary', 'Remover')).toBeDisabled();
 }
@@ -186,8 +182,8 @@ describe('a send taken over by the panel opened again', () => {
       stored = NEW_URL;
       return HttpResponse.json(STORED_META);
     });
-    const { user, router } = await openScreen();
-    await sendAndComeBack(put, user, router);
+    const { user, queryClient, router } = await openScreen();
+    await sendAndComeBack(put, user, router, queryClient);
     expect(document.activeElement).toBe(document.body);
 
     put.release();
@@ -207,8 +203,8 @@ describe('a send taken over by the panel opened again', () => {
       stored = NEW_URL;
       return HttpResponse.json(STORED_META);
     });
-    const { user, router } = await openScreen();
-    await sendAndComeBack(put, user, router);
+    const { user, queryClient, router } = await openScreen();
+    await sendAndComeBack(put, user, router, queryClient);
     const title = screen.getByRole('heading', { level: 1, name: 'Academia' });
     title.focus();
 
@@ -222,8 +218,8 @@ describe('a send taken over by the panel opened again', () => {
 
   it('is refused: the slot shows the API message over the logo it still has; a new send clears it', async () => {
     const put = holdPut(() => HttpResponse.json({ message: INVALID }, { status: 400 }));
-    const { user, router } = await openScreen();
-    await sendAndComeBack(put, user, router);
+    const { user, queryClient, router } = await openScreen();
+    await sendAndComeBack(put, user, router, queryClient);
 
     put.release();
     const region = slotRegion('primary');
@@ -255,7 +251,7 @@ describe('a send taken over by the panel opened again', () => {
       return HttpResponse.json({ message: 'Endpoint request timed out' }, { status: 504 });
     });
     const { user, queryClient, router } = await openScreen();
-    await sendAndComeBack(put, user, router);
+    await sendAndComeBack(put, user, router, queryClient);
 
     put.release();
     const region = slotRegion('primary');
@@ -278,7 +274,7 @@ describe('a send taken over by the panel opened again', () => {
     await waitFor(() => {
       expect(put.arrived()).toBe(true);
     });
-    await leave(router);
+    await leaveLogoScreen(router, queryClient);
     put.release();
     await waitFor(() => {
       expect(queryClient.isMutating()).toBe(0);
@@ -299,8 +295,8 @@ describe('a removal taken over by the panel opened again', () => {
       stored = null;
       return new HttpResponse(null, { status: 204 });
     });
-    const { user, router } = await openScreen();
-    await removeAndComeBack(del, user, router);
+    const { user, queryClient, router } = await openScreen();
+    await removeAndComeBack(del, user, router, queryClient);
 
     del.release();
     await waitFor(() => {
@@ -320,8 +316,8 @@ describe('a removal taken over by the panel opened again', () => {
       readFails = true;
       return HttpResponse.json({ message: 'Endpoint request timed out' }, { status: 504 });
     });
-    const { user, router } = await openScreen();
-    await removeAndComeBack(del, user, router);
+    const { user, queryClient, router } = await openScreen();
+    await removeAndComeBack(del, user, router, queryClient);
 
     del.release();
     const region = slotRegion('primary');
@@ -345,8 +341,8 @@ describe('a removal taken over by the panel opened again', () => {
     const del = holdDelete(() =>
       HttpResponse.json({ message: 'Você não tem permissão para esta ação.' }, { status: 403 }),
     );
-    const { user, router } = await openScreen();
-    await removeAndComeBack(del, user, router);
+    const { user, queryClient, router } = await openScreen();
+    await removeAndComeBack(del, user, router, queryClient);
 
     del.release();
     const alert = await within(slotRegion('primary')).findByRole('alert');
@@ -368,7 +364,7 @@ describe('the slot read waiting for the network, with the mark on', () => {
     await waitFor(() => {
       expect(put.arrived()).toBe(true);
     });
-    await leave(router);
+    await leaveLogoScreen(router, queryClient);
     put.release();
     await waitFor(() => {
       expect(queryClient.isMutating()).toBe(0);
