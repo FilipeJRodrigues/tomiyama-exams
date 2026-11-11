@@ -21,7 +21,11 @@ uv sync --python 3.12
 uv run pytest
 ```
 
-Os testes de aceitação ficam em `tests/acceptance/` (hoje, o fluxo completo do § 9 dos requisitos até a aprovação e a lista do dia sem leituras por aluno do § 8, em `test_flow_section9.py`) e rodam junto com os demais no `uv run pytest`; os de regressão ficam em `tests/regression/`.
+Os testes de aceitação ficam em `tests/acceptance/` e rodam junto com os demais no `uv run pytest`; os de regressão ficam em `tests/regression/`. Os de aceitação passam só pelas rotas HTTP, com a carga inicial real (faixas do § 4 e itens do Apêndice A), usuários do Cognito simulado e relógio fixo:
+
+- `test_flow_section9.py`: o fluxo completo do § 9 dos requisitos até a aprovação e a lista do dia sem leituras por aluno do § 8;
+- por regra de negócio (`test_rnXXX_*`), o caso que cumpre e o caso que viola cada uma: `test_acceptance_rn001_rn004.py` (elegibilidade), `test_acceptance_rn005_rn010.py` (exame, com a RN008a) e `test_acceptance_rn012_rn018.py` (cadastros e configurações). A RN011 (certificado em PDF) ainda não tem teste de aceitação (card #98);
+- `acceptance_support.py`: os auxiliares comuns (relógio, carga inicial, usuários e atalhos das rotas). Não é um `conftest.py` porque a pasta não tem `__init__.py`, e um segundo `conftest` esconderia o de `tests/`. Pelo mesmo motivo, nenhum arquivo de teste daqui pode repetir o nome de um arquivo de `tests/` ou de `tests/regression/`.
 
 ## Deploy
 
