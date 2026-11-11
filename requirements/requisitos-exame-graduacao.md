@@ -281,6 +281,7 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   responsável (*"Aluno possui exames registrados"*); o examinador pode inativá-lo.
   Nunca apagar exames em cascata ao excluir aluno (apagaria o histórico e contornaria a
   RN013).
+- **RN019 — Aviso de exame ao responsável.** Para cada aluno **ativo**, elegível à faixa-alvo (RN001 a RN004, calculadas na data do evento) e **sem exame em andamento em outro evento**, o responsável vê no perfil do aluno, em um evento **aberto**, o aviso "Exame de faixas dia dd/mm/aaaa". O aviso é só informativo: o responsável não altera a data nem nenhum dado do exame. O aviso some quando o evento é encerrado ou quando o exame do aluno naquele evento é decidido.
 
 ---
 
@@ -299,6 +300,7 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
   "Bloqueado: {motivo}" em vermelho; "Inativo").
 - Formulário: nome, **faixa atual (seletor)**, nascimento, "na faixa desde", graus (0–4),
   registro na federação, ativo.
+- Para o responsável, o perfil do aluno mostra o aviso da RN019 para cada evento aberto em que o aluno é elegível e não tem exame em andamento em outro evento.
 
 ### 6.3 Dia do exame (examinadores) — lista → ação
 - Seletor do evento (padrão: o evento aberto mais recente); busca por nome; filtros com
