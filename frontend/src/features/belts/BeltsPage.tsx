@@ -7,7 +7,7 @@ import { useBelts, useUpdateBelt } from '../../api/queries';
 import type { Belt, BeltInput } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { useSendLock } from '../../lib/sendLock';
-import { HEADER_SCROLL_PADDING, focusIfLost, useScrollPadding } from '../exam/focus';
+import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { BeltSwatch, Field } from '../students/studentCells';
 import { useRetryFocus } from '../students/useRetryFocus';
@@ -169,8 +169,6 @@ interface DialogState {
  */
 export function BeltsPage() {
   const belts = useBelts();
-  // § 6.7: a control focused with Shift+Tab stays clear of the fixed header.
-  useScrollPadding('top', HEADER_SCROLL_PADDING);
   const update = useUpdateBelt();
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
   const [dialog, setDialog] = useState<DialogState | null>(null);
