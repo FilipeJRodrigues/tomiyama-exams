@@ -23,42 +23,39 @@ the handlers; the 80 students and attendances are set up through the
 repository, to keep the test fast.
 """
 
-import base64
 import os
-import struct
-import zlib
 from collections import Counter
-from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from types import SimpleNamespace
 from typing import Any
 
-import boto3
 import pytest
+from acceptance_support import ScenarioClock
+from acceptance_support import deploy_initial_data as _deploy_initial_data
+from acceptance_support import guardian_signs_up as _guardian_signs_up
+from acceptance_support import image_body as _image_body
+from acceptance_support import ok as _ok
+from acceptance_support import png as _png
+from acceptance_support import refused as _refused
+from acceptance_support import token as _token
 from botocore.client import BaseClient
 from conftest import (
     EXAMINER,
     SCENARIO_NOW,
     add_user,
-    api_event,
     dynamodb_tables_of,
     make_student,
-    response_json,
 )
 
-from domain import dates
 from domain import exams as exam_rules
 from domain.belts import Belt, seed_belt_id
 from domain.requirements import seed_requirements
-from domain.users import ADMIN_GROUP, MASTER_GROUP, User
+from domain.users import ADMIN_GROUP, MASTER_GROUP
 from handlers import belts as belt_handlers
-from handlers import cognito_triggers
 from handlers import events as event_handlers
 from handlers import exams as exam_handlers
 from handlers import logos as logo_handlers
-from handlers import seed as seed_handlers
 from handlers import settings as settings_handlers
 from handlers import signatures as signature_handlers
 from handlers import students as student_handlers
@@ -68,8 +65,6 @@ from repository import events as event_repo
 from repository import exams as exam_repo
 from repository import requirements as requirement_repo
 from repository import students as student_repo
-
-Handler = Callable[[dict[str, Any], Any], dict[str, Any]]
 
 EVENT_NAME = "Exame março/2027"
 EVENT_DATE = "2027-03-13"
@@ -108,132 +103,6 @@ WRONG_THEORY = {2, 7}
 WRONG_PRACTICE = {0, 5, 12}
 THEORY_PERCENT = 81.8  # 9 / 11 = 81.818...
 PRACTICE_PERCENT = 76.9  # 10 / 13 = 76.923...
-
-
-# --- clock, deploy and users -------------------------------------------------------------
-
-
-class ScenarioClock:
-    """The scenario's "now", followed by ``dates.today`` (Brazil) and ``dates.utc_now_iso``."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, moment: str) -> None:
-        self.moment = datetime.fromisoformat(moment)
-        monkeypatch.setattr(dates, "today", lambda: self.moment.astimezone(dates.BRAZIL_TZ).date())
-        monkeypatch.setattr(
-            dates,
-            "utc_now_iso",
-            lambda: self.moment.astimezone(UTC).isoformat(timespec="seconds"),
-        )
-
-    def set(self, moment: str) -> None:
-        """Move the clock to ``moment`` (ISO 8601 with offset)."""
-        self.moment = datetime.fromisoformat(moment)
-
-
-def _deploy_initial_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run the ``InitialData`` custom resource as the first deploy does (Create)."""
-    sent: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        seed_handlers,
-        "_send_response",
-        lambda event, context, status, reason: sent.append((status, reason)),
-    )
-    seed_handlers.handler(
-        {
-            "RequestType": "Create",
-            "ResponseURL": "https://example.invalid/response",
-            "StackId": "stack",
-            "RequestId": "request",
-            "LogicalResourceId": "InitialData",
-        },
-        SimpleNamespace(get_remaining_time_in_millis=lambda: 900_000),
-    )
-    assert sent == [("SUCCESS", "OK")]
-
-
-def _token(pool_id: str, email: str) -> User:
-    """The caller as the ID token carries it: ``sub`` and groups read from the pool."""
-    client = boto3.client("cognito-idp")
-    user = client.admin_get_user(UserPoolId=pool_id, Username=email)
-    sub = next(attr["Value"] for attr in user["UserAttributes"] if attr["Name"] == "sub")
-    groups = client.admin_list_groups_for_user(UserPoolId=pool_id, Username=email)["Groups"]
-    return User(sub=sub, email=email, groups=frozenset(group["GroupName"] for group in groups))
-
-
-def _guardian_signs_up(pool_id: str, email: str) -> User:
-    """The guardian's own sign-up (§ 6.1): confirmation and the post-confirmation trigger."""
-    client = boto3.client("cognito-idp")
-    client_id = client.create_user_pool_client(UserPoolId=pool_id, ClientName="web")[
-        "UserPoolClient"
-    ]["ClientId"]
-    client.sign_up(
-        ClientId=client_id,
-        Username=email,
-        Password="Senha-de-teste-1!",
-        UserAttributes=[{"Name": "email", "Value": email}],
-    )
-    client.admin_confirm_sign_up(UserPoolId=pool_id, Username=email)
-    username = client.admin_get_user(UserPoolId=pool_id, Username=email)["Username"]
-    cognito_triggers.post_confirmation(
-        {
-            "triggerSource": "PostConfirmation_ConfirmSignUp",
-            "userPoolId": pool_id,
-            "userName": username,
-        },
-        None,
-    )
-    return _token(pool_id, email)
-
-
-# --- HTTP calls ---------------------------------------------------------------------------
-
-
-def _ok(
-    handler: Handler,
-    user: User,
-    status: int = 200,
-    *,
-    body: Any = None,
-    path: dict[str, str] | None = None,
-    query: dict[str, str] | None = None,
-) -> Any:
-    """Call the route as ``user``, check the status and return the JSON body."""
-    response = handler(api_event(user, body=body, path=path, query=query), None)
-    assert response["statusCode"] == status, response.get("body")
-    return response_json(response) if response.get("body") else None
-
-
-def _refused(
-    handler: Handler,
-    user: User,
-    status: int,
-    message: str,
-    *,
-    body: Any = None,
-    path: dict[str, str] | None = None,
-) -> None:
-    """Call the route as ``user`` and check it answers ``status`` with only ``message``."""
-    response = handler(api_event(user, body=body, path=path), None)
-    assert response["statusCode"] == status, response.get("body")
-    assert response_json(response) == {"message": message}
-
-
-def _png() -> bytes:
-    """A valid 1x1 PNG (signature, IHDR, IDAT and IEND with their CRCs)."""
-
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        crc = zlib.crc32(kind + data) & 0xFFFFFFFF
-        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
-
-    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)  # 1x1, 8 bits, RGBA
-    pixels = zlib.compress(b"\x00" + bytes((0x1E, 0x63, 0xC6, 0xFF)))
-    return (
-        b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", pixels) + chunk(b"IEND", b"")
-    )
-
-
-def _image_body(data: bytes) -> dict[str, str]:
-    return {"content_type": "image/png", "data": base64.b64encode(data).decode("ascii")}
 
 
 def _counts(summary: dict[str, Any]) -> dict[str, tuple[int, int, int]]:
