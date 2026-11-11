@@ -23,6 +23,9 @@ from acceptance_support import (
 )
 
 OCTOBER_EVENT_DATE = "2027-10-09"
+# 2027 is not a leap year: February ends on the 28th.
+END_OF_FEBRUARY = "2027-02-28"
+DAY_BEFORE_END_OF_FEBRUARY = "2027-02-27"
 
 
 def test_rn001_minimum_age_in_full_years_on_the_event_date(
@@ -97,6 +100,9 @@ def test_rn002_waiting_period_in_full_months_on_the_event_date(
     kleber = academy.register(
         guardian, "Kleber", "Verde", birth="2011-03-14", since="2026-10-01", stripes=1
     )
+    # On the Cinza since the last day of August; 8 years old, as Elisa and Fabio, so
+    # only the waiting period of the Cinza/Azul (6 months) is at stake.
+    academy.register(guardian, "Lia", "Cinza", birth="2018-05-10", since="2026-08-31")
 
     at_event = academy.roster(EVENT_DATE)
     # Exactly 6 full months on the event date; one day less is 5 full months.
@@ -118,6 +124,15 @@ def test_rn002_waiting_period_in_full_months_on_the_event_date(
     assert at_event["Joana"]["eligibility"] == academy.eligibility("Roxa", "BELT")
     assert at_event["Kleber"]["eligibility"] == academy.eligibility(
         "Roxa", "BELT", msg_waiting_period(12, 7)
+    )
+
+    # End of the month: on the Cinza since 31/08, the 6th month is complete on the last
+    # day of February (which has no 31st), and not yet on the day before.
+    assert academy.roster(END_OF_FEBRUARY)["Lia"]["eligibility"] == academy.eligibility(
+        "Cinza/Azul", "BELT"
+    )
+    assert academy.roster(DAY_BEFORE_END_OF_FEBRUARY)["Lia"]["eligibility"] == academy.eligibility(
+        "Cinza/Azul", "BELT", msg_waiting_period(6, 1)
     )
 
     # Without an event the reference is today (2026-11-01): Elisa has 1 full month on

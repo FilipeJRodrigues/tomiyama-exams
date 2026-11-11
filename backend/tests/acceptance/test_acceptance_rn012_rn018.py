@@ -74,6 +74,9 @@ _INVALID_IMAGES: dict[str, tuple[str, bytes]] = {
     "gif declared as png": ("image/png", GIF),
     "pdf declared as jpeg": ("image/jpeg", PDF),
     "text declared as png": ("image/png", b"isto nao e uma imagem"),
+    # Each one a valid image, but not of the type it is declared as.
+    "png declared as jpeg": ("image/jpeg", png()),
+    "jpeg declared as png": ("image/png", JPEG),
     "one byte over 2 MB": ("image/png", _padded_png(TWO_MB + 1)),
 }
 
@@ -480,11 +483,14 @@ def test_rn015_only_examiners_edit_belts_with_valid_unique_values(
     # Unique name and order; age and waiting period >= 0; colours as #RRGGBB.
     invalid: tuple[tuple[dict[str, Any], int, str], ...] = (
         ({"name": "Azul"}, 409, MSG_BELT_NAME_TAKEN),
+        # The name of another belt in another case is still the same name.
+        ({"name": "azul"}, 409, MSG_BELT_NAME_TAKEN),
         ({"sort_order": 4}, 409, MSG_BELT_ORDER_TAKEN),
         ({"min_age_years": -1}, 400, "Idade mínima: deve estar entre 0 e 99"),
         ({"min_months_previous": -1}, 400, "Carência: deve estar entre 0 e 240"),
         ({"color_primary": "cinza"}, 400, "Cor: use o formato #RRGGBB"),
         ({"color_primary": "#9E9E9"}, 400, "Cor: use o formato #RRGGBB"),
+        ({"color_primary": "#9E9E9E0"}, 400, "Cor: use o formato #RRGGBB"),
         ({"color_primary": "9E9E9E"}, 400, "Cor: use o formato #RRGGBB"),
         ({"color_primary": "#9E9E9G"}, 400, "Cor: use o formato #RRGGBB"),
         ({"color_secondary": "azul"}, 400, "Cor das pontas: use o formato #RRGGBB"),
