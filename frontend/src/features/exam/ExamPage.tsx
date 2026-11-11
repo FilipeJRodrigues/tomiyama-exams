@@ -39,7 +39,7 @@ import {
   withPendingMarks,
   type MarkState,
 } from './examModel';
-import { focusIfLost, focusIsLost, useScrollPadding } from './focus';
+import { HEADER_SCROLL_PADDING, focusIfLost, focusIsLost, useScrollPadding } from './focus';
 import { DOUBLE_TAP_MS, useMarkClickGuard } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
@@ -397,10 +397,6 @@ function useNoticeSpace(
 function NoticeSpace({ height }: { height: number }) {
   return <div aria-hidden data-notice-space style={{ ...NOTICE_PLACE, height }} />;
 }
-
-/** Clear of the fixed header when the focus scrolls a target into view (§ 6.7). */
-const HEADER_SCROLL_PADDING =
-  'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))';
 
 /**
  * The summary is a column from 1024 px and a bar below (§ 6.4). Crossing that width (turning

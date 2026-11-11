@@ -90,15 +90,29 @@ function darkSchemeLightColor(shades: MantineColorsTuple): string | null {
  *   on dark.7 is 3.4:1; red.9 on white is 5.4:1 and red.4 on dark.7 is 6.7:1.
  * - `*-light-color`: see `lightSchemeLightColor`, for every color of the theme.
  * The light-scheme link color (`--mantine-color-anchor`) follows `primaryShade.light`.
+ *
+ * And for what shows where a control is (3:1 against what is around it), used by `a11y.css`:
+ * - `--app-focus-ring`: Mantine draws the focus ring in the filled primary color (blue.8),
+ *   which is 5.0:1 on white but 2.7:1 on a dark card (dark.6). The ring has its own color:
+ *   the same blue.8 in the light scheme, blue.4 in the dark one (6.3:1 on the page, 5.5:1 on
+ *   a card). The filled primary color stays, so white text on filled buttons keeps 5.0:1.
+ * - `--app-input-border`: border of the fields at rest. Mantine's gray.4 on white is 1.5:1
+ *   and dark.4 on dark.7 is 1.5:1; gray.6 on white is 3.3:1, and dark.2 is 4.0:1 on the page
+ *   and the dialogs (dark.7) and 3.5:1 on a card (dark.6).
  */
 export const cssVariablesResolver: CSSVariablesResolver = (current) => {
+  const primary = current.colors[current.primaryColor] ?? current.colors.blue;
   const light: Record<string, string> = {
     '--mantine-color-dimmed': current.colors.gray[7],
     '--mantine-color-error': current.colors.red[9],
+    '--app-focus-ring': primary[8],
+    '--app-input-border': current.colors.gray[6],
   };
   const dark: Record<string, string> = {
     '--mantine-color-dimmed': current.colors.dark[1],
     '--mantine-color-error': current.colors.red[4],
+    '--app-focus-ring': primary[4],
+    '--app-input-border': current.colors.dark[2],
   };
   for (const [name, shades] of Object.entries(current.colors)) {
     if (isVirtualColor(shades)) continue;

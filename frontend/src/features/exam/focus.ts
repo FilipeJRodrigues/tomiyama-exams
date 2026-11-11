@@ -66,6 +66,13 @@ export function focusIfLost(
   return document.activeElement === target;
 }
 
+/**
+ * Clear of the fixed header when the focus scrolls a target into view (§ 6.7). For
+ * `useScrollPadding('top', ...)` on the screens under the app header.
+ */
+export const HEADER_SCROLL_PADDING =
+  'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))';
+
 type ScrollPaddingEdge = 'scrollPaddingTop' | 'scrollPaddingBottom';
 
 /**
