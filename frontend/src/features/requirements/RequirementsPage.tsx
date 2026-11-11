@@ -15,7 +15,7 @@ import type { Belt, Requirement, RequirementInput, RequirementKind } from '../..
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { useSendLock } from '../../lib/sendLock';
 import { sortBelts } from '../belts/beltText';
-import { focusIfLost } from '../exam/focus';
+import { HEADER_SCROLL_PADDING, focusIfLost, useScrollPadding } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { useRetryFocus } from '../students/useRetryFocus';
 import { DeleteRequirementDialog } from './DeleteRequirementDialog';
@@ -89,6 +89,8 @@ function Filters({ belts, beltId, kind, onBelt, onKind }: FiltersProps) {
  */
 export function RequirementsPage() {
   const belts = useBelts();
+  // § 6.7: a control focused with Shift+Tab stays clear of the fixed header.
+  useScrollPadding('top', HEADER_SCROLL_PADDING);
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
   const [chosenBeltId, setChosenBeltId] = useState<string | null>(null);
   const [kind, setKind] = useState<RequirementKind | null>(null);

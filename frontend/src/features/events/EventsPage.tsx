@@ -13,7 +13,7 @@ import {
 import type { ExamEvent } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { useSendLock } from '../../lib/sendLock';
-import { focusIfLost } from '../exam/focus';
+import { HEADER_SCROLL_PADDING, focusIfLost, useScrollPadding } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { useRetryFocus } from '../students/useRetryFocus';
 import { DeleteEventDialog } from './DeleteEventDialog';
@@ -50,6 +50,8 @@ interface DeleteState {
  */
 export function EventsPage() {
   const events = useEvents();
+  // § 6.7: a control focused with Shift+Tab stays clear of the fixed header.
+  useScrollPadding('top', HEADER_SCROLL_PADDING);
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
 
   const create = useCreateEvent();

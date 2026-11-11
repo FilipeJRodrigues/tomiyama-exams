@@ -1,0 +1,31 @@
+/*
+ * § 6.7: what shows where a control is has at least 3:1 against what is around it, in both
+ * color schemes. Loaded after Mantine's styles (`main.tsx`), so at equal specificity these
+ * rules win. The colors come from `cssVariablesResolver` in `theme.ts`.
+ */
+
+/*
+ * Focus ring. Mantine draws it in the filled primary color, which is too dark on a dark
+ * card; only the color changes here, the ring itself (width, offset, when it shows) is
+ * Mantine's. The fallback is Mantine's color, for a screen outside the theme variables.
+ */
+.mantine-focus-auto:focus-visible,
+.mantine-focus-always:focus {
+  outline-color: var(--app-focus-ring, var(--mantine-primary-color-filled));
+}
+
+/* Controls whose ring is drawn on the element next to the focused input. */
+.mantine-Switch-input:focus-visible + .mantine-Switch-track,
+.mantine-SegmentedControl-input:focus-visible + .mantine-SegmentedControl-label {
+  outline-color: var(--app-focus-ring, var(--mantine-primary-color-filled));
+}
+
+/*
+ * Fields (TextInput, NativeSelect, Textarea, PasswordInput...): border at rest, and the
+ * focused border in the color of the focus ring. Same specificity as Mantine's rule for the
+ * default variant, so the error border (a more specific rule) still wins.
+ */
+[data-mantine-color-scheme] .mantine-Input-wrapper[data-variant='default'] {
+  --input-bd: var(--app-input-border, var(--mantine-color-gray-6));
+  --input-bd-focus: var(--app-focus-ring, var(--mantine-primary-color-filled));
+}
