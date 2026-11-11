@@ -615,6 +615,36 @@ Resources:
             Path: /students/{id}/exams
             Method: GET
 
+  # Exam notices of a guardian's student (RN019). Read-only: GetItem of the
+  # student (decides the 404), Scan of the events (a few per year; only the
+  # open ones count), Query on the by_student index (the student's exams) and
+  # Scan of the belts (eligibility on each event's date). Nothing is written.
+  ListStudentExamNoticesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.students.list_student_exam_notices
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt StudentsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${ExamsTable.Arn}/index/by_student
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt BeltsTable.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /students/{id}/exam-notices
+            Method: GET
+
   # Requirements (examiners only)
   ListRequirementsFunction:
     Type: AWS::Serverless::Function

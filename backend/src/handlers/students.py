@@ -11,6 +11,8 @@ Guardians see and edit only their own students; examiners see all (RN013).
 - ``DELETE /students/{id}``: delete a student without exams (RN018).
 - ``GET /students/{id}/exams``: the student's exam history, examiners only
   (RN018); kept apart from the detail so the edit form never pays for it.
+- ``GET /students/{id}/exam-notices``: the exam notices of the guardian's
+  student, one per open event where the student is eligible (RN019).
 """
 
 import logging
@@ -19,6 +21,7 @@ from typing import Any
 
 from domain import dates, eligibility
 from domain import history as history_rules
+from domain import notices as notice_rules
 from domain import students as student_rules
 from domain.belts import Belt
 from domain.errors import NotFoundError, ValidationError
@@ -190,3 +193,31 @@ def list_student_exams(event: Event, context: Any) -> Response:
     events_by_id = event_repo.get_events(exam.event_id for exam in exams)
     belts_by_id = {belt.id: belt for belt in belt_repo.list_belts()}
     return json_response(200, history_rules.student_history(exams, events_by_id, belts_by_id))
+
+
+@api_handler
+def list_student_exam_notices(event: Event, context: Any) -> Response:
+    """Return the exam notices of one of the guardian's students (RN019).
+
+    Read-only. The permission comes before any read: an examiner gets 403 (the
+    notice is the guardian's view), and a student of someone else is a 404, as
+    in ``GET /students/{id}`` (RN013). The student is read by key and strongly
+    consistent (it decides the 404). The events (a scan of the small
+    ``Events`` table; only the open ones count), the student's exams (the
+    ``by_student`` index) and the belts are eventually consistent: they never
+    decide the status code. An inactive student reads nothing else, and no
+    open event stops before the exams and the belts.
+    """
+    user = current_user(event)
+    notice_rules.ensure_guardian(user)
+    student = student_rules.ensure_can_access(
+        student_repo.get_student(path_param(event, "id", not_found=MSG_STUDENT_NOT_FOUND)), user
+    )
+    if not notice_rules.can_have_notices(student):
+        return json_response(200, [])
+    events = notice_rules.open_events(event_repo.list_all())
+    if not events:
+        return json_response(200, [])
+    exams = exam_repo.list_by_student(student.id)
+    belts = belt_repo.list_belts()
+    return json_response(200, notice_rules.exam_notices(student, belts, events, exams))
