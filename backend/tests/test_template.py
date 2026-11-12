@@ -465,6 +465,35 @@ def test_rn018_history_route_with_least_privilege(template: dict[str, Any]) -> N
     assert "Environment" not in function["Properties"]
 
 
+def test_rn019_notices_route_with_least_privilege(template: dict[str, Any]) -> None:
+    function = template["Resources"]["ListStudentExamNoticesFunction"]
+    granted: set[tuple[str, str]] = set()
+    for statement in _statements(function):
+        assert statement["Effect"] == "Allow"
+        assert "Condition" not in statement
+        resources = statement["Resource"]
+        for resource in resources if isinstance(resources, list) else [resources]:
+            actions = statement["Action"]
+            for action in [actions] if isinstance(actions, str) else actions:
+                granted.add((action, _resource_name(resource)))
+
+    assert function["Properties"]["Handler"] == "handlers.students.list_student_exam_notices"
+    assert _route(function) == ("GET", "/students/{id}/exam-notices")
+    # Read-only: the student, the events, the by_student index (never the
+    # whole Exams table, nor Answers) and the belts. No write, no Cognito.
+    assert granted == {
+        ("dynamodb:GetItem", "StudentsTable"),
+        ("dynamodb:Scan", "EventsTable"),
+        ("dynamodb:Query", "ExamsTable/index/by_student"),
+        ("dynamodb:Scan", "BeltsTable"),
+    }
+    assert "Environment" not in function["Properties"]
+    # The route stays behind the API's default Cognito authorizer.
+    assert "Auth" not in function["Properties"]["Events"]["Api"]["Properties"]
+    auth = template["Resources"]["HttpApi"]["Properties"]["Auth"]
+    assert auth["DefaultAuthorizer"] == "CognitoJwt"
+
+
 def test_rn018_history_does_not_change_the_student_detail_route(
     template: dict[str, Any],
 ) -> None:
