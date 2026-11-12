@@ -248,7 +248,7 @@ describe('Eventos com o Scan atrasado: sobreposição das gravações recentes (
       'Exame de novembro',
       '21/11/2026',
       'Encerrado',
-      'EditarExcluir',
+      'EditarReabrirExcluir',
     ]);
     expect(rowNames()).not.toContain('Exame novembro/2026');
   });
@@ -381,7 +381,7 @@ describe('Eventos com o Scan atrasado: sobreposição das gravações recentes (
     await settled(queryClient);
     await refocus(queryClient);
 
-    expect(tableRows()[1]).toEqual(['Exame B', '15/08/2026', 'Encerrado', 'EditarExcluir']);
+    expect(tableRows()[1]).toEqual(['Exame B', '15/08/2026', 'Encerrado', 'EditarReabrirExcluir']);
     expect(rowNames()).not.toContain('Exame A');
   });
 });

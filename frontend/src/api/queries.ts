@@ -97,6 +97,11 @@ export const mutationKeys = {
   logoRemove: (slot: LogoSlot) => ['logoWrite', slot, 'remove'] as const,
 };
 
+/** Whether a query key is a student's exam notices (`studentExamNotices`). */
+export function isExamNoticesKey(key: readonly unknown[]): boolean {
+  return key.length === 3 && key[0] === 'student' && key[2] === 'exam-notices';
+}
+
 /** Whether a query key is an exam sheet (`examSheet`): `['events', id, 'exams', studentId]`. */
 export function isExamSheetKey(key: readonly unknown[]): boolean {
   return key.length === 4 && key[0] === 'events' && key[2] === 'exams';
@@ -986,7 +991,9 @@ function reloadOnConflict(queryClient: QueryClient, id: string, error: unknown):
  * event), and the list reloads; its answer goes through the same record, so a late `Scan`
  * is corrected, never cancelled. After an edit, what is cached under the event (its exams
  * and exam sheets, which show its name and status) reloads too: a closed event blocks
- * attendance and marking (RN016).
+ * attendance and marking (RN016). The students' exam notices reload too: a new or reopened
+ * event may bring one, a closed or deleted event takes its notices away (RN019). Only a
+ * guardian has them in the cache, so nothing is asked for an examiner.
  */
 function applyConfirmedEventWrite(
   queryClient: QueryClient,
@@ -1003,6 +1010,7 @@ function applyConfirmedEventWrite(
   restartFirstLoads(queryClient, { queryKey: queryKeys.events, exact: true });
   void queryClient.invalidateQueries({ queryKey: queryKeys.events, exact: true });
   if (edited) void queryClient.invalidateQueries({ queryKey: queryKeys.eventExams(id) });
+  void queryClient.invalidateQueries({ predicate: (query) => isExamNoticesKey(query.queryKey) });
 }
 
 /** The 404 of `PUT`/`DELETE /events/{id}` when the event does not exist. */

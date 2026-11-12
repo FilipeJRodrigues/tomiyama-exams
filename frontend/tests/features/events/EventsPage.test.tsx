@@ -36,8 +36,8 @@ describe('events screen, list (§ 6.5)', () => {
     await openEvents();
     expect(screen.getByRole('heading', { level: 1, name: 'Eventos' })).toBeInTheDocument();
     expect(tableRows()).toEqual([
-      ['Exame novembro/2026', '21/11/2026', 'Aberto', 'EditarExcluir'],
-      ['Exame março/2026', '01/03/2026', 'Encerrado', 'EditarExcluir'],
+      ['Exame novembro/2026', '21/11/2026', 'Aberto', 'EditarEncerrarExcluir'],
+      ['Exame março/2026', '01/03/2026', 'Encerrado', 'EditarReabrirExcluir'],
     ]);
   });
 
@@ -147,7 +147,13 @@ describe('events screen, list (§ 6.5)', () => {
       within(closed).getByRole('button', { name: 'Editar evento Exame março/2026' }),
     ).toBeInTheDocument();
     expect(
+      within(closed).getByRole('button', { name: 'Reabrir evento Exame março/2026' }),
+    ).toBeInTheDocument();
+    expect(
       within(closed).getByRole('button', { name: 'Excluir evento Exame março/2026' }),
+    ).toBeInTheDocument();
+    expect(
+      within(open).getByRole('button', { name: 'Encerrar evento Exame novembro/2026' }),
     ).toBeInTheDocument();
   });
 
@@ -165,8 +171,10 @@ describe('events screen, list (§ 6.5)', () => {
       screen.getByRole('button', { name: 'Novo evento' }),
       screen.getByRole('region', { name: 'Lista de eventos' }),
       screen.getByRole('button', { name: 'Editar evento Exame novembro/2026' }),
+      screen.getByRole('button', { name: 'Encerrar evento Exame novembro/2026' }),
       screen.getByRole('button', { name: 'Excluir evento Exame novembro/2026' }),
       screen.getByRole('button', { name: 'Editar evento Exame março/2026' }),
+      screen.getByRole('button', { name: 'Reabrir evento Exame março/2026' }),
       screen.getByRole('button', { name: 'Excluir evento Exame março/2026' }),
     ];
     expected[0]?.focus();

@@ -1,23 +1,27 @@
 /**
  * The events (§ 6.5), most recent first: a table on the notebook and the tablet, cards on the
- * phone. Every row has "Editar" and "Excluir", marked with `ACTION_ATTRIBUTE` so the page can
- * give them the focus back after a dialog or a change of layout (§ 6.7).
+ * phone. Every row has "Editar", "Encerrar" (open event) or "Reabrir" (closed event) and
+ * "Excluir", marked with `ACTION_ATTRIBUTE` so the page can give them the focus back after a
+ * dialog or a change of layout (§ 6.7).
  */
 import { Button, Card, Group, Stack, Table, Text, Title } from '@mantine/core';
 import { IconLock, IconLockOpen, IconPencil, IconTrash } from '@tabler/icons-react';
 
 import type { EventStatus, ExamEvent } from '../../api/types';
 import { formatDate } from '../../lib/dates';
+import { TOUCH_TARGET } from '../exam/touch';
 import { Field } from '../students/studentCells';
 import { statusLabel } from './eventFormModel';
+import { nextStatus, statusChangeLabel, statusChangeTexts } from './eventStatusChange';
 import { ACTION_ATTRIBUTE, actionKey } from './rowActions';
 
 /**
- * Narrowest width at which the four columns read well. At 768 px the side menu stays open
+ * Narrowest width at which the four columns read well, with the three row buttons in one line
+ * and room left for the name. At 768 px the side menu stays open
  * and the table scrolls inside its own container, so the page never scrolls sideways
  * (§ 6.7). The container takes focus so the keyboard can scroll it too.
  */
-const TABLE_MIN_WIDTH = 560;
+const TABLE_MIN_WIDTH = 720;
 
 /** Long names (up to 80 characters) wrap anywhere instead of widening the column. */
 const WRAP = { overflowWrap: 'anywhere' } as const;
@@ -35,18 +39,28 @@ export function EventStatusText({ status }: { status: EventStatus }) {
   );
 }
 
-interface ActionsProps {
-  event: ExamEvent;
+interface Handlers {
   onEdit: (event: ExamEvent) => void;
+  onChangeStatus: (event: ExamEvent) => void;
   onDelete: (event: ExamEvent) => void;
 }
 
-function RowActions({ event, onEdit, onDelete }: ActionsProps) {
+interface ActionsProps extends Handlers {
+  event: ExamEvent;
+  /** Phone cards: touch targets of 44 px, wrapping when the card is too narrow (§ 6.7). */
+  touch?: boolean;
+}
+
+function RowActions({ event, onEdit, onChangeStatus, onDelete, touch = false }: ActionsProps) {
+  const style = touch ? TOUCH_TARGET : undefined;
+  // "Encerrar" shows the lock it will put on the event; "Reabrir", the open one.
+  const StatusIcon = nextStatus(event.status) === 'CLOSED' ? IconLock : IconLockOpen;
   return (
-    <Group gap="xs" wrap="nowrap">
+    <Group gap="xs" wrap={touch ? 'wrap' : 'nowrap'}>
       <Button
         variant="default"
         size="xs"
+        style={style}
         leftSection={<IconPencil size={16} aria-hidden />}
         aria-label={`Editar evento ${event.name}`}
         {...{ [ACTION_ATTRIBUTE]: actionKey('edit', event.id) }}
@@ -59,6 +73,20 @@ function RowActions({ event, onEdit, onDelete }: ActionsProps) {
       <Button
         variant="default"
         size="xs"
+        style={style}
+        leftSection={<StatusIcon size={16} aria-hidden />}
+        aria-label={statusChangeLabel(event)}
+        {...{ [ACTION_ATTRIBUTE]: actionKey('status', event.id) }}
+        onClick={() => {
+          onChangeStatus(event);
+        }}
+      >
+        {statusChangeTexts(nextStatus(event.status)).action}
+      </Button>
+      <Button
+        variant="default"
+        size="xs"
+        style={style}
         leftSection={<IconTrash size={16} aria-hidden />}
         aria-label={`Excluir evento ${event.name}`}
         {...{ [ACTION_ATTRIBUTE]: actionKey('delete', event.id) }}
@@ -72,15 +100,13 @@ function RowActions({ event, onEdit, onDelete }: ActionsProps) {
   );
 }
 
-interface ListProps {
+interface ListProps extends Handlers {
   events: readonly ExamEvent[];
   /** Id of the page title, the name of the table or list. */
   labelledBy: string;
-  onEdit: (event: ExamEvent) => void;
-  onDelete: (event: ExamEvent) => void;
 }
 
-export function EventsTable({ events, labelledBy, onEdit, onDelete }: ListProps) {
+export function EventsTable({ events, labelledBy, ...handlers }: ListProps) {
   return (
     <Table.ScrollContainer
       type="native"
@@ -110,7 +136,7 @@ export function EventsTable({ events, labelledBy, onEdit, onDelete }: ListProps)
                 <EventStatusText status={event.status} />
               </Table.Td>
               <Table.Td>
-                <RowActions event={event} onEdit={onEdit} onDelete={onDelete} />
+                <RowActions event={event} {...handlers} />
               </Table.Td>
             </Table.Tr>
           ))}
@@ -120,7 +146,7 @@ export function EventsTable({ events, labelledBy, onEdit, onDelete }: ListProps)
   );
 }
 
-export function EventsCards({ events, labelledBy, onEdit, onDelete }: ListProps) {
+export function EventsCards({ events, labelledBy, ...handlers }: ListProps) {
   return (
     <Stack
       component="ul"
@@ -142,7 +168,7 @@ export function EventsCards({ events, labelledBy, onEdit, onDelete }: ListProps)
               <EventStatusText status={event.status} />
             </Field>
           </Stack>
-          <RowActions event={event} onEdit={onEdit} onDelete={onDelete} />
+          <RowActions event={event} touch {...handlers} />
         </Card>
       ))}
     </Stack>
