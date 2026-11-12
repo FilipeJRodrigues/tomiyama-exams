@@ -14,7 +14,7 @@ if (problems.length > 0) {
     [
       'Build de produção interrompido: a configuração do site não está pronta para publicar.',
       ...problems.map((problem) => `- ${problem}`),
-      'Corrija as variáveis em Hosting > Environment variables no console do Amplify (guia na seção "Front no Amplify (dev)" do README.md da raiz) e rode o build de novo.',
+      'Corrija as variáveis em Hosting > Environment variables no console do Amplify (guia em frontend/AMPLIFY.md) e rode o build de novo.',
       '',
     ].join('\n'),
   );
