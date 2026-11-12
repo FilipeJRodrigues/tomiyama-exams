@@ -79,7 +79,12 @@ describe('events screen, create (§ 6.5)', () => {
     ]);
     expect(notice()).toHaveTextContent('Evento criado.');
     expect(rowNames()).toEqual(['Exame novembro/2026', 'Exame junho/2026', 'Exame março/2026']);
-    expect(tableRows()[1]).toEqual(['Exame junho/2026', '20/06/2026', 'Aberto', 'EditarExcluir']);
+    expect(tableRows()[1]).toEqual([
+      'Exame junho/2026',
+      '20/06/2026',
+      'Aberto',
+      'EditarEncerrarExcluir',
+    ]);
     expect(screen.getByRole('button', { name: 'Editar evento Exame junho/2026' })).toHaveFocus();
     expect(db.events.find((event) => event.name === 'Exame junho/2026')?.status).toBe('OPEN');
   });
@@ -96,7 +101,7 @@ describe('events screen, create (§ 6.5)', () => {
       'Exame antigo',
       '10/05/2025',
       'Encerrado',
-      'EditarExcluir',
+      'EditarReabrirExcluir',
     ]);
   });
 
@@ -227,7 +232,7 @@ describe('events screen, edit (§ 6.5)', () => {
       'Exame de novembro',
       '21/11/2026',
       'Encerrado',
-      'EditarExcluir',
+      'EditarReabrirExcluir',
     ]);
     expect(screen.getByRole('button', { name: 'Editar evento Exame de novembro' })).toHaveFocus();
     expect(stored(MOCK_EVENT_IDS.open)).toMatchObject({
@@ -245,7 +250,12 @@ describe('events screen, edit (§ 6.5)', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await dialogGone();
 
-    expect(tableRows()[1]).toEqual(['Exame março/2026', '01/03/2026', 'Aberto', 'EditarExcluir']);
+    expect(tableRows()[1]).toEqual([
+      'Exame março/2026',
+      '01/03/2026',
+      'Aberto',
+      'EditarEncerrarExcluir',
+    ]);
     expect(stored(MOCK_EVENT_IDS.closed).status).toBe('OPEN');
   });
 

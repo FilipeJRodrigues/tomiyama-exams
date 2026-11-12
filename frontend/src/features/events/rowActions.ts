@@ -3,10 +3,13 @@
  * back after a dialog or a change of layout (§ 6.7).
  */
 
-/** Marks each row button: `edit:<id>` or `delete:<id>`. */
+/**
+ * Marks each row button: `edit:<id>`, `status:<id>` ("Encerrar" or "Reabrir": the same key for
+ * both, so the focus finds the button again after the status changes) or `delete:<id>`.
+ */
 export const ACTION_ATTRIBUTE = 'data-event-action';
 
-export type EventAction = 'edit' | 'delete';
+export type EventAction = 'edit' | 'status' | 'delete';
 
 export function actionKey(action: EventAction, id: string): string {
   return `${action}:${id}`;

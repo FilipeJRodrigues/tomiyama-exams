@@ -112,7 +112,7 @@ describe('events screen with a late `GET /events`', () => {
       'Exame de novembro',
       '21/11/2026',
       'Encerrado',
-      'EditarExcluir',
+      'EditarReabrirExcluir',
     ]);
   });
 

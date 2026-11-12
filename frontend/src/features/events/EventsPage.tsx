@@ -16,6 +16,7 @@ import { useSendLock } from '../../lib/sendLock';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { useRetryFocus } from '../students/useRetryFocus';
+import { ChangeEventStatusDialog } from './ChangeEventStatusDialog';
 import { DeleteEventDialog } from './DeleteEventDialog';
 import { EventForm } from './EventForm';
 import { EventsCards, EventsTable } from './EventsList';
@@ -26,6 +27,7 @@ import {
   updateInputOf,
   type EventFormValues,
 } from './eventFormModel';
+import { statusChangeTexts } from './eventStatusChange';
 import { ACTION_ATTRIBUTE, actionButton, actionKey } from './rowActions';
 
 const TITLE_ID = 'events-title';
@@ -43,10 +45,17 @@ interface DeleteState {
   opened: boolean;
 }
 
+/** "Encerrar" / "Reabrir" of a row: the event as the list showed it. */
+interface StatusState {
+  event: ExamEvent;
+  opened: boolean;
+}
+
 /**
  * § 6.5 events screen (examiners): the events from the most recent to the oldest, with create,
- * edit (name and status; a closed event may be reopened; the date never changes) and delete
- * dialogs. RN016 is checked by the API; its messages are shown as they come.
+ * edit (name and status; a closed event may be reopened; the date never changes), "Encerrar" /
+ * "Reabrir" (a confirmation of the status alone) and delete dialogs. RN016 is checked by the
+ * API; its messages are shown as they come.
  */
 export function EventsPage() {
   const events = useEvents();
@@ -57,6 +66,7 @@ export function EventsPage() {
   const remove = useDeleteEvent();
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [deleting, setDeleting] = useState<DeleteState | null>(null);
+  const [changing, setChanging] = useState<StatusState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -64,6 +74,7 @@ export function EventsPage() {
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const deleteRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
   const openings = useRef(0);
   /** Id of the event just created, to give its edit button the focus. */
   const createdId = useRef<string | null>(null);
@@ -171,6 +182,30 @@ export function EventsPage() {
     });
   };
 
+  const openStatusChange = (event: ExamEvent) => {
+    setNotice(null);
+    setChanging({ event, opened: true });
+  };
+
+  /** The dialog only asks while nothing is on its way (it keeps its own lock). */
+  const closeStatusChange = () => {
+    setChanging((current) => current && { ...current, opened: false });
+  };
+
+  const statusChanged = (saved: ExamEvent) => {
+    setNotice(statusChangeTexts(saved.status).done);
+    closeStatusChange();
+  };
+
+  /** The confirmation is gone: back to the row's button (now the other action), or the title. */
+  const statusChangeClosed = () => {
+    const id = changing?.event.id;
+    setChanging(null);
+    focusIfLost([id ? actionButton(actionKey('status', id)) : null, titleRef.current], {
+      leaving: [statusRef.current],
+    });
+  };
+
   const closeNotice = () => {
     setNotice(null);
     // The close button went away with the notice.
@@ -199,7 +234,13 @@ export function EventsPage() {
     const List = isMobile ? EventsCards : EventsTable;
     content = (
       <Stack gap="sm" onFocus={rememberAction}>
-        <List events={items} labelledBy={TITLE_ID} onEdit={openEditor} onDelete={openDelete} />
+        <List
+          events={items}
+          labelledBy={TITLE_ID}
+          onEdit={openEditor}
+          onChangeStatus={openStatusChange}
+          onDelete={openDelete}
+        />
       </Stack>
     );
   }
@@ -263,6 +304,15 @@ export function EventsPage() {
           />
         )}
       </Modal>
+      <ChangeEventStatusDialog
+        ref={statusRef}
+        event={changing?.event ?? null}
+        opened={changing?.opened ?? false}
+        fullScreen={isMobile}
+        onClose={closeStatusChange}
+        onChanged={statusChanged}
+        onClosed={statusChangeClosed}
+      />
       <DeleteEventDialog
         ref={deleteRef}
         event={deleting?.event ?? null}
