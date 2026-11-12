@@ -17,11 +17,12 @@ import {
   IconCircleCheck,
   IconClipboardList,
   IconLock,
+  IconLockOpen,
   IconPlus,
   IconSearch,
   IconUserCheck,
 } from '@tabler/icons-react';
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import { errorMessage } from '../../api/client';
@@ -37,7 +38,15 @@ import type { Belt, ExamEvent, ExamView, StudentView } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { examPath, paths } from '../../app/navigation';
 import { EVENT_STATUS_LABELS, EXAM_STATUS_LABELS } from '../../lib/labels';
+import { ChangeEventStatusDialog } from '../events/ChangeEventStatusDialog';
+import {
+  nextStatus,
+  statusChangeButtonText,
+  statusChangeLabel,
+  statusChangeTexts,
+} from '../events/eventStatusChange';
 import { focusIfLost } from '../exam/focus';
+import { TOUCH_TARGET } from '../exam/touch';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { BeltCell, Field, StatusText } from '../students/studentCells';
 import { ageLabel, dateLabel, nextExamLabel, studentStatus } from '../students/studentText';
@@ -90,7 +99,11 @@ interface EventPickerProps {
   onChange: (eventId: string) => void;
 }
 
-/** Native select: the phone's own picker, and every event (closed ones too) is listed. */
+/**
+ * Native select: the phone's own picker, and every event (closed ones too) is listed. It grows
+ * up to 560 px and keeps at least 18rem beside the "Encerrar" / "Reabrir" button; when both do
+ * not fit (phone, 200% zoom), the button wraps to the next line.
+ */
 function EventPicker({ events, selected, onChange }: EventPickerProps) {
   const options = events.map((event) => ({ value: event.id, label: eventLabel(event) }));
   const data = selected
@@ -102,10 +115,43 @@ function EventPicker({ events, selected, onChange }: EventPickerProps) {
       data={data}
       value={selected?.id ?? ''}
       maw={560}
+      flex="1 1 18rem"
+      miw={0}
       onChange={(event) => {
         onChange(event.currentTarget.value);
       }}
     />
+  );
+}
+
+interface StatusButtonProps {
+  ref: Ref<HTMLButtonElement>;
+  event: ExamEvent;
+  /** Phone layout: a touch target of 44 px (§ 6.7). */
+  touch: boolean;
+  onClick: () => void;
+}
+
+/**
+ * "Encerrar evento" (open event) or "Reabrir evento" (closed one), § 6.3 / § 6.5, RN016: opens
+ * the same confirmation as the events screen. One element for both: the focus can come back
+ * to it after the change, now with the other text.
+ */
+function StatusButton({ ref, event, touch, onClick }: StatusButtonProps) {
+  // "Encerrar" shows the lock it will put on the event; "Reabrir", the open one.
+  const Icon = nextStatus(event.status) === 'CLOSED' ? IconLock : IconLockOpen;
+  return (
+    <Button
+      ref={ref}
+      variant="default"
+      flex="none"
+      style={touch ? TOUCH_TARGET : undefined}
+      leftSection={<Icon size={18} aria-hidden />}
+      aria-label={statusChangeLabel(event)}
+      onClick={onClick}
+    >
+      {statusChangeButtonText(event.status)}
+    </Button>
   );
 }
 
@@ -546,19 +592,76 @@ function EventRoster({ event, created, onCreated, titleRef }: EventRosterProps) 
   );
 }
 
+/** "Encerrar" / "Reabrir" of the selected event: the event as the screen showed it. */
+interface StatusState {
+  event: ExamEvent;
+  opened: boolean;
+}
+
+/** Success notice of a status change, only shown while its event is the selected one. */
+interface StatusNotice {
+  eventId: string;
+  text: string;
+}
+
 /**
  * § 6.3 exam day, examiners only: pick the event (default: the most recent open one,
- * kept in `?evento=`), then confirm attendance or open the exam of each student.
+ * kept in `?evento=`), then confirm attendance or open the exam of each student. Beside the
+ * picker, "Encerrar evento" / "Reabrir evento" (RN016) with the confirmation of the events
+ * screen; the event stays selected after the change (it is in `?evento=`).
  */
 export function ExamDayPage() {
   const events = useEvents();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const retryFocus = useRetryFocus([events], titleRef);
+  const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
   const [searchParams, setSearchParams] = useSearchParams();
   const chosenId = searchParams.get(EVENT_PARAM);
   const selected = events.data ? selectEvent(events.data, chosenId) : undefined;
   // Exams confirmed in this session, by event: a stale reload does not hide them.
   const [createdByEvent, setCreatedByEvent] = useState<Record<string, ExamView[]>>({});
+  const [changing, setChanging] = useState<StatusState | null>(null);
+  const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const statusButtonRef = useRef<HTMLButtonElement>(null);
+  const statusDialogRef = useRef<HTMLDivElement>(null);
+
+  const openStatusChange = (event: ExamEvent) => {
+    setNotice(null);
+    setChanging({ event, opened: true });
+  };
+
+  /** The dialog only asks while nothing is on its way (it keeps its own lock). */
+  const closeStatusChange = () => {
+    setChanging((current) => current && { ...current, opened: false });
+  };
+
+  const statusChanged = (saved: ExamEvent) => {
+    setNotice({ eventId: saved.id, text: statusChangeTexts(saved.status).done });
+    closeStatusChange();
+  };
+
+  /**
+   * The confirmation is gone: back to the button (now the other action) while it is still the
+   * one of the same event; else (event deleted meanwhile) to the title.
+   */
+  const statusChangeClosed = () => {
+    const id = changing?.event.id;
+    setChanging(null);
+    const sameEvent = id !== undefined && selected?.id === id;
+    focusIfLost([sameEvent ? statusButtonRef.current : null, titleRef.current], {
+      leaving: [statusDialogRef.current],
+    });
+  };
+
+  const closeNotice = () => {
+    setNotice(null);
+    // The close button went away with the notice.
+    window.setTimeout(() => {
+      focusIfLost(titleRef.current);
+    }, 0);
+  };
+
+  const shownNotice = notice !== null && notice.eventId === selected?.id ? notice : null;
 
   // The default event goes into the URL too (replacing the entry), so it stays on screen
   // after a reload, and also when a refetch shows it was closed in the meantime (RN016).
@@ -591,16 +694,42 @@ export function ExamDayPage() {
   } else {
     content = (
       <>
-        <EventPicker
-          events={events.data}
-          selected={selected}
-          onChange={(eventId) => {
-            setSearchParams((params) => {
-              params.set(EVENT_PARAM, eventId);
-              return params;
-            });
-          }}
-        />
+        <Group align="flex-end" gap="sm">
+          <EventPicker
+            events={events.data}
+            selected={selected}
+            onChange={(eventId) => {
+              setNotice(null);
+              setSearchParams((params) => {
+                params.set(EVENT_PARAM, eventId);
+                return params;
+              });
+            }}
+          />
+          {selected && (
+            <StatusButton
+              ref={statusButtonRef}
+              event={selected}
+              touch={isMobile}
+              onClick={() => {
+                openStatusChange(selected);
+              }}
+            />
+          )}
+        </Group>
+        {shownNotice && (
+          <Alert
+            color="green"
+            variant="light"
+            role="status"
+            icon={<IconCircleCheck aria-hidden />}
+            withCloseButton
+            closeButtonLabel="Fechar aviso"
+            onClose={closeNotice}
+          >
+            {shownNotice.text}
+          </Alert>
+        )}
         {selected ? (
           <EventRoster
             key={selected.id}
@@ -627,6 +756,15 @@ export function ExamDayPage() {
         Dia do exame
       </Title>
       {content}
+      <ChangeEventStatusDialog
+        ref={statusDialogRef}
+        event={changing?.event ?? null}
+        opened={changing?.opened ?? false}
+        fullScreen={isMobile}
+        onClose={closeStatusChange}
+        onChanged={statusChanged}
+        onClosed={statusChangeClosed}
+      />
     </Stack>
   );
 }

@@ -49,6 +49,15 @@ export function statusChangeLabel(event: ExamEvent): string {
   return `${statusChangeTexts(nextStatus(event.status)).action} evento ${event.name}`;
 }
 
+/**
+ * Visible text of a button that stands alone, with no row to say which event (exam day, next to
+ * the event picker): "Encerrar evento" or "Reabrir evento". Its accessible name is
+ * `statusChangeLabel`, which starts with this text and adds the name.
+ */
+export function statusChangeButtonText(status: EventStatus): string {
+  return `${statusChangeTexts(nextStatus(status)).action} evento`;
+}
+
 /** The question of the confirmation, with the name and the date of the event. */
 export function statusChangeQuestion(event: ExamEvent): string {
   const what = `o evento “${event.name}” (${formatDate(event.exam_date)})`;
