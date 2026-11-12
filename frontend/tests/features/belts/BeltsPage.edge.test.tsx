@@ -16,7 +16,8 @@ import { renderApp } from '../../render';
 const BELTS_URL = `${TEST_API_URL}/belts`;
 
 async function openBelts() {
-  const result = await renderApp({ route: '/faixas', signedInAs: 'examiner' });
+  // Name, order, kyū, level and colors are fields only for the admin master (#143).
+  const result = await renderApp({ route: '/faixas', signedInAs: 'master' });
   await screen.findByRole('table', { name: 'Faixas' });
   return result;
 }

@@ -3,6 +3,9 @@
  *
  * The checks here are a convenience: the API validates the same fields, and also that name
  * and order are unique (409), and its message is the one that counts (shown in the dialog).
+ *
+ * Two modes (#143): the admin master edits every field; any other examiner only the minimum
+ * age (RN001) and the minimum time in the previous belt (RN002), and resends the rest as read.
  */
 import type { Belt, BeltInput, BeltLevel } from '../../api/types';
 
@@ -41,6 +44,17 @@ export const FIELD_ORDER: readonly BeltField[] = [
   'colorPrimary',
   'colorSecondary',
 ];
+
+/** What an examiner who is not the admin master edits (RN001, RN002). */
+export const LIMIT_FIELDS: readonly BeltField[] = ['minAgeYears', 'minMonthsPrevious'];
+
+/**
+ * 403 of `PUT /belts/{id}` for an examiner who is not the admin master and sent a name, kyū,
+ * order, level or color other than the stored one (for the form, only when the belt changed
+ * after it was read).
+ */
+export const MSG_ONLY_MASTER_EDITS_BELT =
+  'Somente o administrador master altera nome, kyū, ordem, nível e cores da faixa';
 
 export const KYU_OPTIONS: readonly { value: string; label: string }[] = [
   { value: '', label: 'Sem kyū' },
@@ -83,6 +97,23 @@ export function beltInputOf(values: BeltFormValues): BeltInput {
     min_months_previous: Number(values.minMonthsPrevious.trim()),
     color_primary: values.colorPrimary.trim().toUpperCase(),
     color_secondary: secondary ? secondary.toUpperCase() : null,
+  };
+}
+
+/**
+ * Body of `PUT /belts/{id}` for an examiner who is not the admin master: the typed age and
+ * months, and every other field exactly as read (the API refuses another value with 403).
+ */
+export function limitsInputOf(belt: Belt, values: BeltFormValues): BeltInput {
+  return {
+    name: belt.name,
+    kyu: belt.kyu,
+    sort_order: belt.sort_order,
+    level: belt.level,
+    min_age_years: Number(values.minAgeYears.trim()),
+    min_months_previous: Number(values.minMonthsPrevious.trim()),
+    color_primary: belt.color_primary,
+    color_secondary: belt.color_secondary,
   };
 }
 
@@ -136,6 +167,19 @@ export function validateBeltForm(values: BeltFormValues): BeltFormErrors {
     errors.colorSecondary = 'Use o formato #RRGGBB.';
   }
 
+  return errors;
+}
+
+/**
+ * Field errors of the examiner who is not the admin master: only the age and the months,
+ * the fields he sees (the others go as read, and the API answers for them).
+ */
+export function validateLimits(values: BeltFormValues): BeltFormErrors {
+  const all = validateBeltForm(values);
+  const errors: BeltFormErrors = {};
+  for (const field of LIMIT_FIELDS) {
+    if (all[field]) errors[field] = all[field];
+  }
   return errors;
 }
 

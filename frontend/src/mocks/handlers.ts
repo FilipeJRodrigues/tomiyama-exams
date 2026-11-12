@@ -11,7 +11,8 @@
  * (`mark_answer`, `unmark_answer`, `domain/answers.py`: RN006, RN010, RN016) and the
  * examiners (`handlers/users.py`), the settings (`handlers/settings.py`) and the
  * sensei decision (`decide_exam`: RN008, RN008a, RN009, RN010). The belts screen (§ 6.5) gets
- * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015), the
+ * the belt edit (`update_belt`, `apply_belt_update` in `domain/belts.py`: RN015; only the
+ * admin master changes name, kyū, order, level and colors, #142), the
  * requirements CRUD (`handlers/requirements.py`, `build_requirement` in
  * `domain/requirements.py`: RN017) and the events CRUD (`handlers/events.py`,
  * `domain/events.py`: RN016). The academy screen (§ 6.6) gets the logos
@@ -122,6 +123,8 @@ const NOTES_MAX = 500;
 const MSG_BELT_NOT_FOUND = 'Faixa não encontrada';
 const MSG_BELT_NAME_TAKEN = 'Já existe uma faixa com este nome';
 const MSG_BELT_ORDER_TAKEN = 'Já existe uma faixa com esta ordem';
+const MSG_ONLY_MASTER_EDITS_BELT =
+  'Somente o administrador master altera nome, kyū, ordem, nível e cores da faixa';
 const BELT_LEVELS: readonly BeltLevel[] = ['BASIC', 'INTERMEDIATE'];
 const REQUIREMENT_KINDS: readonly RequirementKind[] = ['THEORY', 'PRACTICE'];
 const REQUIREMENT_MAX_CATEGORY = 60;
@@ -315,9 +318,9 @@ function levelField(payload: Payload): BeltLevel {
   return level;
 }
 
-/** Same checks, in the same order, as `apply_belt_update` (RN015). */
-function applyBeltUpdate(existing: Belt, payload: Payload, belts: readonly Belt[]): Belt {
-  const updated: Belt = {
+/** The fields of `apply_belt_update` (RN015), each checked in the backend order (400). */
+function parseBeltUpdate(existing: Belt, payload: Payload): Belt {
+  return {
     id: existing.id,
     name: requiredStr(payload, 'name', 'Nome', 40),
     kyu: intField(payload, 'kyu', 'Kyū', { minimum: 1, maximum: 11, required: false }),
@@ -334,8 +337,27 @@ function applyBeltUpdate(existing: Belt, payload: Payload, belts: readonly Belt[
     color_primary: requiredHexColor(payload, 'color_primary', 'Cor'),
     color_secondary: hexColor(payload, 'color_secondary', 'Cor das pontas', false),
   };
+}
+
+/**
+ * Whether the body changes what only the admin master may change (#142): name, kyū, order,
+ * level or colors other than the stored ones. Resending the same values is not a change.
+ */
+function changesMasterOnlyBeltFields(existing: Belt, updated: Belt): boolean {
+  return (
+    updated.name !== existing.name ||
+    updated.kyu !== existing.kyu ||
+    updated.sort_order !== existing.sort_order ||
+    updated.level !== existing.level ||
+    updated.color_primary !== existing.color_primary ||
+    updated.color_secondary !== existing.color_secondary
+  );
+}
+
+/** Name and order unique among the belts (409, RN015). */
+function ensureBeltUnique(updated: Belt, belts: readonly Belt[]): void {
   for (const other of belts) {
-    if (other.id === existing.id) continue;
+    if (other.id === updated.id) continue;
     // Python `casefold` and JS `toLocaleLowerCase` agree on the belt names in use.
     if (other.name.toLocaleLowerCase('pt-BR') === updated.name.toLocaleLowerCase('pt-BR')) {
       throw new MockConflictError(MSG_BELT_NAME_TAKEN);
@@ -344,7 +366,6 @@ function applyBeltUpdate(existing: Belt, payload: Payload, belts: readonly Belt[
       throw new MockConflictError(MSG_BELT_ORDER_TAKEN);
     }
   }
-  return updated;
 }
 
 function requirementKindField(payload: Payload): RequirementKind {
@@ -871,6 +892,10 @@ export function createHandlers({
       return HttpResponse.json(belts);
     }),
 
+    // Like `update_belt` (#142): the admin master (groups `master` and `admin`) changes every
+    // field; any other examiner only the minimum age and months (RN001, RN002) and must resend
+    // the rest as stored (403 otherwise). Field checks (400) come first, then the 403, then
+    // the unique name and order (409); nothing is saved on an error.
     http.put(url('/belts/:id'), ({ request, params }) => {
       const claims = claimsFrom(request);
       if (!claims) return unauthorized();
@@ -879,7 +904,14 @@ export function createHandlers({
       const existing = db.belts[index];
       if (!existing) return errorResponse(404, MSG_BELT_NOT_FOUND);
       return withValidation(async () => {
-        const updated = applyBeltUpdate(existing, await readPayload(request), db.belts);
+        const updated = parseBeltUpdate(existing, await readPayload(request));
+        if (
+          !isMasterFromGroups(claims['cognito:groups']) &&
+          changesMasterOnlyBeltFields(existing, updated)
+        ) {
+          return errorResponse(403, MSG_ONLY_MASTER_EDITS_BELT);
+        }
+        ensureBeltUnique(updated, db.belts);
         db.belts[index] = updated;
         return HttpResponse.json(updated);
       });

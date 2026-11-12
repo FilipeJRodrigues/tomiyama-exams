@@ -3,9 +3,11 @@ import { useMediaQuery } from '@mantine/hooks';
 import { IconCircleCheck, IconPencil } from '@tabler/icons-react';
 import { useRef, useState, type ReactNode } from 'react';
 
+import { ApiError } from '../../api/client';
 import { useBelts, useUpdateBelt } from '../../api/queries';
 import type { Belt, BeltInput } from '../../api/types';
 import { MOBILE_QUERY } from '../../app/breakpoints';
+import { useAuth } from '../../auth/useAuth';
 import { useSendLock } from '../../lib/sendLock';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
@@ -162,12 +164,17 @@ interface DialogState {
   key: number;
 }
 
+const MSG_BELT_NOT_FOUND = 'Faixa não encontrada';
+
 /**
  * § 6.5 belts screen (examiners): the belts in graduation order and the edit dialog
  * (`PUT /belts/{id}`, RN015). Belts are never created or deleted, so there is no "Nova faixa"
- * nor "Excluir".
+ * nor "Excluir". The admin master edits every field of a belt; the other examiners only the
+ * minimum age and months (RN001, RN002, #143), and the API checks it again.
  */
 export function BeltsPage() {
+  const { user } = useAuth();
+  const isMaster = user?.isMaster ?? false;
   const belts = useBelts();
   const update = useUpdateBelt();
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
@@ -219,6 +226,24 @@ export function BeltsPage() {
         onError: lock.release,
       },
     );
+  };
+
+  /**
+   * Reads the dialog's belt again (after the 403 of a belt the master changed meanwhile): the
+   * list reloads, the dialog takes the stored belt and the old error goes away.
+   */
+  const rereadBelt = async (): Promise<Belt> => {
+    const beltId = dialog?.belt.id;
+    if (!beltId) throw new ApiError(404, MSG_BELT_NOT_FOUND);
+    const result = await belts.refetch();
+    if (result.isError) throw result.error;
+    const stored = result.data?.find((belt) => belt.id === beltId);
+    if (!stored) throw new ApiError(404, MSG_BELT_NOT_FOUND);
+    update.reset();
+    setDialog((current) =>
+      current && current.belt.id === beltId ? { ...current, belt: stored } : current,
+    );
+    return stored;
   };
 
   const closeNotice = () => {
@@ -288,10 +313,12 @@ export function BeltsPage() {
           <BeltForm
             key={dialog.key}
             belt={dialog.belt}
+            isMaster={isMaster}
             error={update.error}
             saving={update.isPending}
             onSubmit={save}
             onCancel={closeEditor}
+            onReread={rereadBelt}
           />
         )}
       </Modal>

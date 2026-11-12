@@ -61,7 +61,8 @@ function controlPuts(): PutControl {
 }
 
 async function openCinza(): Promise<{ user: UserEvent; dialog: HTMLElement }> {
-  const { user } = await renderApp({ route: '/faixas', signedInAs: 'examiner' });
+  // Enter in the Nome field: a field only for the admin master (#143).
+  const { user } = await renderApp({ route: '/faixas', signedInAs: 'master' });
   await screen.findByRole('table', { name: 'Faixas' });
   await user.click(screen.getByRole('button', { name: TITLE }));
   const dialog = await screen.findByRole('dialog', { name: TITLE });
