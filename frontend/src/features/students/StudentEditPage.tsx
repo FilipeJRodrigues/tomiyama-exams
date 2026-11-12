@@ -15,6 +15,7 @@ import type { StudentInput, StudentView } from '../../api/types';
 import { paths } from '../../app/navigation';
 import { useAuth } from '../../auth/useAuth';
 import { StudentExamHistory } from './StudentExamHistory';
+import { StudentExamNotices } from './StudentExamNotices';
 import { StudentForm } from './StudentForm';
 import type { StudentsPageState } from './routeState';
 import { LoadError, LoadingState } from './screenStates';
@@ -133,6 +134,7 @@ function DeleteStudent({ student }: DeleteProps) {
 /**
  * § 6.2 student form in edit mode (`/alunos/:id`), for the owner or an examiner. Examiners
  * also see the student's exam history below the form (RN018); a guardian never asks for it.
+ * A guardian sees the exam notices above the form (RN019); an examiner never asks for them.
  */
 export function StudentEditPage() {
   const { id = '' } = useParams();
@@ -144,6 +146,7 @@ export function StudentEditPage() {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const retryFocus = useRetryFocus([student, belts], titleRef);
   const isExaminer = user?.role === 'examiner';
+  const isGuardian = user?.role === 'guardian';
 
   if (student.isError && student.error instanceof ApiError && student.error.status === 404) {
     return <NotFound titleRef={titleRef} />;
@@ -199,12 +202,25 @@ export function StudentEditPage() {
   }
 
   const formShown = student.data !== undefined && belts.data !== undefined;
+  // The student already failed and never loaded (a 404, or another error being tried again).
+  // Reading it again (window focus, "Tentar de novo") puts the query back to pending, so the
+  // error itself is gone meanwhile; `errorUpdatedAt` stays, also in the cache between visits.
+  // The notices were asked with the first read and are not asked again until the student comes.
+  const studentFailed = student.data === undefined && student.errorUpdatedAt > 0;
 
   return (
     <Stack gap="md">
       <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Editar aluno
       </Title>
+      {/*
+        Mounted while the student loads for the first time, so both are asked at once; shown
+        with the form. Not mounted for a student that failed: mounting it again on each new read
+        of a student not found would ask for the notices each time (RN013, RN019).
+      */}
+      {isGuardian && !studentFailed && (
+        <StudentExamNotices studentId={id} visible={formShown} fallbackFocus={titleRef} />
+      )}
       {content}
       {/* Mounted while the student loads, so both are asked at once; shown with the form. */}
       {isExaminer && <StudentExamHistory studentId={id} visible={formShown} />}

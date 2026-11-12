@@ -3,7 +3,8 @@
  * simulated token like the JWT authorizer, filter students by owner like the API and
  * answer the student form with the backend messages (`domain/students.py`,
  * `domain/validation.py`): RN013, RN014 and RN018, and the student's exam history
- * (`list_student_exams`, `domain/history.py`: RN018). The exam day (§ 6.3) gets the event
+ * (`list_student_exams`, `domain/history.py`: RN018) and the exam notices to the guardian
+ * (`list_exam_notices`, `domain/notices.py`: RN019). The exam day (§ 6.3) gets the event
  * list and the attendance confirmation (`handlers/events.py`, `handlers/exams.py`,
  * `domain/exams.py`): RN005 and RN016. The exam screen (§ 6.4) gets the exam sheet with the
  * RN007 summary (`get_exam_sheet`, `domain/scoring.py`), the marking of its items
@@ -28,6 +29,7 @@ import type {
   EventStatus,
   Exam,
   ExamEvent,
+  ExamNotice,
   ExamSheet,
   ExamSheetItem,
   ExamSummary,
@@ -75,6 +77,7 @@ const MSG_INVALID_DATES = 'Datas inválidas: verifique nascimento e data da faix
 const MSG_INVALID_BODY = 'Corpo da requisição inválido: envie um objeto JSON';
 const MAX_STRIPES = 4;
 const MSG_EXAMINERS_ONLY = 'Esta área é dos examinadores';
+const MSG_GUARDIANS_ONLY = 'Esta área é dos responsáveis';
 const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
 const MSG_ALREADY_CONFIRMED = 'Presença já confirmada neste evento';
 const MSG_EVENT_CLOSED = 'Evento encerrado';
@@ -790,6 +793,56 @@ function studentHistory(db: MockDb, studentId: string): StudentHistoryEntry[] {
   return rows.map(({ exam, event }) => historyEntry(db, exam, event));
 }
 
+/**
+ * Like `exam_notices` in `domain/notices.py` (RN019): one notice per open event, nearest date
+ * first (then the id), for an active student. An exam in progress in another event leaves no
+ * notice; the exam of the event keeps its notice until the decision, with the target and the
+ * kind stored in it; without an exam there, the notice holds for an eligible student.
+ *
+ * The mock does not compute eligibility: it uses the student's fixed one for every event,
+ * where the API evaluates RN001–RN004 on the date of each event.
+ */
+function examNotices(db: MockDb, item: MockStudent): ExamNotice[] {
+  if (!item.student.active) return [];
+  const beltName = (id: string) => db.belts.find((belt) => belt.id === id)?.name ?? null;
+  const exams = db.exams.filter((exam) => exam.student_id === item.student.id);
+  const inProgress = exams
+    .filter((exam) => exam.status === 'IN_PROGRESS')
+    .map((exam) => exam.event_id);
+  const openEvents = db.events
+    .filter((event) => event.status === 'OPEN')
+    .sort((a, b) => {
+      if (a.exam_date !== b.exam_date) return a.exam_date < b.exam_date ? -1 : 1;
+      if (a.id === b.id) return 0;
+      return a.id < b.id ? -1 : 1;
+    });
+
+  const notices: ExamNotice[] = [];
+  for (const event of openEvents) {
+    if (inProgress.some((eventId) => eventId !== event.id)) continue;
+    const notice = (targetBeltId: string, targetBeltName: string | null, kind: Exam['kind']) => {
+      notices.push({
+        event_id: event.id,
+        event_name: event.name,
+        event_date: event.exam_date,
+        target_belt_id: targetBeltId,
+        target_belt_name: targetBeltName,
+        kind,
+      });
+    };
+    const exam = exams.find((candidate) => candidate.event_id === event.id);
+    if (exam) {
+      if (exam.status === 'IN_PROGRESS') {
+        notice(exam.target_belt_id, beltName(exam.target_belt_id), exam.kind);
+      }
+      continue;
+    }
+    const { eligible, target_belt_id: target, target_belt_name: name, kind } = item.eligibility;
+    if (eligible && target !== null && kind !== null) notice(target, name, kind);
+  }
+  return notices;
+}
+
 /** The student's graduation is still the one of the attendance (exams with the source). */
 function sameGraduation(exam: Exam, student: Student): boolean {
   if (exam.source_belt_id === null) return true;
@@ -923,6 +976,17 @@ export function createHandlers({
       const item = db.students.find((candidate) => candidate.student.id === params.id);
       if (!item) return errorResponse(404, MSG_STUDENT_NOT_FOUND);
       return HttpResponse.json(studentHistory(db, item.student.id));
+    }),
+
+    // RN019: guardians only, before any read (any examiner gets 403, the owner too); someone
+    // else's student is the same 404 of `GET /students/{id}` (RN013).
+    http.get(url('/students/:id/exam-notices'), ({ request, params }) => {
+      const claims = claimsFrom(request);
+      if (!claims) return unauthorized();
+      if (isExaminer(claims)) return errorResponse(403, MSG_GUARDIANS_ONLY);
+      const item = findAccessible(db, params.id, claims);
+      if (!item) return errorResponse(404, MSG_STUDENT_NOT_FOUND);
+      return HttpResponse.json(examNotices(db, item));
     }),
 
     http.delete(url('/students/:id'), ({ request, params }) => {
