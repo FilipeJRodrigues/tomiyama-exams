@@ -410,15 +410,16 @@ export function useStudentExams(id: string) {
  * profile is a guardian, so an examiner never asks. The API reads events and exams eventually
  * consistent: a change of less than a second ago may still be missing.
  *
- * `enabled: false` waits: the profile asks only once the student is on the screen, so a student
- * that answers 404 is never asked for.
+ * Asked together with the student, as the history is, so the notices are there when the form
+ * shows and do not push it down afterwards. A student that answers 404 is asked for once too:
+ * the route answers the same 404, which is not tried again (`shouldRetry`), and the page that
+ * leaves for "não encontrado" cancels the retries of any other failure.
  */
-export function useStudentExamNotices(id: string, enabled = true) {
+export function useStudentExamNotices(id: string) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.studentExamNotices(id),
     queryFn: () => listStudentExamNotices(api, id),
-    enabled,
   });
 }
 

@@ -4,6 +4,11 @@
  * order. They only inform: no action, no link, nothing to edit. Without notices nothing is
  * shown at all. The area loads and fails apart from the form: its error never replaces the
  * form, and the form never waits for it.
+ *
+ * The notices are asked for with the student, so in the usual case the form comes up with them
+ * already in place. When they are slower than the student, the form comes first with one short
+ * line above it, and an error takes about the room of that line: what the user is filling in
+ * moves as little as it can (§ 6.7).
  */
 import { Alert, Group, Loader, Stack, Text } from '@mantine/core';
 import { IconCalendarEvent } from '@tabler/icons-react';
@@ -27,8 +32,9 @@ const WRAP = { overflowWrap: 'anywhere' } as const;
 interface StudentExamNoticesProps {
   studentId: string;
   /**
-   * Whether the student's form is on the screen. Only then are the notices asked for and
-   * shown: a student that answers 404 is never asked for.
+   * Shown with the form only. Mounted earlier (while the student loads), so the notices are
+   * asked at the same time as the student; hidden meanwhile, so a 404 of the student never
+   * shows the area nor an error of it.
    */
   visible: boolean;
   /**
@@ -40,7 +46,7 @@ interface StudentExamNoticesProps {
 
 /** Mount only for guardians: the route answers 403 to every examiner (RN019). */
 export function StudentExamNotices({ studentId, visible, fallbackFocus }: StudentExamNoticesProps) {
-  const notices = useStudentExamNotices(studentId, visible);
+  const notices = useStudentExamNotices(studentId);
   const areaRef = useRef<HTMLDivElement>(null);
   // After "Tentar de novo": the area when it stays on the screen (the notices came), else the
   // page title (no notice: nothing is left of the area).
@@ -57,11 +63,13 @@ export function StudentExamNotices({ studentId, visible, fallbackFocus }: Studen
   if (!visible) return null;
 
   // An error replaces the notices only while there are none yet: a failed background reload
-  // (window focus) keeps them on the screen.
+  // (window focus) keeps them on the screen. Compact: it comes after the retries, with the form
+  // already in use below it.
   let content: ReactNode;
   if (notices.data === undefined && notices.isError) {
     content = (
       <LoadError
+        compact
         title={NOTICES_ERROR}
         error={notices.error}
         retrying={notices.isFetching}

@@ -69,14 +69,14 @@ function recordNotices(): Request[] {
   return requests;
 }
 
-/** Holds every GET of the notices until the test releases it; then the next handler answers. */
-function holdNotices() {
+/** Holds every GET of `url` until the test releases it; then the next handler answers. */
+function hold(url: string) {
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
   server.use(
-    http.get(NOTICES_URL, async () => {
+    http.get(url, async () => {
       await gate;
       return undefined;
     }),
@@ -87,6 +87,35 @@ function holdNotices() {
         release();
         await Promise.resolve();
       });
+    },
+  };
+}
+
+/** Holds every GET of the notices until the test releases it; then the next handler answers. */
+function holdNotices() {
+  return hold(NOTICES_URL);
+}
+
+/**
+ * What was on the screen in the render that first showed the form, and whether the loading
+ * line of the notices was ever shown. Start it before the app renders.
+ */
+function watchFormArrival() {
+  const seen = { form: false, notes: 0, alerts: 0, loadingWithForm: false, loadingEver: false };
+  const observer = new MutationObserver(() => {
+    const loading = document.body.textContent.includes(LOADING);
+    if (loading) seen.loadingEver = true;
+    if (seen.form || document.querySelector('main form') === null) return;
+    seen.form = true;
+    seen.notes = document.querySelectorAll('[role="note"]').length;
+    seen.alerts = document.querySelectorAll('[role="alert"]').length;
+    seen.loadingWithForm = loading;
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  return {
+    seen,
+    stop: () => {
+      observer.disconnect();
     },
   };
 }
@@ -288,34 +317,59 @@ describe('avisos de exame: quem não vê (RN019)', () => {
     expect(requests).toHaveLength(0);
   });
 
-  it("never asks for the notices of a student that is not found (someone else's: 404)", async () => {
-    const requests = recordNotices();
-    await renderApp({ route: `/alunos/${CARLA}`, signedInAs: 'guardian' });
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
-    expect(screen.queryByText(NOTICES_ERROR)).not.toBeInTheDocument();
-    expect(requests).toHaveLength(0);
-  });
+  it.each([
+    ['the same 404 (the simulated API)', null],
+    ['a 503', () => failure(503, BUSY)],
+  ])(
+    "a student that is not found (someone else's: 404) is asked for once, shows no error of the notices and is not asked again: the notices answer %s",
+    async (_what, answer) => {
+      if (answer) server.use(http.get(NOTICES_URL, answer));
+      const requests = recordNotices();
+      const { queryClient } = await renderApp({
+        route: `/alunos/${CARLA}`,
+        signedInAs: 'guardian',
+      });
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' }),
+      ).toBeInTheDocument();
+      // The one read of the notices is over, and nothing of it is on the screen.
+      const key = ['student', CARLA, 'exam-notices'];
+      await waitFor(() => {
+        expect(queryClient.getQueryState(key)?.status).toBe('error');
+      });
+      expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+      expect(screen.queryByText(NOTICES_ERROR)).not.toBeInTheDocument();
+      expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: RETRY })).not.toBeInTheDocument();
+      expect(requests).toHaveLength(1);
 
-  it('asks only once the student is on the screen, not while it loads', async () => {
-    let releaseStudent: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      releaseStudent = resolve;
-    });
-    server.use(
-      http.get(`${TEST_API_URL}/students/${ANA}`, async () => {
-        await gate;
-        return undefined;
-      }),
-    );
+      // Nobody is left to ask again: no screen reads the notices, and the window coming back
+      // to the focus reads nothing.
+      const query = queryClient.getQueryCache().find({ queryKey: key });
+      expect(query?.getObserversCount()).toBe(0);
+      expect(query?.state.fetchStatus).toBe('idle');
+      await act(async () => {
+        window.dispatchEvent(new Event('visibilitychange'));
+        await Promise.resolve();
+      });
+      expect(requests).toHaveLength(1);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    },
+  );
+
+  it('asks for the notices together with the student, and shows them only with the form', async () => {
+    const student = hold(`${TEST_API_URL}/students/${ANA}`);
     const requests = recordNotices();
     await renderApp({ route: `/alunos/${ANA}`, signedInAs: 'guardian' });
     expect(await screen.findByRole('status')).toHaveTextContent('Carregando aluno…');
+    // One request, already on its way while the student loads; nothing of it on the screen.
+    await waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
     expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
-    expect(requests).toHaveLength(0);
-    releaseStudent();
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
+    await student.release();
     expect(await findNotes()).toHaveLength(1);
     expect(requests).toHaveLength(1);
   });
@@ -326,6 +380,178 @@ describe('avisos de exame: quem não vê (RN019)', () => {
     await screen.findByRole('combobox', { name: /^Faixa atual/ });
     expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe('avisos de exame: chegam com o formulário, sem empurrá-lo (§ 6.7)', () => {
+  const NOTICES_KEY = ['student', ANA, 'exam-notices'];
+
+  /** Ana's profile with her student held until the notices have answered. */
+  async function openWithNoticesFirst() {
+    const student = hold(`${TEST_API_URL}/students/${ANA}`);
+    const arrival = watchFormArrival();
+    const result = await renderApp({ route: `/alunos/${ANA}`, signedInAs: 'guardian' });
+    await waitFor(() => {
+      expect(result.queryClient.getQueryState(NOTICES_KEY)?.fetchStatus).toBe('idle');
+      expect(result.queryClient.getQueryState(NOTICES_KEY)?.status).not.toBe('pending');
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando aluno…');
+    await student.release();
+    await screen.findByRole('combobox', { name: /^Faixa atual/ });
+    arrival.stop();
+    return { ...result, seen: arrival.seen };
+  }
+
+  it('the form and the notice come in the same render when both answers are in', async () => {
+    const { seen } = await openWithNoticesFirst();
+    expect(seen).toEqual({
+      form: true,
+      notes: 1,
+      alerts: 0,
+      loadingWithForm: false,
+      loadingEver: false,
+    });
+    expect(await findNotes()).toHaveLength(1);
+  });
+
+  it('the form comes with nothing above it, and no loading line before, when the answer is []', async () => {
+    answerNotices([]);
+    const { seen } = await openWithNoticesFirst();
+    expect(seen).toEqual({
+      form: true,
+      notes: 0,
+      alerts: 0,
+      loadingWithForm: false,
+      loadingEver: false,
+    });
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+  });
+
+  it('the form comes with the error of the notices already in place when they failed first', async () => {
+    server.use(http.get(NOTICES_URL, () => failure(503, BUSY)));
+    const { seen } = await openWithNoticesFirst();
+    expect(seen).toEqual({
+      form: true,
+      notes: 0,
+      alerts: 1,
+      loadingWithForm: false,
+      loadingEver: false,
+    });
+    expect(within(area()).getByRole('alert')).toHaveTextContent(NOTICES_ERROR);
+  });
+
+  it('notices slower than the student: the form comes first, usable, with the loading line', async () => {
+    const notices = holdNotices();
+    const arrival = watchFormArrival();
+    const { user } = await openEdit(ANA);
+    arrival.stop();
+    expect(arrival.seen).toMatchObject({ form: true, notes: 0, alerts: 0, loadingWithForm: true });
+    expect(area()).toHaveAttribute('aria-busy', 'true');
+
+    const name = screen.getByRole('textbox', { name: /^Nome/ });
+    await user.clear(name);
+    await user.paste('Ana Souza Lima');
+    expect(screen.getByRole('button', { name: 'Salvar alterações' })).toBeEnabled();
+    await notices.release();
+    expect(await findNotes()).toHaveLength(1);
+    expect(name).toHaveValue('Ana Souza Lima');
+    expect(name).toHaveFocus();
+  });
+
+  it('notices slower than the student and empty: the line leaves, the typed text and the focus stay', async () => {
+    answerNotices([]);
+    const notices = holdNotices();
+    const { user } = await openEdit(ANA);
+    expect(within(area()).getByText(LOADING)).toBeVisible();
+    const name = screen.getByRole('textbox', { name: /^Nome/ });
+    await user.clear(name);
+    await user.paste('Ana Souza Lima');
+    await notices.release();
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+    });
+    expect(name).toHaveValue('Ana Souza Lima');
+    expect(name).toHaveFocus();
+  });
+});
+
+describe('avisos de exame: erro compacto, com o formulário na tela (§ 6.7)', () => {
+  it('is one line in the area: the sentence and "Tentar de novo" side by side, not the error box', async () => {
+    server.use(http.get(NOTICES_URL, () => failure(503, BUSY)));
+    await openEdit(ANA);
+    const alert = await within(area()).findByRole('alert');
+    expect(alert).toHaveTextContent(`${NOTICES_ERROR}. ${BUSY}`);
+    // Not Mantine's Alert (title, body and button stacked): a row that wraps when narrow.
+    expect(alert).not.toHaveClass('mantine-Alert-root');
+    expect(alert.querySelector('.mantine-Alert-root')).toBeNull();
+    expect(alert).toHaveClass('mantine-Group-root');
+    expect(alert).toHaveStyle({ '--group-wrap': 'wrap' });
+    const retry = within(alert).getByRole('button', { name: RETRY });
+    expect(retry.parentElement).toBe(alert);
+    // The button keeps the size of every "Tentar de novo" of the app (no compact size).
+    expect(retry).not.toHaveAttribute('data-size');
+    expect(alert.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('comes with the form in use: the typed text and the focus of the field stay', async () => {
+    server.use(http.get(NOTICES_URL, () => failure(503, BUSY)));
+    const notices = holdNotices();
+    const { user } = await openEdit(ANA);
+    const name = screen.getByRole('textbox', { name: /^Nome/ });
+    await user.clear(name);
+    await user.paste('Ana Souza Lima');
+    expect(name).toHaveFocus();
+
+    await notices.release();
+
+    const alert = await within(area()).findByRole('alert');
+    expect(alert).toHaveTextContent(NOTICES_ERROR);
+    expect(area()).toHaveAttribute('aria-busy', 'false');
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
+    expect(name).toHaveValue('Ana Souza Lima');
+    expect(name).toHaveFocus();
+    // Still the form, whole, below the error.
+    expect(area().compareDocumentPosition(screen.getByRole('form', { name: 'Editar aluno' }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it.each([
+    ['a 503', () => failure(503, BUSY)],
+    ['a 404', () => failure(404, 'Aluno não encontrado')],
+    ['a 403', () => failure(403, 'Esta área é dos responsáveis')],
+    ['a network failure', () => HttpResponse.error()],
+  ])(
+    'an error of the notices never keeps the guardian from saving: %s that comes while typing',
+    async (_what, fail) => {
+      server.use(http.get(NOTICES_URL, fail));
+      const notices = holdNotices();
+      const { user, router } = await openEdit(ANA);
+      const name = screen.getByRole('textbox', { name: /^Nome/ });
+      await user.clear(name);
+      await user.paste('Ana Souza Lima');
+      await notices.release();
+      await within(area()).findByRole('alert');
+
+      await user.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+      expect(await screen.findByText('Alterações salvas.')).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/alunos');
+      expect(db.students.find((item) => item.student.id === ANA)?.student.full_name).toBe(
+        'Ana Souza Lima',
+      );
+    },
+  );
+
+  it('the error of the student itself is still the error box of the other screens', async () => {
+    server.use(http.get(`${TEST_API_URL}/students/${ANA}`, () => failure(503, BUSY)));
+    await renderApp({ route: `/alunos/${ANA}`, signedInAs: 'guardian' });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveClass('mantine-Alert-root');
+    expect(alert).toHaveTextContent('Não foi possível carregar o aluno');
+    expect(within(alert).getByRole('button', { name: RETRY })).toBeInTheDocument();
+    // The notices, asked for with the student, show nothing while there is no form.
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toEqual([alert]);
   });
 });
 

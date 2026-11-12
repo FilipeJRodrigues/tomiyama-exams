@@ -208,7 +208,7 @@ export function StudentEditPage() {
       <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Editar aluno
       </Title>
-      {/* Asked for and shown only with the form: never for a student that answers 404. */}
+      {/* Mounted while the student loads, so both are asked at once; shown with the form. */}
       {isGuardian && (
         <StudentExamNotices studentId={id} visible={formShown} fallbackFocus={titleRef} />
       )}
