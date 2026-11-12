@@ -23,3 +23,8 @@ s3_prefix = "tomiyama-dev"
 # Na linha de comando, --parameter-overrides substitui esta linha inteira:
 # repita Environment=dev se usar a opção.
 parameter_overrides = "Environment=dev AdminEmail=voce@example.com"
+# Com o front no Amplify, libere as duas origens no CORS (troque <appid> e use
+# esta linha no lugar da de cima). Os pares são separados por espaço; as origens,
+# por vírgula, sem espaço e sem barra no fim. As aspas internas são escapadas (\")
+# porque a linha inteira é uma string TOML. No prod, deixe só o domínio do Amplify.
+# parameter_overrides = "Environment=dev AdminEmail=voce@example.com AllowedOrigin=\"http://localhost:5173,https://main.<appid>.amplifyapp.com\""

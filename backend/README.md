@@ -36,7 +36,7 @@ Precisa do [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-mode
 | Parâmetro | Padrão | Uso |
 | --- | --- | --- |
 | `AdminEmail` | (obrigatório) | Primeiro examinador; recebe a senha temporária e os alertas do Budgets. |
-| `AllowedOrigin` | `http://localhost:5173` | Origem liberada no CORS (troque pela URL do Amplify). |
+| `AllowedOrigin` | `http://localhost:5173` | Lista de origens liberadas no CORS, separadas por vírgula; veja "CORS e Amplify" abaixo. |
 | `BudgetLimitUsd` | `1` | Limite mensal (US$) do alerta do AWS Budgets: e-mail ao passar de 80% do real e de 100% da previsão. |
 | `Environment` | `dev` | `dev` ou `prod`; veja a tabela abaixo. |
 
@@ -63,6 +63,15 @@ As capacidades de cada tabela e GSI ficam no mapping `DevCapacity` do template; 
 - **Se a stack prod for apagada,** o pool fica órfão: o gatilho PostConfirmation aponta para uma função que deixou de existir, e novos cadastros falham na confirmação. Para voltar, importe na stack nova (resource import) o pool, os grupos, o examinador inicial e os vínculos, em vez de criá-los de novo.
 
 Todas as funções escrevem no log group `/aws/lambda/<stack>`, um stream por função.
+
+### CORS e Amplify
+
+`AllowedOrigin` é uma lista (`CommaDelimitedList`): as origens vão separadas por vírgula, sem espaço, e cada uma é `esquema://host[:porta]`, **sem barra no fim** e sem caminho (o navegador compara a origem exata). O template recusa `*`, `http://` fora de `http://localhost` e letras maiúsculas (`AllowedPattern`, conferido em cada item): a API aceita o cabeçalho `Authorization`, e `*` deixaria qualquer site chamá-la com um token.
+
+- **dev:** o front local e o do Amplify, `AllowedOrigin="http://localhost:5173,https://main.<appid>.amplifyapp.com"`;
+- **prod:** só o domínio do Amplify, `AllowedOrigin=https://main.<appid>.amplifyapp.com`.
+
+O `<appid>` aparece no console do Amplify depois de criar o app. Na linha de comando, acrescente o par ao `--parameter-overrides`; no `samconfig.toml`, veja a linha comentada em `infra/samconfig.example.toml` (as aspas internas vão escapadas, `\"`). Sem o parâmetro, vale só `http://localhost:5173`; numa stack que já existe, o `sam deploy` reaproveita o valor anterior.
 
 ### Deploy do dev
 
