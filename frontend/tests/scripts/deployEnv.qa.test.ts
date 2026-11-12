@@ -1,6 +1,6 @@
 /**
  * Extra coverage from qa-frontend for the Amplify hosting (#31): edge cases of the deploy check
- * and the SPA rewrite rule documented in the root README.md, tested against the app routes and
+ * and the SPA rewrite rule documented in frontend/AMPLIFY.md, tested against the app routes and
  * the files the build publishes.
  */
 import { describe, expect, it } from 'vitest';
@@ -84,12 +84,12 @@ describe('checkDeployEnv, edge cases (qa-frontend, #31)', () => {
   });
 });
 
-describe('SPA rewrite rule of the root README.md (qa-frontend, #31)', () => {
+describe('SPA rewrite rule of frontend/AMPLIFY.md (qa-frontend, #31)', () => {
   async function readRule() {
     const fs = await load<FsLike>('node:fs');
-    const readme = fs.readFileSync(await localPath('../../../README.md'), 'utf8');
+    const readme = fs.readFileSync(await localPath('../../AMPLIFY.md'), 'utf8');
     const block = /```json\n([\s\S]*?)```/.exec(readme)?.[1];
-    if (!block) throw new Error('JSON block of the rewrite rule not found in README.md');
+    if (!block) throw new Error('JSON block of the rewrite rule not found in AMPLIFY.md');
     const rules = JSON.parse(block) as { source: string; target: string; status: string }[];
     expect(rules).toHaveLength(1);
     const [rule] = rules;

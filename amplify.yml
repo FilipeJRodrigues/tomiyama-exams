@@ -1,5 +1,5 @@
-# Build do front no AWS Amplify Hosting (app criado pelo console; guia na seção
-# "Front no Amplify (dev)" do README.md). Monorepo: o front fica em frontend/, e os comandos e
+# Build do front no AWS Amplify Hosting (app criado pelo console; guia em
+# frontend/AMPLIFY.md). Monorepo: o front fica em frontend/, e os comandos e
 # os caminhos abaixo são relativos a essa pasta. O appRoot tem de ser igual à variável
 # AMPLIFY_MONOREPO_APP_ROOT, que o console preenche ao marcar o app como monorepo.
 version: 1
