@@ -69,6 +69,18 @@ function recordNotices(): Request[] {
   return requests;
 }
 
+/** Counts the GETs of one student (not of its notices) and lets the next handler answer. */
+function recordStudent(id: string) {
+  const reads = { count: 0 };
+  server.use(
+    http.get(`${TEST_API_URL}/students/${id}`, () => {
+      reads.count += 1;
+      return undefined;
+    }),
+  );
+  return reads;
+}
+
 /** Holds every GET of `url` until the test releases it; then the next handler answers. */
 function hold(url: string) {
   let release: () => void = () => undefined;
@@ -325,6 +337,7 @@ describe('avisos de exame: quem não vê (RN019)', () => {
     async (_what, answer) => {
       if (answer) server.use(http.get(NOTICES_URL, answer));
       const requests = recordNotices();
+      const studentReads = recordStudent(CARLA);
       const { queryClient } = await renderApp({
         route: `/alunos/${CARLA}`,
         signedInAs: 'guardian',
@@ -343,20 +356,102 @@ describe('avisos de exame: quem não vê (RN019)', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: RETRY })).not.toBeInTheDocument();
       expect(requests).toHaveLength(1);
+      expect(studentReads.count).toBe(1);
 
-      // Nobody is left to ask again: no screen reads the notices, and the window coming back
-      // to the focus reads nothing.
-      const query = queryClient.getQueryCache().find({ queryKey: key });
-      expect(query?.getObserversCount()).toBe(0);
-      expect(query?.state.fetchStatus).toBe('idle');
-      await act(async () => {
-        window.dispatchEvent(new Event('visibilitychange'));
-        await Promise.resolve();
-      });
+      // The window comes back to the focus three times: the student is read again each time
+      // (§ 6.4), the notices never. Each round waits for that read of the student to be over.
+      for (let round = 1; round <= 3; round += 1) {
+        await act(async () => {
+          window.dispatchEvent(new Event('visibilitychange'));
+          await Promise.resolve();
+        });
+        await waitFor(() => {
+          expect(studentReads.count).toBe(1 + round);
+          expect(queryClient.isFetching()).toBe(0);
+        });
+        expect(
+          await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' }),
+        ).toBeInTheDocument();
+        expect(queryClient.getQueryCache().find({ queryKey: key })?.getObserversCount()).toBe(0);
+      }
       expect(requests).toHaveLength(1);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     },
   );
+
+  it('a student not found that is opened again from the list is read again, the notices are not', async () => {
+    const requests = recordNotices();
+    const studentReads = recordStudent(CARLA);
+    const { queryClient, router } = await renderApp({
+      route: `/alunos/${CARLA}`,
+      signedInAs: 'guardian',
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' });
+    await waitFor(() => {
+      expect(queryClient.isFetching()).toBe(0);
+    });
+
+    await act(async () => {
+      await router.navigate('/alunos');
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Alunos' });
+    await act(async () => {
+      await router.navigate(`/alunos/${CARLA}`);
+    });
+    await waitFor(() => {
+      expect(studentReads.count).toBe(2);
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' }),
+    ).toBeInTheDocument();
+    expect(requests).toHaveLength(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('a student that fails with a 503: each "Tentar de novo" that fails asks for no notices, and the one that brings the student asks once', async () => {
+    let failing = true;
+    server.use(
+      http.get(`${TEST_API_URL}/students/${ANA}`, () => (failing ? failure(503, BUSY) : undefined)),
+    );
+    const requests = recordNotices();
+    const studentReads = recordStudent(ANA);
+    const { user, queryClient } = await renderApp({
+      route: `/alunos/${ANA}`,
+      signedInAs: 'guardian',
+    });
+    const retry = () => screen.findByRole('button', { name: RETRY });
+    await retry();
+    await waitFor(() => {
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    // Asked together with the student, on the first load.
+    expect(requests).toHaveLength(1);
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await user.click(await retry());
+      await waitFor(() => {
+        expect(studentReads.count).toBe(1 + attempt);
+        expect(queryClient.isFetching()).toBe(0);
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar o aluno');
+    }
+    expect(requests).toHaveLength(1);
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+
+    // The student comes: the notices already read come with the form, and are read once more
+    // in the background (they are as old as the first load).
+    failing = false;
+    await user.click(await retry());
+    await screen.findByRole('combobox', { name: /^Faixa atual/ });
+    expect(screen.getAllByRole('note')).toHaveLength(1);
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(requests).toHaveLength(2);
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    expect(screen.getAllByRole('note')).toHaveLength(1);
+  });
 
   it('asks for the notices together with the student, and shows them only with the form', async () => {
     const student = hold(`${TEST_API_URL}/students/${ANA}`);
@@ -648,6 +743,31 @@ describe('avisos de exame: estados da área', () => {
     expect(alert).toHaveTextContent('Sem permissão');
     expect(alert).toHaveTextContent('Esta área é dos responsáveis');
     expect(within(alert).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('the window comes back to the focus with the notices in error: one new read each time, the form untouched', async () => {
+    server.use(http.get(NOTICES_URL, () => failure(503, BUSY)));
+    const requests = recordNotices();
+    const { user, queryClient } = await openEdit(ANA);
+    await within(area()).findByRole('alert');
+    expect(requests).toHaveLength(1);
+    const name = screen.getByRole('textbox', { name: /^Nome/ });
+    await user.clear(name);
+    await user.paste('Ana Souza Lima');
+
+    for (let round = 1; round <= 2; round += 1) {
+      await act(async () => {
+        window.dispatchEvent(new Event('visibilitychange'));
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(requests).toHaveLength(1 + round);
+        expect(queryClient.isFetching()).toBe(0);
+      });
+      expect(await within(area()).findByRole('alert')).toHaveTextContent(NOTICES_ERROR);
+    }
+    expect(name).toHaveValue('Ana Souza Lima');
+    expect(name).toHaveFocus();
   });
 
   it('keeps the notices on the screen when a reload in the background fails', async () => {

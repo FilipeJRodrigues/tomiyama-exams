@@ -413,7 +413,9 @@ export function useStudentExams(id: string) {
  * Asked together with the student, as the history is, so the notices are there when the form
  * shows and do not push it down afterwards. A student that answers 404 is asked for once too:
  * the route answers the same 404, which is not tried again (`shouldRetry`), and the page that
- * leaves for "não encontrado" cancels the retries of any other failure.
+ * leaves for "não encontrado" cancels the retries of any other failure. A query in error is
+ * read again by each new mount, so the page keeps the area unmounted while the student that
+ * failed is read again (window focus), until the student comes.
  */
 export function useStudentExamNotices(id: string) {
   const api = useApi();

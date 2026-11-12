@@ -32,9 +32,10 @@ const WRAP = { overflowWrap: 'anywhere' } as const;
 interface StudentExamNoticesProps {
   studentId: string;
   /**
-   * Shown with the form only. Mounted earlier (while the student loads), so the notices are
-   * asked at the same time as the student; hidden meanwhile, so a 404 of the student never
-   * shows the area nor an error of it.
+   * Shown with the form only. Mounted earlier (while the student loads for the first time), so
+   * the notices are asked at the same time as the student; hidden meanwhile, so a 404 of the
+   * student never shows the area nor an error of it. The page does not mount it for a student
+   * that failed and has not loaded yet: each mount with the notices in error asks for them again.
    */
   visible: boolean;
   /**
