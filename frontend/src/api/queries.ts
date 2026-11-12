@@ -29,6 +29,7 @@ import type {
   EventCreateInput,
   EventUpdateInput,
   ExamEvent,
+  ExamNotice,
   ExamSheet,
   ExamView,
   Examiner,
@@ -57,6 +58,11 @@ export const queryKeys = {
    * also reloads the history, and forgetting a deleted student forgets it too.
    */
   studentExams: (id: string) => ['student', id, 'exams'] as const,
+  /**
+   * Under `student(id)`, as the history: forgetting a deleted student forgets the notices too.
+   * Saving the student reloads them (`useUpdateStudent`).
+   */
+  studentExamNotices: (id: string) => ['student', id, 'exam-notices'] as const,
   /** Prefix of every student detail, for invalidation. */
   anyStudent: ['student'] as const,
   events: ['events'] as const,
@@ -140,6 +146,14 @@ export function deleteStudent(api: ApiClient, id: string): Promise<void> {
 /** `GET /students/{id}/exams` (RN018): every exam of the student, most recent first. */
 export function listStudentExams(api: ApiClient, id: string): Promise<StudentHistoryEntry[]> {
   return api.get<StudentHistoryEntry[]>(`${studentPath(id)}/exams`);
+}
+
+/**
+ * `GET /students/{id}/exam-notices` (RN019): the exam notices of a guardian's student, nearest
+ * event first.
+ */
+export function listStudentExamNotices(api: ApiClient, id: string): Promise<ExamNotice[]> {
+  return api.get<ExamNotice[]>(`${studentPath(id)}/exam-notices`);
 }
 
 export function listEvents(api: ApiClient): Promise<ExamEvent[]> {
@@ -390,6 +404,24 @@ export function useStudentExams(id: string) {
   });
 }
 
+/**
+ * `GET /students/{id}/exam-notices` (RN019): the student's exam notices, in the API order. Only
+ * for guardians (any examiner gets 403, the master and the sensei too): mount it only where the
+ * profile is a guardian, so an examiner never asks. The API reads events and exams eventually
+ * consistent: a change of less than a second ago may still be missing.
+ *
+ * `enabled: false` waits: the profile asks only once the student is on the screen, so a student
+ * that answers 404 is never asked for.
+ */
+export function useStudentExamNotices(id: string, enabled = true) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.studentExamNotices(id),
+    queryFn: () => listStudentExamNotices(api, id),
+    enabled,
+  });
+}
+
 /** `POST /students`; the owner is the signed-in user (set by the API). */
 export function useCreateStudent() {
   const api = useApi();
@@ -402,7 +434,11 @@ export function useCreateStudent() {
   });
 }
 
-/** `PUT /students/{id}` with every field of the form. */
+/**
+ * `PUT /students/{id}` with every field of the form. The exam notices of the student reload
+ * (RN019): the birth date, the graduation and "ativo" decide them. Only a guardian has them in
+ * the cache, so nothing is asked for an examiner.
+ */
 export function useUpdateStudent(id: string) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -411,6 +447,7 @@ export function useUpdateStudent(id: string) {
     onSuccess: (student) => {
       queryClient.setQueryData(queryKeys.student(id), student);
       void queryClient.invalidateQueries({ queryKey: queryKeys.allStudents });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.studentExamNotices(id) });
     },
   });
 }
@@ -432,7 +469,7 @@ export function useDeleteStudent(id: string) {
   });
 }
 
-/** Drop a deleted student's detail from the cache. */
+/** Drop a deleted student's detail from the cache, with its history and its exam notices. */
 export function useForgetStudent() {
   const queryClient = useQueryClient();
   return (id: string) => {

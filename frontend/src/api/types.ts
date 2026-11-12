@@ -179,6 +179,23 @@ export interface StudentHistoryEntry {
   source: StudentHistorySource | null;
 }
 
+/**
+ * `GET /students/{id}/exam-notices` item (RN019, guardians only): one open event in which the
+ * student has the notice "Exame de faixas dia dd/mm/aaaa". The API decides when the notice
+ * holds and sends the events from the nearest date to the farthest; only the least of the
+ * event comes (RN016).
+ */
+export interface ExamNotice {
+  event_id: string;
+  event_name: string;
+  /** The date of the event. */
+  event_date: IsoDate;
+  target_belt_id: string;
+  /** `null` when the belt no longer exists. */
+  target_belt_name: string | null;
+  kind: ExamKind;
+}
+
 /** Body of `POST /events/{id}/exams` (attendance confirmation, RN005). */
 export interface ConfirmAttendanceInput {
   student_id: string;
