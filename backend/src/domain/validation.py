@@ -7,7 +7,8 @@ from typing import Any
 
 from domain.errors import ValidationError
 
-_HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+# Used with ``fullmatch``: ``$`` with ``match`` would also accept a trailing line break.
+_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
 
 # DynamoDB numbers keep at most 38 significant digits; larger integers make the
 # boto3 serializer raise ``decimal.Inexact``. No integer field may go past this.
@@ -155,6 +156,6 @@ def hex_color(payload: dict[str, Any], field: str, label: str, *, required: bool
         if required:
             raise ValidationError(f"Campo obrigatório: {label}")
         return None
-    if not isinstance(value, str) or not _HEX_COLOR.match(value):
+    if not isinstance(value, str) or not _HEX_COLOR.fullmatch(value):
         raise ValidationError(f"{label}: use o formato #RRGGBB")
     return value.upper()

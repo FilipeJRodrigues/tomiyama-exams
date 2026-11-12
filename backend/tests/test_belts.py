@@ -67,6 +67,43 @@ def test_rn015_rejects_invalid_fields(overrides: dict[str, Any]) -> None:
         apply_belt_update(belt("Cinza"), _payload(**overrides), SEED_BELTS)
 
 
+@pytest.mark.parametrize(
+    "color",
+    [
+        "\n#9E9E9E",
+        "#9E9E9E\r\n",
+        "#9E9E9E\r",
+        "#9E9E9E\n\n",
+        "#9E9E9E ",
+        " #9E9E9E",
+        "#9E9E9E\t",
+        "#9E9E9E\x00",
+        "#9E9\nE9E",
+    ],
+)
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("color_primary", "Cor: use o formato #RRGGBB"),
+        ("color_secondary", "Cor das pontas: use o formato #RRGGBB"),
+    ],
+)
+def test_rn015_colour_with_whitespace_or_control_characters_is_refused(
+    field: str, message: str, color: str
+) -> None:
+    # Colours are not trimmed: anything besides the seven characters is refused.
+    with pytest.raises(ValidationError) as raised:
+        apply_belt_update(belt("Cinza"), _payload(**{field: color}), SEED_BELTS)
+    assert str(raised.value) == message
+
+
+@pytest.mark.parametrize("field", ["color_primary", "color_secondary"])
+def test_rn015_valid_colours_are_stored_in_upper_case(field: str) -> None:
+    for color in ("#9e9e9e", "#9E9E9E", "#aBcDeF", "#000000", "#ffffff"):
+        updated = apply_belt_update(belt("Cinza"), _payload(**{field: color}), SEED_BELTS)
+        assert getattr(updated, field) == color.upper()
+
+
 def test_seed_is_idempotent_and_keeps_edits(aws: None) -> None:
     assert seed.seed_all() == {"belts": 12, "requirements": 692}
     edited = apply_belt_update(belt("Cinza"), _payload(min_age_years=6), SEED_BELTS)
