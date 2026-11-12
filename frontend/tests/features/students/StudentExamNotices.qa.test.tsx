@@ -140,19 +140,27 @@ describe('avisos de exame (qa #109): troca de aluno na mesma tela', () => {
     await act(async () => {
       await router.navigate(`/alunos/${BRUNO}`);
     });
-    // While Bruno loads: nothing of Ana, and Bruno's notices are not asked for yet.
+    // While Bruno loads: nothing of Ana on the screen. Bruno's notices are asked together with
+    // him (once, for his own id), and nothing of the area shows before his form does.
     expect(await screen.findByRole('status')).toHaveTextContent('Carregando aluno…');
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(screen.queryByText(/Exame de faixas/)).not.toBeInTheDocument();
-    expect(paths).toEqual([`/students/${ANA}/exam-notices`]);
+    await waitFor(() => {
+      expect(paths).toEqual([`/students/${ANA}/exam-notices`, `/students/${BRUNO}/exam-notices`]);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando aluno…');
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Exame de faixas/)).not.toBeInTheDocument();
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
 
     await student.release();
     await waitFor(() => {
       expect(screen.getByRole('textbox', { name: /^Nome/ })).toHaveValue('Bruno Souza');
-      expect(paths).toHaveLength(2);
       expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
     });
-    expect(paths[1]).toBe(`/students/${BRUNO}/exam-notices`);
+    // The form came: Bruno's notices are not asked a second time, and Ana's never show here.
+    expect(paths).toEqual([`/students/${ANA}/exam-notices`, `/students/${BRUNO}/exam-notices`]);
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(screen.queryByText(/Exame de faixas/)).not.toBeInTheDocument();
   });
@@ -186,6 +194,116 @@ describe('avisos de exame (qa #109): troca de aluno na mesma tela', () => {
     });
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
+});
+
+describe('avisos de exame (qa #109): a área e o aluno que já falhou (reteste)', () => {
+  /** Examiner's student: the guardian gets 404 for the student and for the notices. */
+  const CARLA = '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e03';
+
+  it('o aluno já carregado falha numa releitura em segundo plano: a área continua, e é relida na volta seguinte', async () => {
+    let failing = false;
+    server.use(
+      http.get(`${TEST_API_URL}/students/${ANA}`, () =>
+        failing ? HttpResponse.json({ message: BUSY }, { status: 503 }) : undefined,
+      ),
+    );
+    const paths = recordNotices();
+    const { queryClient } = await openEdit(ANA);
+    await findNotes();
+    expect(paths).toHaveLength(1);
+
+    // The student is on the screen and its reload fails: an error in the cache, with data.
+    failing = true;
+    for (let round = 1; round <= 2; round += 1) {
+      await act(async () => {
+        window.dispatchEvent(new Event('visibilitychange'));
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(paths).toHaveLength(1 + round);
+        expect(queryClient.isFetching()).toBe(0);
+      });
+      const state = queryClient.getQueryState(['student', ANA]);
+      expect(state?.status).toBe('error');
+      expect(state?.errorUpdatedAt).toBeGreaterThan(0);
+      expect(state?.data).toBeDefined();
+      // Still the form with its notice: the old error of the student does not take the area out.
+      expect(screen.getByRole('form', { name: 'Editar aluno' })).toBeInTheDocument();
+      expect(within(screen.getByRole('region', { name: AREA })).getAllByRole('note')).toHaveLength(
+        1,
+      );
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    }
+  });
+
+  it('de um aluno não encontrado para outro do responsável, na mesma tela: os avisos do segundo são pedidos junto com ele', async () => {
+    const student = gate();
+    const paths = recordNotices();
+    const { router } = await renderApp({ route: `/alunos/${CARLA}`, signedInAs: 'guardian' });
+    await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' });
+    await waitFor(() => {
+      expect(paths).toEqual([`/students/${CARLA}/exam-notices`]);
+    });
+
+    server.use(
+      http.get(`${TEST_API_URL}/students/${ANA}`, async () => {
+        await student.promise;
+        return undefined;
+      }),
+    );
+    await act(async () => {
+      await router.navigate(`/alunos/${ANA}`);
+    });
+    expect(await screen.findByRole('status')).toHaveTextContent('Carregando aluno…');
+    // Asked while Ana still loads: the failure of the other student does not hold her area back.
+    await waitFor(() => {
+      expect(paths).toEqual([`/students/${CARLA}/exam-notices`, `/students/${ANA}/exam-notices`]);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando aluno…');
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+
+    await student.release();
+    expect(await findNotes()).toHaveLength(1);
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
+    expect(paths).toHaveLength(2);
+  });
+
+  it('de um aluno do responsável para um não encontrado: nada do aviso do primeiro, e uma só leitura dos avisos do segundo', async () => {
+    const paths = recordNotices();
+    const { router, queryClient } = await openEdit(ANA);
+    await findNotes();
+    await act(async () => {
+      await router.navigate(`/alunos/${CARLA}`);
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Aluno não encontrado' });
+    await waitFor(() => {
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Exame de faixas/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(paths).toEqual([`/students/${ANA}/exam-notices`, `/students/${CARLA}/exam-notices`]);
+  });
+
+  it.each(['/alunos/', '/alunos//'])(
+    'a rota %s (sem id) não pede aluno nem avisos de id vazio',
+    async (route) => {
+      const asked: string[] = [];
+      server.use(
+        http.all(`${TEST_API_URL}/*`, ({ request }) => {
+          asked.push(new URL(request.url).pathname);
+          return undefined;
+        }),
+      );
+      const { queryClient } = await renderApp({ route, signedInAs: 'guardian' });
+      await waitFor(() => {
+        expect(asked.length).toBeGreaterThan(0);
+        expect(queryClient.isFetching()).toBe(0);
+      });
+      expect(asked.filter((path) => path.includes('exam-notices'))).toEqual([]);
+      expect(asked.filter((path) => /\/students\/(\/|$)/.test(path))).toEqual([]);
+    },
+  );
 });
 
 describe('avisos de exame (qa #109): gravar com a leitura dos avisos em voo ou em erro', () => {
