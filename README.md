@@ -6,12 +6,12 @@ Repo about Tomiyama Judo/ Jiu-Jitsu Gym for the belt exams
 
 O front (`frontend/`) é publicado pelo AWS Amplify Hosting, com HTTPS e CDN, a cada push no `main`. O app do Amplify é criado à mão no console e não faz parte do template SAM. O build segue o [`amplify.yml`](amplify.yml) da raiz e para com uma mensagem em pt-BR se faltar alguma das variáveis abaixo ou se `VITE_USE_MOCKS` não for `false`.
 
-Antes de começar, faça o deploy da stack `tomiyama-dev` (veja [`backend/README.md`](backend/README.md)) e anote as saídas `ApiUrl`, `UserPoolId` e `UserPoolClientId`. Elas ficam no console do CloudFormation, na stack `tomiyama-dev`, aba **Outputs**, ou saem com `aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 --query "Stacks[0].Outputs"`.
+Antes de começar, faça o deploy da stack `tomiyama-dev` (veja [`backend/README.md`](backend/README.md)) e anote as saídas `ApiUrl`, `UserPoolId` e `UserPoolClientId`. Elas ficam no console do CloudFormation, na stack `tomiyama-dev`, aba **Outputs**, ou saem com `aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 --profile tomiyama --query "Stacks[0].Outputs"`.
 
 1. **Região.** No console do Amplify, escolha a região **us-east-2**, a mesma da stack `tomiyama-dev`.
 2. **Repositório.** **Create new app** → **GitHub**. Na autorização do GitHub, instale o app do Amplify só no repositório `FilipeJRodrigues/tomiyama-exams` (**Only select repositories**), não em todos.
 3. **Branch e monorepo.** Escolha a branch `main`, marque **My app is a monorepo** e informe a pasta `frontend`. O console cria a variável `AMPLIFY_MONOREPO_APP_ROOT=frontend`, que precisa bater com o `appRoot` do `amplify.yml`.
-4. **Build.** O console detecta o `amplify.yml` da raiz; não edite os comandos lá, eles vêm do repositório.
+4. **Build.** O console detecta o `amplify.yml` da raiz; não edite os comandos lá, eles vêm do repositório. Na tela **Configurações de compilação** (console em português), o console mostra `npm run build` e `dist` detectados: não precisa mudar nada, porque vale o `amplify.yml`. Deixe desmarcadas as opções **Meu monorepo usa o backend do Amplify Gen2** e **Proteger meu site com senha**.
 5. **Variáveis de ambiente.** Em **Advanced settings** (ou depois em **Hosting → Environment variables**), crie:
 
    | Variável                    | Valor                                     |
