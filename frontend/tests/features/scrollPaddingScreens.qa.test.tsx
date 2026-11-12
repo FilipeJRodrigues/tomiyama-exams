@@ -2,7 +2,7 @@
  * Cobertura do #65 (§ 6.5, § 6.7): o desconto do cabeçalho fixo (`scroll-padding-top` na
  * raiz) de Faixas, Requisitos e Eventos vale em todos os estados da tela, não só com a
  * lista carregada, e acompanha a navegação: continua ao trocar entre essas telas pelo menu
- * e volta a '' ao ir para uma tela que não o define (Alunos, por decisão do #65).
+ * e continua em Alunos (#102).
  *
  * `65-foco-escondido-sob-cabecalho.test.tsx` confere a tela carregada e a saída pelo "Sair".
  */
@@ -52,7 +52,7 @@ describe('#65 desconto do cabeçalho fixo nos estados e na navegação (§ 6.5, 
     expect(scrollPaddingTop()).not.toBe('');
   });
 
-  it('continua ao trocar entre as três telas pelo menu e sai ao ir para Alunos', async () => {
+  it('continua ao trocar entre as três telas pelo menu e continua em Alunos', async () => {
     const { user } = await renderApp({ route: paths.requirements, signedInAs: 'examiner' });
     await screen.findByRole('heading', { name: 'Requisitos', level: 1 });
     await waitFor(() => {
@@ -69,7 +69,7 @@ describe('#65 desconto do cabeçalho fixo nos estados e na navegação (§ 6.5, 
     await user.click(screen.getByRole('link', { name: 'Alunos' }));
     await screen.findByRole('heading', { name: 'Alunos', level: 1 });
     await waitFor(() => {
-      expect(scrollPaddingTop()).toBe('');
+      expect(scrollPaddingTop()).toBe(value);
     });
   });
 });
