@@ -341,13 +341,25 @@ Resources:
                 aws:SecureTransport: "false"
 
   # ----------------------------------------------------------------- Cognito
+  # Kept in prod like the tables: students keep the guardian's sub in owner_id
+  # (RN013), so a new pool would break that link. The resources that hold data
+  # inside the pool (examiner/master/guardian groups, first examiner and their
+  # memberships) follow the same policy; otherwise deleting the prod stack would
+  # strip the roles from the retained pool. Retain does not stop a replacement:
+  # review the prod change set for Replacement on UserPool (see backend/README.md).
+  # The client holds no data and is recreated with the stack in both environments.
   UserPool:
     Type: AWS::Cognito::UserPool
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolName: !Sub ${AWS::StackName}-users
+      # Blocks deleting the pool from the Console/CLI in prod; dev stays deletable.
+      DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
       UsernameAttributes: [email]
-      # Set only at creation. CloudFormation does not replace the pool when it changes,
-      # so changing it requires deleting and recreating the pool (or the stack).
+      # Decided for dev and prod (2026-11-02). Set only at creation. CloudFormation
+      # does not replace the pool when it changes, so changing it requires deleting
+      # and recreating the pool (or the stack).
       UsernameConfiguration:
         CaseSensitive: false
       AutoVerifiedAttributes: [email]
@@ -379,6 +391,8 @@ Resources:
 
   AdminGroup:
     Type: AWS::Cognito::UserPoolGroup
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolId: !Ref UserPool
       GroupName: admin
@@ -386,6 +400,8 @@ Resources:
 
   GuardianGroup:
     Type: AWS::Cognito::UserPoolGroup
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolId: !Ref UserPool
       GroupName: responsavel
@@ -393,6 +409,8 @@ Resources:
 
   FirstAdminUser:
     Type: AWS::Cognito::UserPoolUser
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolId: !Ref UserPool
       Username: !Ref AdminEmail
@@ -405,6 +423,8 @@ Resources:
 
   FirstAdminInGroup:
     Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolId: !Ref UserPool
       GroupName: !Ref AdminGroup
@@ -415,6 +435,8 @@ Resources:
   # Console/CLI; no API route writes to this group.
   MasterGroup:
     Type: AWS::Cognito::UserPoolGroup
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolId: !Ref UserPool
       GroupName: master
@@ -422,6 +444,8 @@ Resources:
 
   FirstAdminInMasterGroup:
     Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    DeletionPolicy: !If [IsProd, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProd, Retain, Delete]
     Properties:
       UserPoolId: !Ref UserPool
       GroupName: !Ref MasterGroup
