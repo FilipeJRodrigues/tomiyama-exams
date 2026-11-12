@@ -6,9 +6,9 @@
  * página, então o navegador rola o alvo do foco até a borda de cima da janela, que o
  * cabeçalho cobre. Na tela de exame, que define o valor, não acontece.
  * Esperado: foco sempre visível (§ 6.7): enquanto uma dessas telas está aberta, a página tem
- * `scroll-padding-top` que desconta o cabeçalho fixo; ao sair da tela, o valor volta a ''
- * (a tela de entrada não tem cabeçalho fixo, e `ExamLayoutChange.qa.test.tsx` espera '' ao
- * sair do exame).
+ * `scroll-padding-top` que desconta o cabeçalho fixo; ao sair para a tela de entrada, que
+ * não tem cabeçalho fixo, o valor volta a ''. Desde o #102 o desconto é definido uma vez, no
+ * layout, e continua em todas as telas sob o cabeçalho.
  * Issue: #65
  *
  * jsdom não faz layout nem rola a página, então o teste confere a causa (o valor na raiz do

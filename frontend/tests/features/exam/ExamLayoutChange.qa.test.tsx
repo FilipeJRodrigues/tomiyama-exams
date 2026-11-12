@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MOCK_USER_IDS } from '../../../src/auth/mockConstants';
 import { examPath } from '../../../src/app/navigation';
+import { HEADER_SCROLL_PADDING } from '../../../src/features/exam/focus';
 import { MOCK_EVENT_IDS, createMockDb, type MockDb } from '../../../src/mocks/data';
 import { createHandlers } from '../../../src/mocks/handlers';
 import { server, TEST_API_URL } from '../../msw-server';
@@ -164,7 +165,7 @@ describe('exam layout change, QA cases (§ 6.7)', () => {
     expect(barSlot).toHaveFocus();
   });
 
-  it('sets the scroll padding on the phone, drops the bottom one on the notebook, and clears it when leaving', async () => {
+  it('sets the scroll padding on the phone, drops the bottom one on the notebook, and leaves only the header one on Dia do exame', async () => {
     setViewportWidth(390);
     const { user, router } = await openExam();
     await waitFor(() => {
@@ -189,7 +190,8 @@ describe('exam layout change, QA cases (§ 6.7)', () => {
       expect(router.state.location.pathname).not.toBe(examPath(MOCK_EVENT_IDS.open, HELENA));
     });
     await settle();
-    expect(rootStyle().scrollPaddingTop).toBe('');
+    // #102: the header one is the layout's and stays on every screen under the header.
+    expect(rootStyle().scrollPaddingTop).toBe(HEADER_SCROLL_PADDING);
     expect(rootStyle().scrollPaddingBottom).toBe('');
   });
 });

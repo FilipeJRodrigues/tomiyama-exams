@@ -19,6 +19,7 @@ import { NavLink as RouterNavLink, Outlet, useNavigate } from 'react-router';
 
 import { ROLE_LABELS } from '../auth/types';
 import { useAuth } from '../auth/useAuth';
+import { HEADER_SCROLL_PADDING, useScrollPadding } from '../features/exam/focus';
 import { MOBILE_QUERY } from './breakpoints';
 import { navItemsFor, paths } from './navigation';
 
@@ -57,6 +58,11 @@ export function AppLayout({ useMocks }: { useMocks: boolean }) {
       burgerRef.current?.focus();
     }
   });
+
+  // § 6.7: on every screen under the fixed header, a control focused with Tab or Shift+Tab
+  // stays clear of it. The only place that sets the top edge: a screen setting it too would
+  // clear it when it leaves. Signed out there is no header, so nothing is set.
+  useScrollPadding('top', user ? HEADER_SCROLL_PADDING : null);
 
   if (!user) return null;
 

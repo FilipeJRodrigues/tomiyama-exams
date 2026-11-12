@@ -39,7 +39,7 @@ import {
   withPendingMarks,
   type MarkState,
 } from './examModel';
-import { HEADER_SCROLL_PADDING, focusIfLost, focusIsLost, useScrollPadding } from './focus';
+import { focusIfLost, focusIsLost } from './focus';
 import { DOUBLE_TAP_MS, useMarkClickGuard } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
@@ -453,7 +453,6 @@ function ExamContent({
   useReadOnlyFocus(titleRef, onMark === undefined, failure);
   const flow = useDecisionFlow(sheet.exam.event_id, sheet.exam.student_id, titleRef);
   const layout = useSummaryLayout(flow);
-  useScrollPadding('top', HEADER_SCROLL_PADDING);
   const summaryProps = {
     summary: sheet.summary,
     exam: sheet.exam,
