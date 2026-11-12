@@ -304,6 +304,61 @@ describe('avisos de exame (qa #109): a área e o aluno que já falhou (reteste)'
       expect(asked.filter((path) => /\/students\/(\/|$)/.test(path))).toEqual([]);
     },
   );
+
+  it('rn019 o examinador não pede os avisos nem enquanto o aluno carrega', async () => {
+    const student = gate();
+    server.use(
+      http.get(`${TEST_API_URL}/students/${ANA}`, async () => {
+        await student.promise;
+        return undefined;
+      }),
+    );
+    const paths = recordNotices();
+    const { queryClient } = await renderApp({ route: `/alunos/${ANA}`, signedInAs: 'examiner' });
+    expect(await screen.findByRole('status')).toHaveTextContent('Carregando aluno…');
+    expect(queryClient.getQueryState(['student', ANA, 'exam-notices'])).toBeUndefined();
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument();
+
+    await student.release();
+    await screen.findByRole('combobox', { name: /^Faixa atual/ });
+    await waitFor(() => {
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    expect(paths).toEqual([]);
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+  });
+
+  it('aluno e avisos falham na primeira carga; o "Tentar de novo" do aluno traz o formulário e os avisos são relidos e mostrados', async () => {
+    let studentFailing = true;
+    let noticesFailing = true;
+    server.use(
+      http.get(`${TEST_API_URL}/students/${ANA}`, () =>
+        studentFailing ? HttpResponse.json({ message: BUSY }, { status: 503 }) : undefined,
+      ),
+      http.get(`${TEST_API_URL}/students/${ANA}/exam-notices`, () =>
+        noticesFailing ? HttpResponse.json({ message: BUSY }, { status: 503 }) : undefined,
+      ),
+    );
+    const { user, queryClient } = await renderApp({
+      route: `/alunos/${ANA}`,
+      signedInAs: 'guardian',
+    });
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' });
+    await waitFor(() => {
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    expect(queryClient.getQueryState(['student', ANA, 'exam-notices'])?.status).toBe('error');
+    // Only the error of the student: the area of a student that failed is not on the screen.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryByRole('region', { name: AREA })).not.toBeInTheDocument();
+
+    studentFailing = false;
+    noticesFailing = false;
+    await user.click(retry);
+    await screen.findByRole('combobox', { name: /^Faixa atual/ });
+    expect(await findNotes()).toHaveLength(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
 
 describe('avisos de exame (qa #109): gravar com a leitura dos avisos em voo ou em erro', () => {
