@@ -1,4 +1,6 @@
 import '@mantine/core/styles.css';
+// After Mantine's styles: the app's rules win at equal specificity.
+import './app/a11y.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

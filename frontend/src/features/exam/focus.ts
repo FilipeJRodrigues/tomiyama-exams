@@ -35,9 +35,9 @@ function pixels(value: string): number {
 }
 
 /**
- * Whether the element is fully in view, out of the scroll padding of the page: the exam
- * screen sets it to the fixed header at the top and the fixed summary bar at the bottom
- * (`useScrollPadding`), so a target under one of them counts as hidden and is scrolled to,
+ * Whether the element is fully in view, out of the scroll padding of the page: the layout
+ * sets it to the fixed header at the top and the exam screen to the fixed summary bar at the
+ * bottom (`useScrollPadding`), so a target under one of them counts as hidden and is scrolled to,
  * and the browser scrolls it clear of them.
  */
 function inViewport(element: HTMLElement): boolean {
@@ -65,6 +65,13 @@ export function focusIfLost(
   target.focus({ preventScroll: options.preventScroll ?? inViewport(target) });
   return document.activeElement === target;
 }
+
+/**
+ * Clear of the fixed header when the focus scrolls a target into view (§ 6.7). Set once, by
+ * `AppLayout`, for every screen under the app header; a screen must not set the top edge too.
+ */
+export const HEADER_SCROLL_PADDING =
+  'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))';
 
 type ScrollPaddingEdge = 'scrollPaddingTop' | 'scrollPaddingBottom';
 

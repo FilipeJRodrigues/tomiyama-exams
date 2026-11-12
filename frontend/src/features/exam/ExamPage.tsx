@@ -39,7 +39,7 @@ import {
   withPendingMarks,
   type MarkState,
 } from './examModel';
-import { focusIfLost, focusIsLost, useScrollPadding } from './focus';
+import { focusIfLost, focusIsLost } from './focus';
 import { DOUBLE_TAP_MS, useMarkClickGuard } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
@@ -398,10 +398,6 @@ function NoticeSpace({ height }: { height: number }) {
   return <div aria-hidden data-notice-space style={{ ...NOTICE_PLACE, height }} />;
 }
 
-/** Clear of the fixed header when the focus scrolls a target into view (§ 6.7). */
-const HEADER_SCROLL_PADDING =
-  'calc(var(--app-shell-header-offset, 60px) + var(--mantine-spacing-xs))';
-
 /**
  * The summary is a column from 1024 px and a bar below (§ 6.4). Crossing that width (turning
  * the tablet, 200% zoom) swaps only the summary: the items stay mounted, so a focused
@@ -457,7 +453,6 @@ function ExamContent({
   useReadOnlyFocus(titleRef, onMark === undefined, failure);
   const flow = useDecisionFlow(sheet.exam.event_id, sheet.exam.student_id, titleRef);
   const layout = useSummaryLayout(flow);
-  useScrollPadding('top', HEADER_SCROLL_PADDING);
   const summaryProps = {
     summary: sheet.summary,
     exam: sheet.exam,

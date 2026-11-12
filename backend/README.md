@@ -21,7 +21,11 @@ uv sync --python 3.12
 uv run pytest
 ```
 
-Os testes de aceitação ficam em `tests/acceptance/` (hoje, o fluxo completo do § 9 dos requisitos até a aprovação e a lista do dia sem leituras por aluno do § 8, em `test_flow_section9.py`) e rodam junto com os demais no `uv run pytest`; os de regressão ficam em `tests/regression/`.
+Os testes de aceitação ficam em `tests/acceptance/` e rodam junto com os demais no `uv run pytest`; os de regressão ficam em `tests/regression/`. Os de aceitação passam só pelas rotas HTTP, com a carga inicial real (faixas do § 4 e itens do Apêndice A), usuários do Cognito simulado e relógio fixo:
+
+- `test_flow_section9.py`: o fluxo completo do § 9 dos requisitos até a aprovação e a lista do dia sem leituras por aluno do § 8;
+- por regra de negócio (`test_rnXXX_*`), o caso que cumpre e o caso que viola cada uma: `test_acceptance_rn001_rn004.py` (elegibilidade), `test_acceptance_rn005_rn010.py` (exame, com a RN008a) e `test_acceptance_rn012_rn018.py` (cadastros e configurações). A RN011 (certificado em PDF) ainda não tem teste de aceitação (card #98);
+- `acceptance_support.py`: os auxiliares comuns (relógio, carga inicial, usuários e atalhos das rotas). Não é um `conftest.py` porque a pasta não tem `__init__.py`, e um segundo `conftest` esconderia o de `tests/`. Pelo mesmo motivo, nenhum arquivo de teste daqui pode repetir o nome de um arquivo de `tests/` ou de `tests/regression/`.
 
 ## Deploy
 
@@ -102,6 +106,7 @@ O sensei é escolhido pelo master entre os examinadores, nas configurações da 
 | POST | /students | qualquer usuário logado (dono = usuário do token) |
 | GET/PUT/DELETE | /students/{id} | dono ou examinador |
 | GET | /students/{id}/exams | examinador (histórico, RN018) |
+| GET | /students/{id}/exam-notices | responsável dono do aluno (avisos de exame, RN019) |
 | GET | /requirements | examinador |
 | POST | /requirements | examinador |
 | PUT/DELETE | /requirements/{id} | examinador |
@@ -547,3 +552,51 @@ Outros erros do DynamoDB respondem 500 "Erro interno. Tente de novo.", como nas 
 **Permissões** (`ListStudentExamsFunction`): `dynamodb:GetItem` em `Students`, `dynamodb:Query` só no índice `by_student` de `Exams` (não na tabela), `dynamodb:BatchGetItem` em `Events` e `dynamodb:Scan` em `Belts`. Nenhum acesso a `Answers`, a `Settings`, ao Cognito ou ao S3, e nenhuma gravação.
 
 **Custo no dev.** Cada histórico custa 1 RCU no aluno (`Students`, 3 RCU), cerca de 0,5 no índice `by_student` (1 RCU; a consulta soma o tamanho dos exames, cerca de 0,5 KB cada), 0,5 por evento no `BatchGetItem` (`Events`, 2 RCU; cada item conta como 4 KB) e cerca de 0,5 no `Scan` das faixas (`Belts`, 3 RCU). Um aluno com 10 exames lê cerca de 5 RCU de `Events` de uma vez, o que o burst do DynamoDB cobre. A capacidade não mudou.
+
+### Avisos de exame ao responsável (RN019)
+
+`GET /students/{id}/exam-notices` devolve os avisos de exame de um aluno do responsável: um item por evento **aberto** em que o aviso vale. O front mostra cada item no perfil do aluno como "Exame de faixas dia dd/mm/aaaa" (§ 6.2). A rota só lê: o aviso é informativo, e o responsável não altera a data nem o exame.
+
+```json
+[
+  {"event_id": "…", "event_name": "Exame dezembro/2026", "event_date": "2026-12-05",
+   "target_belt_id": "…", "target_belt_name": "Cinza/Azul", "kind": "BELT"},
+  {"event_id": "…", "event_name": "Exame março/2027", "event_date": "2027-03-20",
+   "target_belt_id": "…", "target_belt_name": "Cinza/Azul", "kind": "BELT"}
+]
+```
+
+- A resposta é um array, como nas outras listas. Sem aviso → `[]` (200).
+- `event_date` é a data do evento (`exam_date` do evento), em `AAAA-MM-DD`; o front formata. `target_belt_id`, `target_belt_name` e `kind` (`STRIPE`, grau, ou `BELT`, faixa) têm o mesmo nome e formato de `eligibility` em `GET /students` e do histórico.
+- **Só o mínimo do aviso (RN016):** a rota não devolve a lista de eventos nem a situação deles, e não traz percentuais, situação do exame, examinadores nem dados de outros alunos.
+- **Ordem:** pela data do evento, da mais próxima para a mais distante; na mesma data, pelo `event_id`, para a ordem ser estável.
+
+**Quando o aviso vale.** Para cada evento aberto:
+
+| Situação do aluno | Aviso daquele evento |
+| --- | --- |
+| inativo | não (nenhum aviso, de nenhum evento) |
+| sem exame no evento e elegível na **data do evento** (RN001 a RN004) | sim, com a faixa-alvo e o tipo calculados nessa data |
+| sem exame no evento e não elegível na data do evento (idade, carência ou sem próxima faixa) | não |
+| com exame em andamento em **outro** evento, aberto ou encerrado (RN005, RN008a) | não |
+| com exame em andamento **neste** evento | sim, até a decisão, com a faixa-alvo e o tipo gravados no exame na presença |
+| com exame decidido neste evento (aprovado ou reprovado) | não |
+
+Evento encerrado nunca tem aviso; reaberto, volta a ter. A elegibilidade usa a mesma regra da presença (`domain.eligibility.evaluate`), sempre na data do evento e nunca na de hoje: o aluno que só completa a carência na data do evento já tem o aviso, e um evento ainda aberto depois da própria data continua avaliado naquela data. A presença só é confirmada na porta do evento, então o aviso vale para todo aluno elegível, com ou sem presença (decisão do usuário, card #106). Depois da aprovação, os avisos dos outros eventos são recalculados com a nova graduação (RN009).
+
+| Situação | Resposta |
+| --- | --- |
+| sem login | 401 "Faça login para continuar" |
+| examinador (inclusive master e sensei, e mesmo que seja o dono do aluno) | 403 "Esta área é dos responsáveis" |
+| id vazio ou com mais de 1024 bytes, aluno inexistente ou aluno de outro responsável (RN013) | 404 "Aluno não encontrado" |
+| limite de capacidade do DynamoDB que persistiu em qualquer leitura (aluno, eventos, índice `by_student` ou faixas) | 503 "Sistema ocupado no momento. Tente de novo em instantes." |
+
+A permissão vem antes de qualquer leitura: o examinador recebe o 403 sem que nada seja lido, nem o id conferido. O aluno de outro responsável responde o mesmo 404 de `GET /students/{id}`, para não revelar que o aluno existe (RN013). Outros erros do DynamoDB respondem 500 "Erro interno. Tente de novo.".
+
+**Leituras.** No máximo quatro chamadas, qualquer que seja o número de alunos da academia: `GetItem` do aluno, com `ConsistentRead=True`, porque decide o 404; `Scan` em `Events`; `Query` no índice `by_student` de `Exams` (os exames do aluno); e `Scan` em `Belts`. Aluno inativo só lê o aluno; sem evento aberto, a rota para depois do `Scan` dos eventos. Eventos, exames e faixas usam leitura eventual (o `by_student` é um GSI e não aceita outra): um evento encerrado, uma presença ou uma decisão de menos de um segundo atrás pode ainda não aparecer, e recarregar a tela resolve. Como o aviso é só informativo, isso não decide nada.
+
+**`Scan` em `Events`.** É a única leitura que cresce, e cresce com o total de eventos da academia (alguns por ano, cerca de 0,2 KB cada), não com o de alunos: 100 eventos cabem em 20 KB, 2,5 RCU na leitura eventual. Um filtro por situação no `Scan` não reduziria o custo, porque o DynamoDB cobra pelos itens lidos, não pelos devolvidos. Se um dia pesar, o caminho é um índice por situação em `Events`, o que mexe na capacidade provisionada do dev.
+
+**Permissões** (`ListStudentExamNoticesFunction`): `dynamodb:GetItem` em `Students`, `dynamodb:Scan` em `Events`, `dynamodb:Query` só no índice `by_student` de `Exams` (não na tabela) e `dynamodb:Scan` em `Belts`. Nenhum acesso a `Answers`, a `Settings`, ao Cognito ou ao S3, e nenhuma gravação.
+
+**Custo no dev.** Cada consulta custa 1 RCU no aluno (`Students`, 3 RCU), cerca de 0,5 no `Scan` dos eventos (`Events`, 2 RCU), cerca de 0,5 no índice `by_student` (1 RCU) e cerca de 0,5 no `Scan` das faixas (`Belts`, 3 RCU). A capacidade não mudou.
