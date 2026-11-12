@@ -8,10 +8,23 @@ Parameters:
   AdminEmail:
     Type: String
     Description: E-mail do primeiro examinador. O Cognito envia a ele uma senha temporária.
+  # A list (dev: localhost + Amplify; prod: Amplify only). The name stays
+  # singular so existing "AllowedOrigin=..." overrides keep working.
+  # CloudFormation checks AllowedPattern against each item of the list: only
+  # https:// hosts or http://localhost, optional port, no path, no trailing
+  # slash, no wildcard (the API takes the Authorization header, so "*" would
+  # let any site call it with a stolen token).
   AllowedOrigin:
-    Type: String
+    Type: CommaDelimitedList
     Default: http://localhost:5173
-    Description: Origem do front-end liberada no CORS (troque pela URL do Amplify).
+    AllowedPattern: '^(https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+|http://localhost)(:[0-9]{1,5})?$'
+    ConstraintDescription: >-
+      cada origem deve ser https://dominio (ou http://localhost no desenvolvimento), em
+      minúsculas, sem barra no fim, sem caminho, sem espaços e sem *.
+    Description: >-
+      Origens do front-end liberadas no CORS, separadas por vírgula e sem espaços. No dev,
+      http://localhost:5173 e o domínio do Amplify; no prod, só o domínio do Amplify
+      (https://main.<appid>.amplifyapp.com). Origem não leva barra no fim.
   BudgetLimitUsd:
     Type: Number
     Default: 1
@@ -451,8 +464,10 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       CorsConfiguration:
-        AllowOrigins:
-          - !Ref AllowedOrigin
+        # The list goes in as is: AWS::LanguageExtensions resolves the Ref to a
+        # literal list before SAM writes x-amazon-apigateway-cors. Wrapping it
+        # in another list (or Fn::Split) would break the CORS block.
+        AllowOrigins: !Ref AllowedOrigin
         AllowHeaders: [authorization, content-type]
         AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
         MaxAge: 600

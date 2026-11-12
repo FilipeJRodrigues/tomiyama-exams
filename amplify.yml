@@ -1,0 +1,30 @@
+# Build do front no AWS Amplify Hosting (app criado pelo console; guia na seção
+# "Front no Amplify (dev)" do README.md). Monorepo: o front fica em frontend/, e os comandos e
+# os caminhos abaixo são relativos a essa pasta. O appRoot tem de ser igual à variável
+# AMPLIFY_MONOREPO_APP_ROOT, que o console preenche ao marcar o app como monorepo.
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # O `engines` do package.json pede Node ^22.22.2 (a CI usa a 22). A imagem padrão
+            # pode trazer uma 22 mais antiga; `nvm install 22` instala e ativa a 22 mais recente.
+            - nvm install 22
+            - node --version
+            # Para o build sem as variáveis VITE_* do app ou com VITE_USE_MOCKS ligada.
+            - node scripts/check-deploy-env.ts
+            - npm ci
+        build:
+          commands:
+            # Garante a mesma Node se a fase rodar num shell novo.
+            - nvm use 22
+            - npm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - "**/*"
+      cache:
+        paths:
+          - node_modules/**/*
