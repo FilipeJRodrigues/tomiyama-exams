@@ -327,10 +327,33 @@ describe('exam day (§ 6.3)', () => {
       expect(screen.getByRole('note')).toHaveTextContent('Evento encerrado');
     });
 
-    it('falls back to the most recent open event when the URL event does not exist', async () => {
-      await renderApp({ route: `${ROUTE}?evento=nao-existe`, signedInAs: 'examiner' });
+    // Rewritten for #28 (user's decision): it used to expect the most recent open event here.
+    it('rn005 never falls back to another event when the URL event does not exist: notice, no event picked, no list', async () => {
+      const exams = recordRequests('get', OPEN_EXAMS_URL);
+      const { user, router } = await renderApp({
+        route: `${ROUTE}?evento=nao-existe`,
+        signedInAs: 'examiner',
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /^O evento escolhido não foi encontrado\. Ele pode ter sido apagado\. Escolha um evento na lista\.$/,
+      );
+      const picker = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Evento' });
+      expect(picker).toHaveValue('');
+      expect(picker.selectedOptions[0]).toHaveTextContent('Nenhum evento escolhido');
+      expect(screen.queryByRole('table', { name: LIST })).not.toBeInTheDocument();
+      expect(screen.queryByText('Carregando alunos…')).not.toBeInTheDocument();
+      expect(screen.queryByText('Nenhum evento aberto.')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(router.state.location.search).toBe('');
+      });
+      expect(exams).toHaveLength(0);
+
+      // The open event is still there to be picked, and only then its list shows.
+      await user.selectOptions(picker, OPEN);
       await screen.findByRole('table', { name: LIST });
       expect(screen.getByRole('combobox', { name: 'Evento' })).toHaveValue(OPEN);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(router.state.location.search).toBe(`?evento=${OPEN}`);
     });
   });
 
