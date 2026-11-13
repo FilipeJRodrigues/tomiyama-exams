@@ -259,10 +259,14 @@ def retry_throttled[T](
     Throttling (low provisioned capacity on the table or on a GSI) and
     ``TransactionConflictException`` (the item is inside a transaction in
     progress, such as a marking) are retried (``RETRYABLE_WRITE_ERRORS``)
-    with exponential backoff and full jitter. Botocore's own retries (up to
-    ~25 s in legacy mode) run first, inside each attempt, so callers should
-    keep that much slack after the deadline. Any other error is raised at once.
-    Only deploy-time writes (seeds, profile migration) use it.
+    with exponential backoff and full jitter, and so is a
+    ``ServiceUnavailableError``: a repository read (``paginate``,
+    ``get_item_or_busy``) that already turned persistent throttling into the
+    503 of the API. Botocore's own retries (up to ~25 s in legacy mode) run
+    first, inside each attempt, so callers should keep that much slack after
+    the deadline. Any other error is raised at once. Only deploy-time writes
+    (seeds, profile migration) and the background copy of a requirement
+    profile use it; the API routes answer 503 instead.
 
     Args:
         call: The DynamoDB call, without arguments.
@@ -288,6 +292,8 @@ def retry_throttled[T](
             code = exc.response["Error"]["Code"]
             if code not in RETRYABLE_WRITE_ERRORS:
                 raise
+        except ServiceUnavailableError:
+            code = "ServiceUnavailableError"
         delay = random.uniform(0, min(BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS * 2**attempt))
         if deadline is not None and clock() + delay >= deadline:
             raise DeadlineExceededError(f"{code} on {label} until the deadline")

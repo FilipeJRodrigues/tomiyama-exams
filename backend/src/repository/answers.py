@@ -12,7 +12,8 @@ exam still exists and is in progress (RN010) and that the event is still open
 a requirement reads, so an item with answers is never deleted nor moved to
 another belt or kind (``repository.requirements.save_requirement``), even when
 the two requests race. Replacing a mark also checks that the item is still in
-the exam's target belt.
+the exam's target belt. The item's requirement profile is not checked here: it
+never changes, so ``domain.answers.ensure_can_mark`` checks it on the read.
 
 ``TransactionConflict`` and throttling (low provisioned capacity) are retried
 with backoff; if they persist the request ends in 409 or 503, never in 500.

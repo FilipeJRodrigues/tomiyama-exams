@@ -14,6 +14,12 @@
 - ``POST /events/{id}/exams/{student_id}/decision``: the sensei approves or
   fails the exam (body ``{"result": "APPROVED"|"FAILED", "notes": ...}``),
   updating the student's graduation on approval (RN008–RN010).
+
+The sheet's items are the target belt's items of one requirement profile
+(``domain.exams.sheet_profile_id``, for now the main profile), read only by
+``_sheet_items``: the sheet and the score after a mark or unmark never
+include the copies of the belt in other profiles, and ``ensure_can_mark``
+refuses marking or unmarking them.
 """
 
 import logging
@@ -131,6 +137,19 @@ def _correct_by_item(answers: dict[str, ExamAnswer]) -> dict[str, bool]:
     return {requirement_id: answer.correct for requirement_id, answer in answers.items()}
 
 
+def _sheet_items(exam_event: ExamEvent, exam: Exam) -> list[Requirement]:
+    """Return the items of the exam's sheet, in sheet order (RN006, RN007).
+
+    The target belt's items of the sheet profile only (today the main profile;
+    step 3 of #144 makes ``exam_rules.sheet_profile_id`` return the event's
+    profile). Every reader of the sheet's items goes through here: the sheet
+    and the score after a mark or unmark.
+    """
+    return requirement_repo.list_profile_belt(
+        exam_rules.sheet_profile_id(exam_event), exam.target_belt_id
+    )
+
+
 @api_handler
 def get_exam_sheet(event: Event, context: Any) -> Response:
     """Return everything the exam screen shows (§ 6.4) in one call."""
@@ -141,7 +160,7 @@ def get_exam_sheet(event: Event, context: Any) -> Response:
     )
     student = student_repo.get_student(exam.student_id)
     target_belt = belt_repo.get_belt(exam.target_belt_id)
-    requirements = requirement_repo.list_by_belt(exam.target_belt_id)
+    requirements = _sheet_items(exam_event, exam)
     answers = answer_repo.list_by_exam(exam.id)
     items = [
         {
@@ -182,20 +201,23 @@ def _marking_context(event: Event) -> tuple[ExamEvent, Exam, Requirement]:
     )
 
 
-def _summary_after(exam: Exam, requirement_id: str, answer: ExamAnswer | None) -> dict[str, Any]:
+def _summary_after(
+    exam_event: ExamEvent, exam: Exam, requirement_id: str, answer: ExamAnswer | None
+) -> dict[str, Any]:
     """Recompute the score (RN007) with this request's write applied.
 
     The answers query is strongly consistent, so it already sees this write and
     any mark written just before; applying our own write again is a safeguard
-    for the caller's optimistic update. The totals come from the ``by_belt``
-    GSI, which is always eventually consistent.
+    for the caller's optimistic update. The totals come from the sheet's items
+    (``_sheet_items``, read from the ``by_belt`` GSI), which are always
+    eventually consistent.
     """
     answers = _correct_by_item(answer_repo.list_by_exam(exam.id))
     if answer is None:
         answers.pop(requirement_id, None)
     else:
         answers[requirement_id] = answer.correct
-    return scoring.summary(requirement_repo.list_by_belt(exam.target_belt_id), answers)
+    return scoring.summary(_sheet_items(exam_event, exam), answers)
 
 
 @api_handler
@@ -217,7 +239,10 @@ def mark_answer(event: Event, context: Any) -> Response:
     logger.info(
         "Item %s of exam %s marked %s by %s", requirement.id, exam.id, answer.correct, user.sub
     )
-    body = {"answer": answer.to_dict(), "summary": _summary_after(exam, requirement.id, answer)}
+    body = {
+        "answer": answer.to_dict(),
+        "summary": _summary_after(exam_event, exam, requirement.id, answer),
+    }
     return json_response(200, body)
 
 
@@ -230,7 +255,7 @@ def unmark_answer(event: Event, context: Any) -> Response:
     answer_rules.ensure_can_mark(exam, exam_event, requirement)
     if answer_repo.delete_answer(exam, requirement.id):
         logger.info("Item %s of exam %s unmarked by %s", requirement.id, exam.id, user.sub)
-    body = {"answer": None, "summary": _summary_after(exam, requirement.id, None)}
+    body = {"answer": None, "summary": _summary_after(exam_event, exam, requirement.id, None)}
     return json_response(200, body)
 
 

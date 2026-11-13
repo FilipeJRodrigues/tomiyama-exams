@@ -43,10 +43,16 @@ Conditions:
 Mappings:
   # Settings per environment.
   EnvConfig:
+    # CopyItemsPerSecond: pace of the background copy of a requirement profile
+    # (#144). In dev each copied item costs 1 WCU in Requirements and in each
+    # of its 2 GSIs (4 WCU each): 2 items/s leaves half to the exam marking,
+    # and ~700 items take ~6 min. Prod is on-demand.
     dev:
       LogRetentionDays: 7
+      CopyItemsPerSecond: "2"
     prod:
       LogRetentionDays: 30
+      CopyItemsPerSecond: "10"
   # Provisioned capacity used only in dev (prod is PAY_PER_REQUEST). The free
   # tier covers 25 RCU and 25 WCU summed over every table and GSI of the
   # account in the Region; these add up to 25 RCU and 25 WCU (none spare).
@@ -721,7 +727,9 @@ Resources:
             Path: /students/{id}/exam-notices
             Method: GET
 
-  # Requirements (examiners only)
+  # Requirements (examiners only). Each function also reads the requirement
+  # profiles item of Settings (only that item: dynamodb:LeadingKeys) to find
+  # a profile other than the main one (#144).
   ListRequirementsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -731,6 +739,13 @@ Resources:
             TableName: !Ref BeltsTable
         - DynamoDBReadPolicy:
             TableName: !Ref RequirementsTable
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
       Events:
         Api:
           Type: HttpApi
@@ -748,6 +763,13 @@ Resources:
             TableName: !Ref BeltsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref RequirementsTable
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
       Events:
         Api:
           Type: HttpApi
@@ -765,6 +787,13 @@ Resources:
             TableName: !Ref BeltsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref RequirementsTable
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
       Events:
         Api:
           Type: HttpApi
@@ -780,6 +809,13 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RequirementsTable
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
       Events:
         Api:
           Type: HttpApi
@@ -787,6 +823,176 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /requirements/{id}
             Method: DELETE
+
+  # Requirement profiles (examiners only, RN017, #144). Every profile but the
+  # main one (not stored) lives in a single item of Settings
+  # (id requirement_profiles): each function reaches only that item
+  # (dynamodb:LeadingKeys), never the settings record nor the signatures, and
+  # none of them scans the table. No new table or GSI (dev free tier).
+  ListRequirementProfilesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profiles.list_profiles
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirement-profiles
+            Method: GET
+
+  GetRequirementProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profiles.get_profile
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirement-profiles/{id}
+            Method: GET
+
+  # Stores the profile COPYING (PutItem for the first profile, then a
+  # conditional UpdateItem) and starts the copy with an asynchronous Invoke of
+  # the copy function, the only function it may invoke.
+  CreateRequirementProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profiles.create_profile
+      Environment:
+        Variables:
+          REQUIREMENT_PROFILE_COPY_FUNCTION: !Ref CopyRequirementProfileFunction
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt CopyRequirementProfileFunction.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirement-profiles
+            Method: POST
+
+  UpdateRequirementProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profiles.rename_profile
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirement-profiles/{id}
+            Method: PUT
+
+  # Resumes a stalled copy: conditional UpdateItem (still copying and
+  # stalled), then the same asynchronous Invoke as the creation.
+  ResumeRequirementProfileCopyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profiles.resume_copy
+      Environment:
+        Variables:
+          REQUIREMENT_PROFILE_COPY_FUNCTION: !Ref CopyRequirementProfileFunction
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt CopyRequirementProfileFunction.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirement-profiles/{id}/copy
+            Method: POST
+
+  # Background copy of a profile (no route; invoked only by the two functions
+  # above, InvocationType=Event). Reads the belts (Scan), the source's and the
+  # copy's items (Query on the two GSIs; by_belt only for the main profile),
+  # writes each missing copy (conditional PutItem) and the progress and status
+  # of the profile (UpdateItem on its item of Settings). ~700 items at
+  # CopyItemsPerSecond take ~6 min in dev; a run stops 60 s before the
+  # timeout and fails, and Lambda retries it (2 retries, ~1 and ~2 min later),
+  # going on from what was written. The resume route covers the rest.
+  CopyRequirementProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profile_copy.handler
+      Timeout: 900
+      Environment:
+        Variables:
+          COPY_ITEMS_PER_SECOND: !FindInMap [EnvConfig, !Ref Environment, CopyItemsPerSecond]
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        MaximumEventAgeInSeconds: 3600
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt BeltsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource:
+                - !Sub ${RequirementsTable.Arn}/index/by_belt
+                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt RequirementsTable.Arn
 
   # Exam events (examiners only, RN016)
   ListEventsFunction:
