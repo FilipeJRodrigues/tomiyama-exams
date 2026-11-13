@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExamEvent, ExamView, StudentView } from '../../../src/api/types';
 import {
   buildRoster,
+  chooseEvent,
   countByFilter,
   matchesFilter,
   mergeCreatedExams,
@@ -151,5 +152,46 @@ describe('exam day model (§ 6.3)', () => {
 
   it('rn008a still opens the exam of a present student in a closed event', () => {
     expect(roster.map((entry) => rosterAction(entry, closed))).toEqual(['none', 'none', 'open']);
+  });
+});
+
+describe('event of the exam day for the URL (§ 6.3, #28)', () => {
+  function shown(chosenId: string | null, missingBefore: boolean) {
+    const choice = chooseEvent(EVENTS, chosenId, missingBefore);
+    return { event: choice.event?.id ?? null, missing: choice.missing };
+  }
+
+  it('defaults to the most recent open event when the URL brings none', () => {
+    expect(shown(null, false)).toEqual({ event: 'o2', missing: false });
+    // An empty `?evento=` is no choice either.
+    expect(shown('', false)).toEqual({ event: 'o2', missing: false });
+  });
+
+  it('keeps the chosen event, closed ones included', () => {
+    expect(shown('c3', false)).toEqual({ event: 'c3', missing: false });
+    expect(shown('o1', false)).toEqual({ event: 'o1', missing: false });
+  });
+
+  it('rn005 a chosen event not in the list is missing: no event, not the default', () => {
+    expect(shown('apagado', false)).toEqual({ event: null, missing: true });
+    expect(shown('apagado', true)).toEqual({ event: null, missing: true });
+  });
+
+  it('rn005 stays missing once the id left the URL, with no default in its place', () => {
+    expect(shown(null, true)).toEqual({ event: null, missing: true });
+    expect(shown('', true)).toEqual({ event: null, missing: true });
+  });
+
+  it('an event the examiner puts in the URL ends the missing state, the default one too', () => {
+    expect(shown('o1', true)).toEqual({ event: 'o1', missing: false });
+    expect(shown('c3', true)).toEqual({ event: 'c3', missing: false });
+    expect(shown('o2', true)).toEqual({ event: 'o2', missing: false });
+  });
+
+  it('with no open event and no choice, shows nothing and is not missing', () => {
+    const closedOnly = [event('c1', 'CLOSED', '2026-03-01')];
+    expect(chooseEvent(closedOnly, null, false)).toEqual({ event: undefined, missing: false });
+    expect(chooseEvent([], null, false)).toEqual({ event: undefined, missing: false });
+    expect(chooseEvent([], 'apagado', false)).toEqual({ event: undefined, missing: true });
   });
 });

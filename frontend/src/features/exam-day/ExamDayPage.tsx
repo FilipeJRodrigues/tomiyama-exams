@@ -14,6 +14,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconAlertCircle,
+  IconAlertTriangle,
   IconCircleCheck,
   IconClipboardList,
   IconLock,
@@ -56,13 +57,13 @@ import {
   FILTER_LABELS,
   ROSTER_FILTERS,
   buildRoster,
+  chooseEvent,
   countByFilter,
   isRosterFilter,
   matchesFilter,
   mergeCreatedExams,
   rosterAction,
   searchRoster,
-  selectEvent,
   type RosterEntry,
   type RosterFilter,
 } from './examDayModel';
@@ -90,6 +91,18 @@ function NoEvent({ message }: { message: string }) {
       <Text>{message}</Text>
       <CreateEventLink />
     </Stack>
+  );
+}
+
+/**
+ * The chosen event is not in the list (deleted meanwhile, or a link to one that is gone): in
+ * the place of its list until the examiner picks an event, never another event on its own.
+ */
+function MissingEvent() {
+  return (
+    <Alert color="orange" variant="light" role="alert" icon={<IconAlertTriangle aria-hidden />}>
+      O evento escolhido não foi encontrado. Ele pode ter sido apagado. Escolha um evento na lista.
+    </Alert>
   );
 }
 
@@ -608,7 +621,9 @@ interface StatusNotice {
  * § 6.3 exam day, examiners only: pick the event (default: the most recent open one,
  * kept in `?evento=`), then confirm attendance or open the exam of each student. Beside the
  * picker, "Encerrar evento" / "Reabrir evento" (RN016) with the confirmation of the events
- * screen; the event stays selected after the change (it is in `?evento=`).
+ * screen; the event stays selected after the change (it is in `?evento=`). A chosen event that
+ * is not in the list (deleted meanwhile, or a link to one that is gone) is said so, and the
+ * screen waits for the examiner to pick another: it never moves to one on its own (RN005).
  */
 export function ExamDayPage() {
   const events = useEvents();
@@ -617,7 +632,18 @@ export function ExamDayPage() {
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
   const [searchParams, setSearchParams] = useSearchParams();
   const chosenId = searchParams.get(EVENT_PARAM);
-  const selected = events.data ? selectEvent(events.data, chosenId) : undefined;
+  // Whether the last choice was missing: it outlives the id taken out of the URL. Never reset
+  // when the picker changes, only by the event it puts in the URL: a render in between, with no
+  // event in the URL and no notice, would put the default event there over the examiner's one.
+  const [missingBefore, setMissingBefore] = useState(false);
+  const choice = events.data ? chooseEvent(events.data, chosenId, missingBefore) : undefined;
+  if (choice !== undefined && choice.missing !== missingBefore) {
+    setMissingBefore(choice.missing);
+  }
+  const selected = choice?.event;
+  const missing = choice?.missing ?? false;
+  // Whether the last commit showed the list of an event (see the focus effect below).
+  const listShown = useRef(false);
   // Exams confirmed in this session, by event: a stale reload does not hide them.
   const [createdByEvent, setCreatedByEvent] = useState<Record<string, ExamView[]>>({});
   const [changing, setChanging] = useState<StatusState | null>(null);
@@ -663,18 +689,30 @@ export function ExamDayPage() {
 
   const shownNotice = notice !== null && notice.eventId === selected?.id ? notice : null;
 
-  // The default event goes into the URL too (replacing the entry), so it stays on screen
-  // after a reload, and also when a refetch shows it was closed in the meantime (RN016).
+  // The URL follows the event on the screen, replacing the entry. The default event goes into
+  // it, so it stays on screen after a reload, and also when a refetch shows it was closed in the
+  // meantime (RN016). A missing event leaves it: a reload starts over with the default.
+  const loaded = choice !== undefined;
+  const shownId = selected?.id ?? null;
   useEffect(() => {
-    if (!selected || selected.id === chosenId) return;
+    if (!loaded || shownId === chosenId) return;
     setSearchParams(
       (params) => {
-        params.set(EVENT_PARAM, selected.id);
+        if (shownId === null) params.delete(EVENT_PARAM);
+        else params.set(EVENT_PARAM, shownId);
         return params;
       },
       { replace: true },
     );
-  }, [selected, chosenId, setSearchParams]);
+  }, [loaded, shownId, chosenId, setSearchParams]);
+
+  // The list went away because its event did: a focus lost with it goes to the title (§ 6.7).
+  // A focus the examiner put on the picker stays. Not on the first load (a link to a missing
+  // event): no list was there, and the first load never moves the focus.
+  useEffect(() => {
+    if (missing && listShown.current) focusIfLost(titleRef.current);
+    listShown.current = selected !== undefined;
+  });
 
   let content: ReactNode;
   if (events.data === undefined && events.isError) {
@@ -743,6 +781,8 @@ export function ExamDayPage() {
               }));
             }}
           />
+        ) : missing ? (
+          <MissingEvent />
         ) : (
           <NoEvent message="Nenhum evento aberto." />
         )}

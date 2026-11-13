@@ -15,6 +15,36 @@ export function selectEvent(events: readonly ExamEvent[], chosenId: string | nul
   return chosen ?? events.find((event) => event.status === 'OPEN');
 }
 
+/** What the exam day shows for the event in the URL (§ 6.3). */
+export interface EventChoice {
+  /**
+   * The event whose list is on the screen: the chosen one or, with none chosen, the most recent
+   * open one. None while `missing`, or with no choice and no open event.
+   */
+  event: ExamEvent | undefined;
+  /**
+   * The chosen event is not in the list (deleted meanwhile, or a link to one that is gone): the
+   * screen says so and waits for the examiner to pick one. It never moves to another event on
+   * its own, where a confirmed attendance would create the exam (RN005).
+   */
+  missing: boolean;
+}
+
+/**
+ * The event of the exam day for `chosenId` (the `?evento=` of the URL). `missingBefore` is the
+ * `missing` of the previous choice: the screen takes a missing id out of the URL, and the
+ * choice stays missing while the URL brings no event, so no default takes its place. An event
+ * in the URL (the examiner picked one) ends it; a new screen (reload) starts without it.
+ */
+export function chooseEvent(
+  events: readonly ExamEvent[],
+  chosenId: string | null,
+  missingBefore: boolean,
+): EventChoice {
+  const missing = chosenId ? !events.some((event) => event.id === chosenId) : missingBefore;
+  return { event: missing ? undefined : selectEvent(events, chosenId), missing };
+}
+
 export interface RosterEntry {
   student: StudentView;
   /** The student's exam in the event; present means attendance confirmed. */
