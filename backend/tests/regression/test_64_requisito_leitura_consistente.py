@@ -21,7 +21,15 @@ from datetime import date
 from typing import Any
 
 import pytest
-from conftest import EXAMINER, api_event, belt_id, lag_eventual_reads, make_student, response_json
+from conftest import (
+    EXAMINER,
+    MASTER,
+    api_event,
+    belt_id,
+    lag_eventual_reads,
+    make_student,
+    response_json,
+)
 
 from domain import dates
 from domain.events import EventStatus, ExamEvent
@@ -54,7 +62,8 @@ def _payload(description: str = "Item novo") -> dict[str, Any]:
 
 
 def _create_requirement_via_api() -> str:
-    response = requirement_handlers.create_requirement(api_event(EXAMINER, body=_payload()), None)
+    # Items of the main profile: only the admin master writes them (#144).
+    response = requirement_handlers.create_requirement(api_event(MASTER, body=_payload()), None)
     assert response["statusCode"] == 201, response["body"]
     return response_json(response)["id"]
 
@@ -95,9 +104,7 @@ def test_rn017_update_right_after_create_finds_requirement(
     requirement_id = _create_requirement_via_api()
 
     response = requirement_handlers.update_requirement(
-        api_event(
-            EXAMINER, path={"id": requirement_id}, body=_payload("Item novo, texto corrigido")
-        ),
+        api_event(MASTER, path={"id": requirement_id}, body=_payload("Item novo, texto corrigido")),
         None,
     )
 
@@ -112,7 +119,7 @@ def test_rn017_delete_right_after_create_removes_requirement(
     requirement_id = _create_requirement_via_api()
 
     response = requirement_handlers.delete_requirement(
-        api_event(EXAMINER, path={"id": requirement_id}), None
+        api_event(MASTER, path={"id": requirement_id}), None
     )
 
     assert response["statusCode"] == 204, response["body"]

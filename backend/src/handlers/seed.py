@@ -1,7 +1,9 @@
 """CloudFormation custom resource that loads the initial data on deploy.
 
 The load is idempotent: running it again neither duplicates items nor
-overwrites edits made on screen.
+overwrites edits made on screen. After the seed it moves the requirements
+written before profiles existed to the main profile, once, with its own
+marker (``repository.requirements.migrate_to_main_profile``).
 
 With low provisioned capacity (dev, free tier) the writes are throttled and
 retried, so the load can take minutes. It stops ``SAFETY_MARGIN_SECONDS``
@@ -36,17 +38,23 @@ DEADLINE_REASON = (
 
 
 def seed_all(deadline: float | None = None) -> dict[str, int]:
-    """Insert the missing seed items.
+    """Insert the missing seed items, then move older requirements to the main profile.
+
+    The migration runs after the seed so that items of a seed interrupted
+    before profiles existed are moved too; new seed items are already born in
+    the main profile.
 
     Args:
         deadline: ``time.monotonic()`` value after which the load stops.
 
     Returns:
-        Number of items inserted per entity.
+        Number of items inserted per entity, and of requirements moved to the
+        main profile (``requirement_profiles``).
     """
     return {
         "belts": belt_repo.seed_belts(SEED_BELTS, deadline=deadline),
         "requirements": requirement_repo.seed_requirements(seed_requirements(), deadline=deadline),
+        "requirement_profiles": requirement_repo.migrate_to_main_profile(deadline=deadline),
     }
 
 

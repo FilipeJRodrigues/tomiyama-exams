@@ -52,6 +52,18 @@ OTHER_GUARDIAN_SUB = "guardian-2"
 EXAMINER_SUB = "examiner-1"
 MASTER_SUB = "master-1"
 
+# Non-key attributes projected into ``Requirements.by_profile_belt`` (as in the
+# template): every field of the model but ``id`` and ``sort_order``, never
+# ``answer_count``, so a first mark (RN006) does not write to that index.
+REQUIREMENT_PROFILE_BELT_ATTRIBUTES = [
+    "belt_id",
+    "kind",
+    "category",
+    "description",
+    "expected_answer",
+    "profile_id",
+]
+
 
 def _create_tables() -> None:
     client = boto3.client("dynamodb")
@@ -107,6 +119,7 @@ def _create_tables() -> None:
             {"AttributeName": "id", "AttributeType": "S"},
             {"AttributeName": "belt_id", "AttributeType": "S"},
             {"AttributeName": "sort_order", "AttributeType": "N"},
+            {"AttributeName": "profile_belt", "AttributeType": "S"},
         ],
         KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
         GlobalSecondaryIndexes=[
@@ -117,7 +130,18 @@ def _create_tables() -> None:
                     {"AttributeName": "sort_order", "KeyType": "RANGE"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
-            }
+            },
+            {
+                "IndexName": "by_profile_belt",
+                "KeySchema": [
+                    {"AttributeName": "profile_belt", "KeyType": "HASH"},
+                    {"AttributeName": "sort_order", "KeyType": "RANGE"},
+                ],
+                "Projection": {
+                    "ProjectionType": "INCLUDE",
+                    "NonKeyAttributes": REQUIREMENT_PROFILE_BELT_ATTRIBUTES,
+                },
+            },
         ],
     )
     client.create_table(
@@ -821,9 +845,10 @@ SCENARIO_ROUTES: dict[str, Route] = {
     "GET /requirements?belt_id": lambda: requirement_handlers.list_requirements(
         api_event(EXAMINER, query={"belt_id": SCENARIO_REQUIREMENT.belt_id}), None
     ),
+    # Items of the main profile: only the admin master writes them (#144).
     "POST /requirements": lambda: requirement_handlers.create_requirement(
         api_event(
-            EXAMINER,
+            MASTER,
             body={
                 "belt_id": SCENARIO_REQUIREMENT.belt_id,
                 "kind": "THEORY",
@@ -835,14 +860,14 @@ SCENARIO_ROUTES: dict[str, Route] = {
     ),
     "PUT /requirements/{id}": lambda: requirement_handlers.update_requirement(
         api_event(
-            EXAMINER,
+            MASTER,
             path={"id": SCENARIO_REQUIREMENT.id},
             body=scenario_requirement_body(description="Item t1 (editado)"),
         ),
         None,
     ),
     "DELETE /requirements/{id}": lambda: requirement_handlers.delete_requirement(
-        api_event(EXAMINER, path={"id": SCENARIO_REQUIREMENT.id}), None
+        api_event(MASTER, path={"id": SCENARIO_REQUIREMENT.id}), None
     ),
     "GET /events": lambda: event_handlers.list_events(api_event(EXAMINER), None),
     "POST /events": lambda: event_handlers.create_event(

@@ -27,6 +27,7 @@ from acceptance_support import (
     MSG_INVALID_IMAGE,
     MSG_LOGIN,
     MSG_LOGO_NOT_FOUND,
+    MSG_MAIN_PROFILE_MASTER_ONLY,
     MSG_MASTER_ONLY_BELT_FIELDS,
     MSG_ONLY_MASTER_OR_SENSEI,
     MSG_REQUIREMENT_BELT_NOT_FOUND,
@@ -725,26 +726,43 @@ def test_rn017_only_examiners_manage_requirements_listed_by_belt_and_kind(
         )
     assert _requirements(academy) == small_sheet + sheet
 
-    # An examiner creates (at the end of the sheet), edits and deletes.
-    created = ok(requirement_handlers.create_requirement, academy.examiner, 201, body=new_item)
+    # The items of the main profile (the only one so far) are changed only by
+    # the admin master (#144): another examiner is refused and nothing changes.
+    for handler, path in (
+        (requirement_handlers.create_requirement, None),
+        (requirement_handlers.update_requirement, first_path),
+        (requirement_handlers.delete_requirement, first_path),
+    ):
+        refused(
+            handler,
+            academy.examiner,
+            403,
+            MSG_MAIN_PROFILE_MASTER_ONLY,
+            body=new_item,
+            path=path,
+        )
+    assert _requirements(academy) == small_sheet + sheet
+
+    # The master creates (at the end of the sheet), edits and deletes.
+    created = ok(requirement_handlers.create_requirement, academy.master, 201, body=new_item)
     assert {key: created[key] for key in new_item} == new_item
     assert created["sort_order"] > max(orders)
     assert _requirements(academy, belt_id=marrom) == sheet + [created]  # 140: still not cut
     created_path = {"id": created["id"]}
     edited = ok(
         requirement_handlers.update_requirement,
-        academy.examiner,
+        academy.master,
         body={**new_item, "kind": "PRACTICE", "description": "Demonstrar o-soto-gari"},
         path=created_path,
     )
     assert (edited["kind"], edited["description"]) == ("PRACTICE", "Demonstrar o-soto-gari")
     assert _requirements(academy, belt_id=marrom, kind="PRACTICE") == practice + [edited]
     assert _requirements(academy, belt_id=marrom, kind="THEORY") == theory
-    ok(requirement_handlers.delete_requirement, academy.examiner, 204, path=created_path)
+    ok(requirement_handlers.delete_requirement, academy.master, 204, path=created_path)
     assert _requirements(academy, belt_id=marrom) == sheet
     refused(
         requirement_handlers.update_requirement,
-        academy.examiner,
+        academy.master,
         404,
         MSG_REQUIREMENT_NOT_FOUND,
         body=new_item,

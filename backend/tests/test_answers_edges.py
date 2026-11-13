@@ -10,7 +10,15 @@ from datetime import date
 from typing import Any
 
 import pytest
-from conftest import EXAMINER, GUARDIAN, api_event, belt_id, make_student, response_json
+from conftest import (
+    EXAMINER,
+    GUARDIAN,
+    MASTER,
+    api_event,
+    belt_id,
+    make_student,
+    response_json,
+)
 
 from domain import dates
 from domain.events import EventStatus, ExamEvent
@@ -104,8 +112,9 @@ def _answer_count(req_id: str) -> int:
 
 
 def _put_requirement(req_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    # Items of the main profile: only the admin master writes them (#144).
     return requirement_handlers.update_requirement(
-        api_event(EXAMINER, path={"id": req_id}, body=payload), None
+        api_event(MASTER, path={"id": req_id}, body=payload), None
     )
 
 
@@ -276,7 +285,7 @@ def test_rn017_edit_of_answered_item_keeps_the_counter_and_the_lock(exam: Exam) 
     assert _answer_count("t1") == 1
     item = next(i for i in response_json(_sheet(exam))["items"] if i["id"] == "t1")
     assert (item["description"], item["answer"]["correct"]) == ("Nova", True)
-    deleted = requirement_handlers.delete_requirement(api_event(EXAMINER, path={"id": "t1"}), None)
+    deleted = requirement_handlers.delete_requirement(api_event(MASTER, path={"id": "t1"}), None)
     assert deleted["statusCode"] == 409
     assert _put_requirement("t1", _locked_payload(belt_id=belt_id("Cinza")))["statusCode"] == 409
 

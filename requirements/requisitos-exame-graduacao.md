@@ -100,9 +100,24 @@ Faixas não são criadas nem excluídas pela tela (só editadas). Só o **admin 
 | `description` | texto longo | o que se pergunta/pede (ex.: "Contar até 10 em japonês") |
 | `expected_answer` | texto longo, opcional | resposta esperada, mostrada ao examinador |
 | `sort_order` | inteiro | ordem na folha |
+| `profile_id` | FK → Perfil de requisitos | obrigatório; não muda depois de criado; item gravado antes dos perfis vale como do **principal** *(decisão do responsável, 2026-11-12)* |
 
 Cada golpe, cada termo do vocabulário e cada fato histórico é **um item** (necessário para
-o percentual por item). Carga inicial no **Apêndice A** (692 itens).
+o percentual por item). Carga inicial no **Apêndice A** (692 itens), no perfil principal.
+
+### 3.2.1 Perfil de requisitos (`RequirementProfile`) *(decisão do responsável, 2026-11-12)*
+| Campo | Tipo | Regras |
+|---|---|---|
+| `name` | texto | ex.: "Principal" |
+| `is_main` | booleano | só o perfil principal |
+
+Cada requisito pertence a um perfil. O **perfil principal** tem id fixo (`main`, nome
+"Principal"), guarda os itens do Apêndice A e **só o admin master** cria, edita ou exclui
+itens dele; nunca é excluído. Os itens gravados antes dos perfis passam para o principal
+sem mudar exames nem respostas. Em etapas seguintes: qualquer examinador cria um perfil
+como **cópia completa** do principal (ou de outro perfil) e o edita livremente; o evento
+escolhe o perfil (padrão: principal), que não muda depois que o evento tem exames; perfil
+não principal só é excluído se nenhum evento o usar. Por enquanto só existe o principal.
 
 ### 3.3 Aluno (`Student`) — pertence ao responsável que o cadastrou
 | Campo | Tipo | Regras |
@@ -282,6 +297,12 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   Evento com exames não pode ser excluído (*"Evento possui exames registrados"*).
 - **RN017 — Requisitos.** Só examinador gerencia; faixa precisa existir; listagem filtrável
   por faixa e tipo, ordenada (sem limite que corte a Marrom, que tem 139 itens).
+  Cada item pertence a um perfil de requisitos (§ 3.2.1); a listagem é por perfil (padrão:
+  principal). Itens do **perfil principal**: só o admin master cria, edita ou exclui —
+  outro examinador → *"Somente o administrador master altera o perfil principal de
+  requisitos"* (403); o perfil de um item não muda (*"Perfil: o perfil de um requisito não
+  pode ser alterado"*, 400) *(decisão do responsável, 2026-11-12)*. Item com respostas não
+  pode ser excluído (*"Requisito possui respostas registradas"*).
 - **RN018 — Histórico preservado.** Aluno **com exames** não pode ser excluído pelo
   responsável (*"Aluno possui exames registrados"*); o examinador pode inativá-lo.
   Nunca apagar exames em cascata ao excluir aluno (apagaria o histórico e contornaria a
@@ -341,6 +362,9 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
 ### 6.5 Faixas, Requisitos e Eventos (examinadores)
 CRUDs simples. Faixas na ordem da graduação (o examinador edita idade mínima e carência; nome,
 kyū, ordem, nível e cores, só o master); eventos do mais recente para o mais antigo. Requisitos com filtro por faixa (padrão: Branca/Cinza) e por tipo.
+Requisitos com seletor de perfil (padrão: o **principal**, com selo "Principal"; para quem
+não é master, o principal aparece com cadeado e só para leitura) e, numa etapa seguinte,
+botão "Novo perfil" (nome + perfil de origem) *(decisão do responsável, 2026-11-12)*.
 Enums sempre como seletor com rótulo em pt-BR.
 
 ### 6.6 Academia (aba de templates, examinadores)
@@ -442,6 +466,7 @@ acentuação do português.
 | Hospedagem | Tudo local |
 | Admin master e assinaturas (2026-11-02) | Grupo **master** (o primeiro examinador; outros só pelo console): único que escolhe o sensei, **não** decide exames. Certificado com 1–3 assinaturas (nome, graduação, imagem, posição), geridas pelo master e pelo sensei; ≥ 1 completa para emitir |
 | Edição de faixas (2026-11-12) | Só o **admin master** altera nome, kyū, ordem, nível e cores; os demais examinadores alteram idade mínima e carência |
+| Perfis de requisitos (2026-11-12) | Perfil **principal** fixo (Apêndice A), alterado só pelo **admin master**; os demais examinadores criam perfis próprios (cópia completa) e os editam; o evento escolhe o perfil (padrão: principal) |
 
 ---
 

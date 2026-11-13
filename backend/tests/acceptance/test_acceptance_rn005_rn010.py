@@ -379,9 +379,10 @@ def test_rn007_percent_by_kind_over_every_item_of_the_kind(
 
     # Always recomputed, never stored: a new theory item on the sheet changes the
     # percentage of the same answers (6 / 12 = 50.0), and removing it brings it back.
+    # (The master: only the admin master changes the main profile, #144.)
     new_item = ok(
         requirement_handlers.create_requirement,
-        academy.examiner,
+        academy.master,
         201,
         body={
             "belt_id": academy.belt_id("Cinza/Azul"),
@@ -399,7 +400,7 @@ def test_rn007_percent_by_kind_over_every_item_of_the_kind(
         "percent": 50.0,
     }
     assert summary["PRACTICE"] == expected["PRACTICE"]
-    ok(requirement_handlers.delete_requirement, academy.examiner, 204, path={"id": new_item["id"]})
+    ok(requirement_handlers.delete_requirement, academy.master, 204, path={"id": new_item["id"]})
     assert academy.sheet(exam_event, ana)["summary"]["THEORY"]["percent"] == 54.5
 
     # The decision does not freeze it either: the summary is the same after it.
@@ -416,7 +417,8 @@ def test_rn007_belt_without_items_of_a_kind_has_no_percent(
     guardian = academy.guardian()
     exam_event = academy.event()
     bia = academy.register(guardian, "Bia", "Branca")
-    # The examiner removes the 2 theory items of the Branca/Cinza sheet (RN017).
+    # The master removes the 2 theory items of the Branca/Cinza sheet (RN017; only
+    # the admin master changes the main profile, #144).
     theory = ok(
         requirement_handlers.list_requirements,
         academy.examiner,
@@ -424,7 +426,7 @@ def test_rn007_belt_without_items_of_a_kind_has_no_percent(
     )
     assert len(theory) == 2
     for item in theory:
-        ok(requirement_handlers.delete_requirement, academy.examiner, 204, path={"id": item["id"]})
+        ok(requirement_handlers.delete_requirement, academy.master, 204, path={"id": item["id"]})
 
     academy.clock.set(EXAM_DAY_AT)
     academy.attend(exam_event, bia)

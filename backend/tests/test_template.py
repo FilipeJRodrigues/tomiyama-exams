@@ -59,7 +59,7 @@ def _capacities(template: dict[str, Any]) -> dict[str, tuple[int, int]]:
 def test_every_table_and_gsi_is_provisioned_in_dev(template: dict[str, Any]) -> None:
     capacities = _capacities(template)
 
-    assert len(capacities) == 10  # 7 tables + 3 GSIs
+    assert len(capacities) == 11  # 7 tables + 4 GSIs
     assert all(read >= 1 and write >= 1 for read, write in capacities.values())
     for properties in _tables(template).values():
         assert properties["BillingMode"] == {"Fn::If": ["IsProd", "PAY_PER_REQUEST", "PROVISIONED"]}
@@ -72,11 +72,17 @@ def test_dev_capacity_fits_the_free_tier(template: dict[str, Any]) -> None:
     assert sum(write for _, write in capacities.values()) <= FREE_TIER_UNITS
 
 
+# The seed (and the move to the main profile, #144) writes the table and both GSIs.
+SEED_WRITERS = (
+    "RequirementsTable",
+    "RequirementsTable.by_belt",
+    "RequirementsTable.by_profile_belt",
+)
+
+
 def test_seed_table_and_gsi_get_the_most_write_capacity(template: dict[str, Any]) -> None:
     capacities = _capacities(template)
-    seed_writes = min(
-        capacities["RequirementsTable"][1], capacities["RequirementsTable.by_belt"][1]
-    )
+    seed_writes = min(capacities[name][1] for name in SEED_WRITERS)
 
     others = [
         write for name, (_, write) in capacities.items() if not name.startswith("Requirements")
@@ -123,10 +129,8 @@ def test_seed_function_outlives_the_throttled_load(template: dict[str, Any]) -> 
     timeout = template["Resources"]["SeedFunction"]["Properties"]["Timeout"]
     service_timeout = template["Resources"]["InitialData"]["Properties"]["ServiceTimeout"]
     capacities = _capacities(template)
-    # Each item writes the table and the GSI: the slower of the two sets the pace.
-    seed_writes = min(
-        capacities["RequirementsTable"][1], capacities["RequirementsTable.by_belt"][1]
-    )
+    # Each item writes the table and both GSIs: the slowest of them sets the pace.
+    seed_writes = min(capacities[name][1] for name in SEED_WRITERS)
     expected_seconds = 692 / seed_writes
 
     assert timeout >= 4 * expected_seconds

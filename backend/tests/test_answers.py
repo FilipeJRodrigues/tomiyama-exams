@@ -17,6 +17,7 @@ from conftest import (
     EXAMINER,
     EXAMINER_SUB,
     GUARDIAN,
+    MASTER,
     api_event,
     belt_id,
     make_student,
@@ -653,8 +654,9 @@ def test_rn007_answers_outside_the_belt_are_ignored() -> None:
 
 
 def _delete_requirement(requirement_id: str) -> dict[str, Any]:
+    # Items of the main profile: only the admin master deletes them (#144).
     return requirement_handlers.delete_requirement(
-        api_event(EXAMINER, path={"id": requirement_id}), None
+        api_event(MASTER, path={"id": requirement_id}), None
     )
 
 
@@ -688,7 +690,7 @@ def test_rn017_edit_keeps_the_answers_counter(items: list[Requirement], exam: Ex
         "sort_order": 1,
     }
     response = requirement_handlers.update_requirement(
-        api_event(EXAMINER, path={"id": "t1"}, body=payload), None
+        api_event(MASTER, path={"id": "t1"}, body=payload), None
     )
 
     assert response["statusCode"] == 200, response["body"]

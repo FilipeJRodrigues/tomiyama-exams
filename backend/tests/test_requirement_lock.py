@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 from botocore.exceptions import ClientError
-from conftest import EXAMINER, api_event, belt_id, make_student, response_json
+from conftest import EXAMINER, MASTER, api_event, belt_id, make_student, response_json
 
 from domain import dates
 from domain.events import EventStatus, ExamEvent
@@ -111,8 +111,9 @@ def _payload(**changes: Any) -> dict[str, Any]:
 
 
 def _put(payload: dict[str, Any]) -> dict[str, Any]:
+    # Items of the main profile: only the admin master edits them (#144).
     return requirement_handlers.update_requirement(
-        api_event(EXAMINER, path={"id": "t1"}, body=payload), None
+        api_event(MASTER, path={"id": "t1"}, body=payload), None
     )
 
 

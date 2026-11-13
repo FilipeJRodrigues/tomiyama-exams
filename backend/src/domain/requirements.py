@@ -1,4 +1,9 @@
-"""Belt requirements: one record per evaluated item (RN017)."""
+"""Belt requirements: one record per evaluated item (RN017).
+
+Every item belongs to a requirement profile (``domain.requirement_profiles``);
+the seed items and the items written before profiles existed belong to the
+main profile.
+"""
 
 import json
 import uuid
@@ -12,6 +17,7 @@ from typing import Any
 from domain import validation
 from domain.belts import Belt, seed_belt_id
 from domain.errors import ValidationError
+from domain.requirement_profiles import MAIN_PROFILE_ID
 
 _SEED_FILE = Path(__file__).resolve().parent.parent / "seed_data" / "requirements.json"
 # Fixed namespace so seeded items get the same UUID on every deploy (idempotent seed).
@@ -49,6 +55,7 @@ class Requirement:
     description: str
     expected_answer: str | None
     sort_order: int
+    profile_id: str = MAIN_PROFILE_ID
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
@@ -97,6 +104,7 @@ def build_requirement(
     *,
     requirement_id: str,
     default_sort_order: int,
+    profile_id: str = MAIN_PROFILE_ID,
 ) -> Requirement:
     """Validate the fields of a new or edited item (RN017).
 
@@ -107,6 +115,8 @@ def build_requirement(
         default_sort_order: Order used when the payload omits ``sort_order``.
             It must also fit in 0 to ``MAX_SORT_ORDER`` (RN015); a belt whose last
             item is already at the maximum needs an explicit order.
+        profile_id: Profile of the item, chosen by the caller (the body's
+            ``profile_id`` is checked by ``domain.requirement_profiles``).
 
     Returns:
         The validated item.
@@ -137,4 +147,5 @@ def build_requirement(
             maximum=MAX_SORT_ORDER,
             default=default_sort_order,
         ),
+        profile_id=profile_id,
     )

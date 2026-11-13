@@ -15,7 +15,7 @@ Issue: #47
 
 import json
 
-from conftest import EXAMINER, api_event, response_json
+from conftest import MASTER, api_event, response_json
 
 from domain.requirements import MAX_SORT_ORDER
 from handlers import requirements as requirement_handlers
@@ -23,7 +23,8 @@ from repository import requirements as requirement_repo
 
 
 def _event(payload: dict, path: dict[str, str] | None = None) -> dict:
-    event = api_event(EXAMINER, path=path)
+    # Items of the main profile: only the admin master writes them (#144).
+    event = api_event(MASTER, path=path)
     event["body"] = json.dumps(payload)
     event["isBase64Encoded"] = False
     return event

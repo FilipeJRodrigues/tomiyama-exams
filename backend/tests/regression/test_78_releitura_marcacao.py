@@ -33,7 +33,15 @@ from datetime import date
 from typing import Any
 
 import pytest
-from conftest import EXAMINER, api_event, belt_id, lag_eventual_reads, make_student, response_json
+from conftest import (
+    EXAMINER,
+    MASTER,
+    api_event,
+    belt_id,
+    lag_eventual_reads,
+    make_student,
+    response_json,
+)
 
 from domain import answers as answer_rules
 from domain import dates
@@ -156,8 +164,9 @@ def test_rn006_marking_racing_requirement_delete_answers_requirement_not_found(
         monkeypatch,
         _expect(
             204,
+            # Only the admin master deletes items of the main profile (#144).
             lambda: requirement_handlers.delete_requirement(
-                api_event(EXAMINER, path={"id": REQUIREMENT.id}), None
+                api_event(MASTER, path={"id": REQUIREMENT.id}), None
             ),
         ),
     )
