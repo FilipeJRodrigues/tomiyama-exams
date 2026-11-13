@@ -107,8 +107,8 @@ def sheet_profile_id(event: ExamEvent) -> str:
     unmarked are the target belt's items in this profile only; the copies of
     the same belt in other profiles are left out.
 
-    Until the event chooses its profile (step 3 of #144), every exam uses the
-    main profile; step 3 returns the event's profile here, and every reader of
+    Until the event chooses its profile (step 3b of #144), every exam uses the
+    main profile; step 3b returns the event's profile here, and every reader of
     the sheet follows.
     """
     return MAIN_PROFILE_ID

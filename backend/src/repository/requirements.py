@@ -9,11 +9,20 @@ cannot be deleted nor change its belt or kind.
 
 Items written before requirement profiles existed have neither
 ``profile_id`` nor ``profile_belt``: they are read as items of the main
-profile, and ``migrate_to_main_profile`` (run by the ``InitialData`` custom
-resource) writes both attributes on them. Until the exam sheet moves to
-``by_profile_belt`` (and ``by_belt`` is dropped), the main profile is listed
-through ``by_belt`` and the table, so an item not migrated yet is never left
-out of the list. The other profiles are read only through ``by_profile_belt``.
+profile, and ``migrate_to_main_profile`` (v1, run by the ``InitialData``
+custom resource) writes both attributes on them. The v2 migration
+(``migrate_profile_belts``, run right after it) checks every item again and
+fixes the ones still without a profile or whose ``profile_belt`` is not
+``<profile_id>#<belt_id>`` (moved to another belt by code from before
+profiles, or skipped by v1), waits for ``by_profile_belt`` to be ``ACTIVE``
+and only then writes its marker.
+
+Every profile is read through ``by_profile_belt``. The main profile only
+once the v2 marker is seen (``profile_index_complete``): until then (the
+deploy that runs the migrations, with the new code already answering) it is
+read the way that never leaves an item out, ``by_belt`` filtered by profile
+or, without a belt, a ``Scan`` of the table. The other profiles never need
+it: their items are always written with ``profile_belt``.
 
 Copies of a profile (``put_copy``) are written by the background copy
 (``handlers.requirement_profile_copy``), one conditional ``PutItem`` each.
@@ -28,7 +37,11 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from domain.errors import ConflictError, NotFoundError
-from domain.requirement_profiles import MAIN_PROFILE_ID, profile_belt_key
+from domain.requirement_profiles import (
+    MAIN_PROFILE_ID,
+    profile_attributes_to_fix,
+    profile_belt_key,
+)
 from domain.requirements import (
     MSG_REQUIREMENT_HAS_ANSWERS,
     MSG_REQUIREMENT_LOCKED,
@@ -41,6 +54,7 @@ from repository.tables import (
     NO_ANSWERS_CONDITION,
     REQUIREMENTS_TABLE_ENV,
     SETTINGS_TABLE_ENV,
+    DeadlineExceededError,
     get_item_or_busy,
     paginate,
     put_if_absent,
@@ -57,8 +71,52 @@ BY_PROFILE_BELT_INDEX = "by_profile_belt"
 PROFILE_BELT = "profile_belt"
 SEED_MARKER_ID = "seed:requirements:v1"
 PROFILE_MIGRATION_MARKER_ID = "migration:requirements:main-profile:v1"
+# Written once by the v2 migration: from then on every item, the main ones
+# included, is in ``by_profile_belt`` under its current belt. Never deleted
+# while this code runs (only by hand, before deploying it again after a
+# rollback to code from before profiles; see backend/README.md).
+PROFILE_BELT_MIGRATION_MARKER_ID = "migration:requirements:profile-belt:v2"
 # Items read per page of the migration scan, to spread its reads (~5 RCU a page).
 MIGRATION_PAGE_SIZE = 100
+# Seconds between two checks of the status of ``by_profile_belt`` while it is
+# being built (CloudFormation does not wait for a new GSI to be ``ACTIVE``).
+INDEX_POLL_SECONDS = 10
+
+# Whether this container has seen the v2 marker (``profile_index_complete``).
+# Only ``True`` is kept: the marker is not deleted while this code runs, so
+# once seen it stays (a container ends with its code version).
+_profile_index_seen = False
+
+
+def reset_cache() -> None:
+    """Forget the v2 marker seen by this container (used by tests between mocked tables)."""
+    global _profile_index_seen
+    _profile_index_seen = False
+
+
+def profile_index_complete() -> bool:
+    """Return whether the v2 migration finished, so the main profile may use ``by_profile_belt``.
+
+    Reads the marker in ``Settings`` until it is seen, then keeps the answer
+    in memory for the life of the container (the marker is not deleted while
+    this code runs).
+    The read is eventually consistent (0.5 RCU): it can miss a marker written
+    a moment ago, never see one that is not there, and missing it only keeps
+    the complete fallback (``by_belt`` or the table) one request longer.
+
+    Raises:
+        ServiceUnavailableError: If ``Settings`` kept throttling (503).
+    """
+    global _profile_index_seen
+    if not _profile_index_seen:
+        item = get_item_or_busy(
+            table(SETTINGS_TABLE_ENV),
+            {"id": PROFILE_BELT_MIGRATION_MARKER_ID},
+            ProjectionExpression="#id",
+            ExpressionAttributeNames={"#id": "id"},
+        )
+        _profile_index_seen = item is not None
+    return _profile_index_seen
 
 
 def _attributes(requirement: Requirement) -> dict[str, Any]:
@@ -108,15 +166,8 @@ def list_by_belt(belt_id: str) -> list[Requirement]:
     return [_from_item(item) for item in items]
 
 
-def list_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
-    """Return the items of one profile in a belt, in sheet order (no page limit cuts it).
-
-    The main profile is read through ``by_belt`` (items without ``profile_id``
-    count as main), so the list is complete before and during the migration;
-    other profiles come from ``by_profile_belt``.
-    """
-    if profile_id == MAIN_PROFILE_ID:
-        return [item for item in list_by_belt(belt_id) if item.profile_id == MAIN_PROFILE_ID]
+def _query_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
+    """Return the items of one profile in a belt from ``by_profile_belt``, in sheet order."""
     items = paginate(
         table(REQUIREMENTS_TABLE_ENV).query,
         IndexName=BY_PROFILE_BELT_INDEX,
@@ -125,13 +176,51 @@ def list_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
     return [_from_item(item) for item in items]
 
 
-def list_profile_belts(profile_id: str, belt_ids: Iterable[str]) -> list[Requirement]:
-    """Return every item of one profile, belt by belt (``list_profile_belt`` for each belt).
+def _needs_fallback(profile_id: str) -> bool:
+    """Whether the items of ``profile_id`` may still be missing from ``by_profile_belt``.
 
-    For a profile other than the main one this reads only its own items
-    (``by_profile_belt``), whatever the size of the other profiles.
+    Only the main profile, and only until the v2 migration finished.
     """
-    return [item for belt_id in belt_ids for item in list_profile_belt(profile_id, belt_id)]
+    return profile_id == MAIN_PROFILE_ID and not profile_index_complete()
+
+
+def list_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
+    """Return the items of one profile in a belt, in sheet order (no page limit cuts it).
+
+    One query on ``by_profile_belt``, which reads only this profile's items
+    of the belt. Until the v2 migration finished, the main profile is read
+    from ``by_belt`` instead (every profile's items of the belt, the ones
+    without ``profile_id`` counted as main), so the list is never missing an
+    item not migrated yet.
+
+    Raises:
+        ServiceUnavailableError: If a page or the marker read kept throttling (503).
+    """
+    if _needs_fallback(profile_id):
+        return [item for item in list_by_belt(belt_id) if item.profile_id == MAIN_PROFILE_ID]
+    return _query_profile_belt(profile_id, belt_id)
+
+
+def list_profile_belts(profile_id: str, belt_ids: Iterable[str]) -> list[Requirement]:
+    """Return every item of one profile in the given belts, belt by belt.
+
+    One query on ``by_profile_belt`` per belt, which reads only this
+    profile's items, whatever the size of the other profiles. Until the v2
+    migration finished, the main profile is read with one ``Scan`` of the
+    table instead (the marker is read once for all belts).
+
+    Raises:
+        ServiceUnavailableError: If a page or the marker read kept throttling (503).
+    """
+    wanted = list(belt_ids)
+    if _needs_fallback(profile_id):
+        belts = set(wanted)
+        return [
+            item
+            for item in list_all()
+            if item.profile_id == MAIN_PROFILE_ID and item.belt_id in belts
+        ]
+    return [item for belt_id in wanted for item in _query_profile_belt(profile_id, belt_id)]
 
 
 def list_all() -> list[Requirement]:
@@ -140,9 +229,11 @@ def list_all() -> list[Requirement]:
 
 
 def list_by_profile(profile_id: str) -> list[Requirement]:
-    """Return every item of one profile, of every belt (unordered).
+    """Return every item of one profile, of every belt (unordered), with a ``Scan``.
 
-    Items without ``profile_id`` count as main (see ``list_profile_belt``).
+    Reads the whole table (every profile), so no route uses it: they read a
+    profile belt by belt (``list_profile_belts``). Items without
+    ``profile_id`` count as main.
     """
     return [item for item in list_all() if item.profile_id == profile_id]
 
@@ -388,3 +479,199 @@ def _move_to_main_profile(target: Any, item: dict[str, Any], deadline: float | N
             return False
         raise
     return True
+
+
+_PROFILE_ATTRIBUTE_NAMES = {
+    "#id": "id",
+    "#belt": "belt_id",
+    "#profile": "profile_id",
+    "#profile_belt": PROFILE_BELT,
+}
+_PROFILE_ATTRIBUTES_PROJECTION = "#id, #belt, #profile, #profile_belt"
+
+
+def migrate_profile_belts(*, deadline: float | None = None) -> int:
+    """Check every item's profile attributes once and fix them (v2 migration, #144).
+
+    Fixes (a) items still without ``profile_id`` (they go to the main
+    profile) and (b) items whose ``profile_belt`` is missing or is not
+    ``<profile_id>#<belt_id>`` (moved to another belt by code from before
+    profiles, during a deploy or after a rollback, or skipped by v1 because
+    the belt changed between its scan and its write). Each fix is an
+    ``UpdateItem`` of those two attributes only, conditioned on the item
+    still having the values read (``belt_id``, ``profile_id`` and
+    ``profile_belt``, or their absence): the rest of the item
+    (``answer_count`` included) never changes, and an item deleted meanwhile
+    is not recreated. If the item changed between the read and the write, it
+    is read again (consistent) and fixed again if still needed, so the
+    marker is never written over an item left wrong.
+
+    Then it waits for ``by_profile_belt`` to be ``ACTIVE`` (CloudFormation
+    does not wait for a new GSI to be built) and writes the marker
+    ``PROFILE_BELT_MIGRATION_MARKER_ID``: from then on the main profile is
+    read through ``by_profile_belt`` (``profile_index_complete``). Later
+    deploys skip it (marker read with ``ConsistentRead``). A run that stops
+    (deadline or error) writes no marker, and the next one checks again.
+    Throttled pages, reads and writes and writes that meet a marking in
+    progress (``TransactionConflictException``) are retried with backoff
+    until ``deadline``.
+
+    Args:
+        deadline: ``time.monotonic()`` value after which the migration stops
+            (``DeadlineExceededError``) without writing the marker.
+
+    Returns:
+        Number of items fixed.
+    """
+    settings = table(SETTINGS_TABLE_ENV)
+    marker = settings.get_item(Key={"id": PROFILE_BELT_MIGRATION_MARKER_ID}, ConsistentRead=True)
+    if marker.get("Item"):
+        logger.info("Requirements profile_belt migration already applied")
+        return 0
+
+    requirements_table = table(REQUIREMENTS_TABLE_ENV)
+    scan_arguments: dict[str, Any] = {
+        "Limit": MIGRATION_PAGE_SIZE,
+        "ProjectionExpression": _PROFILE_ATTRIBUTES_PROJECTION,
+        "ExpressionAttributeNames": dict(_PROFILE_ATTRIBUTE_NAMES),
+    }
+    fixed = 0
+    while True:
+        page = retry_throttled(
+            lambda: requirements_table.scan(**scan_arguments),
+            "scanning Requirements for the profile_belt migration",
+            deadline=deadline,
+        )
+        for item in page.get("Items", []):
+            if _fix_profile_attributes(requirements_table, item, deadline):
+                fixed += 1
+        last_key = page.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_arguments["ExclusiveStartKey"] = last_key
+    wait_for_profile_index(deadline=deadline)
+    put_if_absent(settings, {"id": PROFILE_BELT_MIGRATION_MARKER_ID}, deadline=deadline)
+    logger.info("Fixed the profile attributes of %d requirements", fixed)
+    return fixed
+
+
+def _fix_profile_attributes(target: Any, item: dict[str, Any], deadline: float | None) -> bool:
+    """Write the right ``profile_id`` and ``profile_belt`` on one item, if wrong.
+
+    Returns:
+        True if this call wrote the item; False if it was already right (or
+        was made right by someone else meanwhile) or was deleted meanwhile.
+    """
+    key = {"id": item["id"]}
+    while True:
+        fix = profile_attributes_to_fix(
+            item.get("profile_id"), item.get(PROFILE_BELT), item["belt_id"]
+        )
+        if fix is None:
+            return False
+        if _write_profile_attributes(target, item, fix, deadline):
+            return True
+        # Changed between the read and the write: look again at what is stored now.
+        fresh = retry_throttled(
+            lambda: target.get_item(
+                Key=key,
+                ConsistentRead=True,
+                ProjectionExpression=_PROFILE_ATTRIBUTES_PROJECTION,
+                ExpressionAttributeNames=dict(_PROFILE_ATTRIBUTE_NAMES),
+            ),
+            f"reading {key['id']!r} again for the profile_belt migration",
+            deadline=deadline,
+        ).get("Item")
+        if fresh is None:
+            return False
+        item = fresh
+
+
+def _write_profile_attributes(
+    target: Any, item: dict[str, Any], fix: tuple[str, str], deadline: float | None
+) -> bool:
+    """Conditional ``UpdateItem`` of the two profile attributes; False if the item changed.
+
+    The condition requires the item to exist with the ``belt_id``,
+    ``profile_id`` and ``profile_belt`` read (an absent attribute must still
+    be absent). A ``TransactionConflictException`` (a marking holding the
+    item, RN006) is retried by ``retry_throttled`` like throttling.
+    """
+    profile_id, profile_belt = fix
+    names = {"#belt": "belt_id", "#profile": "profile_id", "#profile_belt": PROFILE_BELT}
+    values: dict[str, Any] = {
+        ":profile": profile_id,
+        ":profile_belt": profile_belt,
+        ":belt": item["belt_id"],
+    }
+    conditions = ["attribute_exists(id)", "#belt = :belt"]
+    for name, attribute in (("#profile", "profile_id"), ("#profile_belt", PROFILE_BELT)):
+        if attribute in item:
+            placeholder = f":read_{attribute}"
+            conditions.append(f"{name} = {placeholder}")
+            values[placeholder] = item[attribute]
+        else:
+            conditions.append(f"attribute_not_exists({name})")
+    try:
+        retry_throttled(
+            lambda: target.update_item(
+                Key={"id": item["id"]},
+                UpdateExpression="SET #profile = :profile, #profile_belt = :profile_belt",
+                ConditionExpression=" AND ".join(conditions),
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            ),
+            f"fixing the profile attributes of {item['id']!r}",
+            deadline=deadline,
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
+
+
+def wait_for_profile_index(
+    *,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """Return once ``by_profile_belt`` is ``ACTIVE`` (built and readable).
+
+    When a deploy adds the index, CloudFormation goes on without waiting for
+    DynamoDB to build it, and a query on an index still being built fails.
+    The v2 marker switches the main profile to the index, so it is written
+    only after this. Checked with ``DescribeTable`` every
+    ``INDEX_POLL_SECONDS`` (``sleep`` and ``clock`` injected for tests).
+
+    Raises:
+        DeadlineExceededError: Still not ``ACTIVE`` when the deadline passed.
+        RuntimeError: The table has no such index (the template was not deployed).
+    """
+    requirements_table = table(REQUIREMENTS_TABLE_ENV)
+    client = requirements_table.meta.client
+    while True:
+        description = retry_throttled(
+            lambda: client.describe_table(TableName=requirements_table.name),
+            "describing Requirements",
+            deadline=deadline,
+            sleep=sleep,
+            clock=clock,
+        )
+        status = next(
+            (
+                index.get("IndexStatus")
+                for index in description["Table"].get("GlobalSecondaryIndexes", [])
+                if index["IndexName"] == BY_PROFILE_BELT_INDEX
+            ),
+            None,
+        )
+        if status is None:
+            raise RuntimeError(f"Index {BY_PROFILE_BELT_INDEX} not found on Requirements")
+        if status == "ACTIVE":
+            return
+        if deadline is not None and clock() + INDEX_POLL_SECONDS >= deadline:
+            raise DeadlineExceededError(f"Index {BY_PROFILE_BELT_INDEX} still {status}")
+        logger.info("Index %s is %s; checking again soon", BY_PROFILE_BELT_INDEX, status)
+        sleep(INDEX_POLL_SECONDS)

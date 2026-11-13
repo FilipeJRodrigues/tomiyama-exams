@@ -94,9 +94,11 @@ def _get_or_404(requirement_id: str) -> Requirement:
 def list_requirements(event: Event, context: Any) -> Response:
     """List the items of one profile (default: main), optionally filtered by belt and kind.
 
-    A profile still copying lists the items copied so far. Without a belt,
-    the main profile is read from the table and the others belt by belt from
-    their index, so their cost does not grow with the other profiles.
+    A profile still copying lists the items copied so far. Every profile is
+    read from its own index entries (``by_profile_belt``, belt by belt
+    without a belt filter), so the cost does not grow with the other
+    profiles; until the v2 migration finished, the main profile is read the
+    complete way instead (see ``repository.requirements``).
 
     Checks, in order: examiner (403), kind filter (400), profile (404) and belt (404).
     """
@@ -110,8 +112,6 @@ def list_requirements(event: Event, context: Any) -> Response:
         if belt_id not in {belt.id for belt in belts}:
             raise NotFoundError("Faixa não encontrada")
         items = requirement_repo.list_profile_belt(profile.id, belt_id)
-    elif profile.is_main:
-        items = requirement_repo.list_by_profile(profile.id)
     else:
         items = requirement_repo.list_profile_belts(profile.id, [belt.id for belt in belts])
     if kind:

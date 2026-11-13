@@ -33,6 +33,7 @@ from functools import lru_cache
 from typing import Any
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from domain.errors import ConflictError
@@ -484,9 +485,30 @@ def mark_copy_not_started(profile_id: str) -> bool:
     return True
 
 
+# The asynchronous ``Invoke`` answers in milliseconds (Lambda only queues the
+# event). These bound a call that hangs, so the POST that starts the copy
+# still answers inside its 10 s function timeout: at most
+# ``LAMBDA_MAX_ATTEMPTS`` attempts (the first and one retry, "standard" mode,
+# which also retries throttling, 5xx and timeouts), each up to
+# ``LAMBDA_CONNECT_TIMEOUT_SECONDS`` to connect and
+# ``LAMBDA_READ_TIMEOUT_SECONDS`` to read, with at most 1 s between them:
+# about 7 s in the worst case. Without them botocore waits up to 60 s per
+# attempt. A retried event may be queued twice; the copy is idempotent.
+LAMBDA_CONNECT_TIMEOUT_SECONDS = 1
+LAMBDA_READ_TIMEOUT_SECONDS = 2
+LAMBDA_MAX_ATTEMPTS = 2
+
+
 @lru_cache(maxsize=1)
 def _lambda_client() -> Any:
-    return boto3.client("lambda")
+    return boto3.client(
+        "lambda",
+        config=Config(
+            connect_timeout=LAMBDA_CONNECT_TIMEOUT_SECONDS,
+            read_timeout=LAMBDA_READ_TIMEOUT_SECONDS,
+            retries={"mode": "standard", "total_max_attempts": LAMBDA_MAX_ATTEMPTS},
+        ),
+    )
 
 
 def reset_cache() -> None:
@@ -499,6 +521,8 @@ def start_copy(profile_id: str) -> bool:
 
     Lambda queues the event and answers at once; the copy function then
     runs with up to two automatic retries if it fails (``EventInvokeConfig``).
+    A call that hangs gives up after the client's timeouts (about 7 s in the
+    worst case, see ``LAMBDA_MAX_ATTEMPTS``).
 
     Returns:
         False if the copy could not be queued (the error is logged); the
