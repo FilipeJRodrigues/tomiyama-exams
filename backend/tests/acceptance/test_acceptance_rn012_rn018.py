@@ -27,6 +27,7 @@ from acceptance_support import (
     MSG_INVALID_IMAGE,
     MSG_LOGIN,
     MSG_LOGO_NOT_FOUND,
+    MSG_MASTER_ONLY_BELT_FIELDS,
     MSG_ONLY_MASTER_OR_SENSEI,
     MSG_REQUIREMENT_BELT_NOT_FOUND,
     MSG_REQUIREMENT_NOT_FOUND,
@@ -496,9 +497,10 @@ def test_rn015_only_examiners_edit_belts_with_valid_unique_values(
         ({"color_secondary": "azul"}, 400, "Cor das pontas: use o formato #RRGGBB"),
     )
     for change, status, message in invalid:
+        # Name and order are the master's (#142): only he can reach the uniqueness check.
         refused(
             belt_handlers.update_belt,
-            academy.examiner,
+            academy.master if status == 409 else academy.examiner,
             status,
             message,
             body=_belt_form(cinza, **change),
@@ -509,11 +511,31 @@ def test_rn015_only_examiners_edit_belts_with_valid_unique_values(
         "Azul/Amarela", "BELT", msg_minimum_age("Azul/Amarela", 8)
     )
 
-    # A valid edit by an examiner, zero included; the rules follow the edited table.
-    edited = ok(
+    # Any other examiner changes only the minimum age and the months (#142).
+    for change in ({"name": "Cinza claro"}, {"sort_order": 40}, {"color_primary": "#000000"}):
+        refused(
+            belt_handlers.update_belt,
+            academy.examiner,
+            403,
+            MSG_MASTER_ONLY_BELT_FIELDS,
+            body=_belt_form(cinza, **change),
+            path=cinza_path,
+        )
+    assert ok(belt_handlers.list_belts, academy.examiner) == original
+
+    # A valid edit by an examiner (age and months, zero included) and by the master
+    # (colours, name); the rules follow the edited table.
+    by_examiner = ok(
         belt_handlers.update_belt,
         academy.examiner,
-        body=_belt_form(target, min_age_years=7, min_months_previous=0, color_secondary="#FFD500"),
+        body=_belt_form(target, min_age_years=7, min_months_previous=0),
+        path=target_path,
+    )
+    assert (by_examiner["min_age_years"], by_examiner["min_months_previous"]) == (7, 0)
+    edited = ok(
+        belt_handlers.update_belt,
+        academy.master,
+        body=_belt_form(by_examiner, color_secondary="#FFD500"),
         path=target_path,
     )
     assert (edited["min_age_years"], edited["min_months_previous"], edited["color_secondary"]) == (
@@ -523,7 +545,7 @@ def test_rn015_only_examiners_edit_belts_with_valid_unique_values(
     )
     zero_age = ok(
         belt_handlers.update_belt,
-        academy.examiner,
+        academy.master,
         body=_belt_form(cinza, min_age_years=0, name="Cinza claro"),
         path=cinza_path,
     )
