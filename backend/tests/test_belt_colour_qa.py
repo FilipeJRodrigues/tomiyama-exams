@@ -12,11 +12,12 @@ from typing import Any
 
 import boto3
 import pytest
-from conftest import EXAMINER, api_event, belt, response_json
+from conftest import EXAMINER, MASTER, api_event, belt, response_json
 
 from domain import validation
 from domain.belts import Belt
 from domain.errors import ValidationError
+from domain.users import User
 from handlers import belts as belt_handlers
 
 FIELDS = [
@@ -109,9 +110,11 @@ def _form(source: Belt, **changes: Any) -> dict[str, Any]:
     return {**{key: value for key, value in source.to_dict().items() if key != "id"}, **changes}
 
 
-def _put(source: Belt, **changes: Any) -> dict[str, Any]:
+def _put(source: Belt, *, by: User = EXAMINER, **changes: Any) -> dict[str, Any]:
+    # Malformed colours are a 400 for any examiner; a valid new colour is only the
+    # master's to save (#142), so the tests that save one send it as the master.
     return belt_handlers.update_belt(
-        api_event(EXAMINER, body=_form(source, **changes), path={"id": source.id}), None
+        api_event(by, body=_form(source, **changes), path={"id": source.id}), None
     )
 
 
@@ -161,7 +164,7 @@ def test_rn015_route_stores_valid_colours_in_upper_case(
 ) -> None:
     cinza = belt("Cinza")
 
-    response = _put(cinza, **{field: color})
+    response = _put(cinza, by=MASTER, **{field: color})
 
     assert response["statusCode"] == 200, response.get("body")
     assert response_json(response)[field] == color.upper()
@@ -178,7 +181,7 @@ def test_rn015_route_empty_secondary_colour_means_no_tips(
     two_colours = belt("Cinza/Azul")
     assert two_colours.color_secondary is not None
 
-    response = _put(two_colours, color_secondary=empty)
+    response = _put(two_colours, by=MASTER, color_secondary=empty)
 
     assert response["statusCode"] == 200, response.get("body")
     assert response_json(response)["color_secondary"] is None
@@ -190,7 +193,7 @@ def test_rn015_route_missing_secondary_colour_means_no_tips(seeded: list[Belt]) 
     del form["color_secondary"]
 
     response = belt_handlers.update_belt(
-        api_event(EXAMINER, body=form, path={"id": two_colours.id}), None
+        api_event(MASTER, body=form, path={"id": two_colours.id}), None
     )
 
     assert response["statusCode"] == 200, response.get("body")

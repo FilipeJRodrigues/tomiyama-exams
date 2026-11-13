@@ -6,7 +6,14 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from domain.belts import Belt, BeltLevel, sort_belts
+from domain.belts import (
+    EXAMINER_EDITABLE_FIELDS,
+    MSG_BELT_NOT_FOUND,
+    Belt,
+    BeltLevel,
+    sort_belts,
+)
+from domain.errors import NotFoundError
 from repository.tables import (
     BELTS_TABLE_ENV,
     get_item_or_busy,
@@ -45,13 +52,20 @@ def list_belts() -> list[Belt]:
     return sort_belts(_from_item(item) for item in items)
 
 
-def get_belt(belt_id: str) -> Belt | None:
-    """Return a belt by id, or None (eventually consistent).
+def get_belt(belt_id: str, *, consistent: bool = False) -> Belt | None:
+    """Return a belt by id, or None.
+
+    Args:
+        belt_id: Belt id.
+        consistent: True for a strongly consistent read (``ConsistentRead``),
+            when the belt decides the answer (404 or 403 of ``PUT /belts/{id}``);
+            the exam sheet only shows it and reads it eventually consistent.
 
     Raises:
         ServiceUnavailableError: If the table kept throttling (503).
     """
-    item = get_item_or_busy(table(BELTS_TABLE_ENV), {"id": belt_id})
+    options = {"ConsistentRead": True} if consistent else {}
+    item = get_item_or_busy(table(BELTS_TABLE_ENV), {"id": belt_id}, **options)
     return _from_item(item) if item else None
 
 
@@ -68,6 +82,45 @@ def save_belt(belt: Belt) -> None:
     except ClientError as exc:
         raise_if_throttled(exc, "PutItem on Belts")
         raise
+
+
+def save_examiner_fields(belt: Belt) -> Belt:
+    """Write only the fields any examiner may change (RN001, RN002) and return the stored belt.
+
+    The ``UpdateItem`` sets only ``min_age_years`` and ``min_months_previous``,
+    so a concurrent edit of the other fields by the admin master (name, order,
+    colours...) is never undone by values read before it. It only writes if
+    the belt still exists, so no partial item is ever created.
+
+    Args:
+        belt: Belt with the new numbers (other fields are ignored).
+
+    Returns:
+        The belt as stored after the write (``ReturnValues=ALL_NEW``).
+
+    Raises:
+        NotFoundError: If the belt no longer exists.
+        ServiceUnavailableError: If the write kept throttling (503).
+    """
+    values = belt.to_dict()
+    names = {f"#f{index}": field for index, field in enumerate(EXAMINER_EDITABLE_FIELDS)}
+    try:
+        response = table(BELTS_TABLE_ENV).update_item(
+            Key={"id": belt.id},
+            UpdateExpression="SET " + ", ".join(f"{name} = :{name[1:]}" for name in names),
+            ConditionExpression="attribute_exists(id)",
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues={
+                f":{name[1:]}": values[field] for name, field in names.items()
+            },
+            ReturnValues="ALL_NEW",
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise NotFoundError(MSG_BELT_NOT_FOUND) from exc
+        raise_if_throttled(exc, "UpdateItem on Belts")
+        raise
+    return _from_item(response["Attributes"])
 
 
 def seed_belts(belts: Iterable[Belt], *, deadline: float | None = None) -> int:

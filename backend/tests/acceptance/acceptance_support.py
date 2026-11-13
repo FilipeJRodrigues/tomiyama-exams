@@ -100,6 +100,9 @@ MSG_LOGO_NOT_FOUND = "Logo não encontrado"  # RN012
 MSG_ONLY_MASTER_OR_SENSEI = "Somente o master e o sensei gerem as assinaturas"  # RN012
 MSG_BELT_NAME_TAKEN = "Já existe uma faixa com este nome"  # RN015
 MSG_BELT_ORDER_TAKEN = "Já existe uma faixa com esta ordem"  # RN015
+MSG_MASTER_ONLY_BELT_FIELDS = (  # RN015, decision of 2026-11-12 (#142)
+    "Somente o administrador master altera nome, kyū, ordem, nível e cores da faixa"
+)
 MSG_REQUIREMENT_BELT_NOT_FOUND = "Faixa: faixa não encontrada"  # RN017
 MSG_REQUIREMENT_NOT_FOUND = "Requisito não encontrado"  # RN017
 

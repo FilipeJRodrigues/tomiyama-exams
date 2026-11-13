@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from conftest import EXAMINER, GUARDIAN, api_event, belt, belt_id, response_json
+from conftest import EXAMINER, GUARDIAN, MASTER, api_event, belt, belt_id, response_json
 
 from domain.belts import SEED_BELTS, BeltLevel, apply_belt_update, next_belt, previous_belt
 from domain.errors import ConflictError, ValidationError
@@ -140,5 +140,6 @@ def test_rn015_examiner_edits_belt(seeded: list) -> None:
 
 
 def test_rn015_conflict_returns_409(seeded: list) -> None:
-    event = api_event(EXAMINER, path={"id": belt_id("Cinza")}, body=_payload(name="Azul"))
+    # Only the admin master changes the name (#142), so only he can hit the conflict.
+    event = api_event(MASTER, path={"id": belt_id("Cinza")}, body=_payload(name="Azul"))
     assert belt_handlers.update_belt(event, None)["statusCode"] == 409
