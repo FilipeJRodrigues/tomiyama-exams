@@ -5,6 +5,7 @@ import { createApiClient } from '../../src/api/client';
 import { listBelts, updateBelt } from '../../src/api/queries';
 import type { Belt, BeltInput } from '../../src/api/types';
 import { createMockAuth } from '../../src/auth/mockAuth';
+import { MOCK_MASTER_EMAIL } from '../../src/auth/mockConstants';
 import type { Role } from '../../src/auth/types';
 import { createMockDb, mockBelts, type MockDb } from '../../src/mocks/data';
 import { createHandlers } from '../../src/mocks/handlers';
@@ -14,9 +15,14 @@ const CINZA = mockBelts.find((belt) => belt.name === 'Cinza')!;
 
 let db: MockDb;
 
-async function apiAs(role: Role | null) {
+/** `master` is the simulated admin master; `examiner` any other examiner (#143). */
+async function apiAs(role: Role | 'master' | null) {
   const auth = createMockAuth(null);
-  if (role) await auth.signIn({ email: 'pessoa@example.com', password: 'senha-teste', role });
+  if (role === 'master') {
+    await auth.signIn({ email: MOCK_MASTER_EMAIL, password: 'senha-teste', role: 'examiner' });
+  } else if (role) {
+    await auth.signIn({ email: 'pessoa@example.com', password: 'senha-teste', role });
+  }
   return createApiClient({ baseUrl: TEST_API_URL, getToken: () => auth.getIdToken() });
 }
 
@@ -35,9 +41,12 @@ function inputOf(belt: Belt): BeltInput {
 
 type RawBody = Record<string, unknown>;
 
-/** Sends a raw body (fields of any type), like a client the form does not control. */
+/**
+ * Sends a raw body (fields of any type), like a client the form does not control, as the
+ * admin master: the only one who changes every field (#143).
+ */
 async function putRaw(body: RawBody, id = CINZA.id) {
-  const api = await apiAs('examiner');
+  const api = await apiAs('master');
   return updateBelt(api, id, body as unknown as BeltInput);
 }
 
@@ -50,7 +59,8 @@ describe('simulated PUT /belts/{id}', () => {
   });
 
   it('saves every field, colors in upper case, and the list follows', async () => {
-    const api = await apiAs('examiner');
+    // A new name: only the admin master changes it (#143).
+    const api = await apiAs('master');
     const saved = await updateBelt(api, CINZA.id, {
       ...inputOf(CINZA),
       name: ' Cinza clara ',
@@ -130,5 +140,70 @@ describe('simulated PUT /belts/{id}', () => {
     });
     // The belt's own name and order are fine.
     await expect(putRaw(BASE)).resolves.toEqual(CINZA);
+  });
+});
+
+describe('simulated PUT /belts/{id} by profile (#142, #143)', () => {
+  const ONLY_MASTER =
+    'Somente o administrador master altera nome, kyū, ordem, nível e cores da faixa';
+
+  beforeEach(() => {
+    db = createMockDb();
+    server.use(...createHandlers({ baseUrl: TEST_API_URL, db }));
+  });
+
+  it('rn001 rn002 an examiner who is not the master changes the minimum age and months', async () => {
+    const api = await apiAs('examiner');
+    const saved = await updateBelt(api, CINZA.id, {
+      ...inputOf(CINZA),
+      min_age_years: 99,
+      min_months_previous: 240,
+    });
+    expect(saved).toEqual({ ...CINZA, min_age_years: 99, min_months_previous: 240 });
+    expect(db.belts.find((belt) => belt.id === CINZA.id)).toEqual(saved);
+  });
+
+  it('refuses with 403 another name, kyū, order, level or color from him, saving nothing', async () => {
+    const api = await apiAs('examiner');
+    const changes: Partial<BeltInput>[] = [
+      { name: 'Cinza clara' },
+      { kyu: 9 },
+      { kyu: null },
+      { sort_order: 50 },
+      { level: 'INTERMEDIATE' },
+      { color_primary: '#000000' },
+      { color_secondary: '#1E63C6' },
+    ];
+    for (const change of changes) {
+      await expect(
+        updateBelt(api, CINZA.id, { ...inputOf(CINZA), min_age_years: 7, ...change }),
+      ).rejects.toMatchObject({ status: 403, message: ONLY_MASTER });
+    }
+    expect(db.belts.find((belt) => belt.id === CINZA.id)).toEqual(CINZA);
+  });
+
+  it('still answers the 400 of an age or months out of range to him', async () => {
+    const api = await apiAs('examiner');
+    await expect(
+      updateBelt(api, CINZA.id, { ...inputOf(CINZA), min_age_years: 100 }),
+    ).rejects.toMatchObject({ status: 400, message: 'Idade mínima: deve estar entre 0 e 99' });
+    await expect(
+      updateBelt(api, CINZA.id, { ...inputOf(CINZA), min_months_previous: 241 }),
+    ).rejects.toMatchObject({ status: 400, message: 'Carência: deve estar entre 0 e 240' });
+  });
+
+  it('the admin master changes every field', async () => {
+    const api = await apiAs('master');
+    const input: BeltInput = {
+      name: 'Cinza clara',
+      kyu: 10,
+      sort_order: 50,
+      level: 'INTERMEDIATE',
+      min_age_years: 6,
+      min_months_previous: 4,
+      color_primary: '#AAAAAA',
+      color_secondary: '#1E63C6',
+    };
+    await expect(updateBelt(api, CINZA.id, input)).resolves.toEqual({ id: CINZA.id, ...input });
   });
 });

@@ -5,7 +5,9 @@ import {
   beltInputOf,
   firstInvalidField,
   formValuesOf,
+  limitsInputOf,
   validateBeltForm,
+  validateLimits,
   type BeltFormValues,
 } from '../../../src/features/belts/beltFormModel';
 import { mockBelts } from '../../../src/mocks/data';
@@ -156,5 +158,59 @@ describe('belt form model (§ 6.5)', () => {
       '1',
     ]);
     expect(KYU_OPTIONS[0]?.label).toBe('Sem kyū');
+  });
+});
+
+describe('belt form model of an examiner who is not the admin master (#143)', () => {
+  it('rn001 rn002 sends the typed age and months, and every other field as read', () => {
+    // Even fields the form would change (spaces, lower case) go exactly as read.
+    const read = { ...CINZA_AZUL, name: ' Cinza/Azul ', color_secondary: '#1e63c6' };
+    const values = valuesWith({
+      name: 'Outra',
+      sortOrder: '50',
+      kyu: '1',
+      level: 'INTERMEDIATE',
+      colorPrimary: '#000000',
+      colorSecondary: '',
+      minAgeYears: ' 8 ',
+      minMonthsPrevious: '240',
+    });
+    expect(limitsInputOf(read, values)).toEqual({
+      name: ' Cinza/Azul ',
+      kyu: 9,
+      sort_order: 3,
+      level: 'BASIC',
+      min_age_years: 8,
+      min_months_previous: 240,
+      color_primary: '#9E9E9E',
+      color_secondary: '#1e63c6',
+    });
+  });
+
+  it('keeps null kyū and tips as read', () => {
+    expect(limitsInputOf(BRANCA, formValuesOf(BRANCA))).toMatchObject({
+      kyu: null,
+      color_secondary: null,
+    });
+  });
+
+  it('rn001 rn002 checks only the age and the months, with the same messages', () => {
+    const errors = validateLimits(
+      valuesWith({ name: '', colorPrimary: 'cinza', minAgeYears: '100', minMonthsPrevious: '' }),
+    );
+    expect(errors).toEqual({
+      minAgeYears: 'Use um número inteiro de 0 a 99.',
+      minMonthsPrevious: 'Informe a carência.',
+    });
+    expect(firstInvalidField(errors)).toBe('minAgeYears');
+    expect(validateLimits(valuesWith({ minAgeYears: '', minMonthsPrevious: '241' }))).toEqual({
+      minAgeYears: 'Informe a idade mínima.',
+      minMonthsPrevious: 'Use um número inteiro de 0 a 240.',
+    });
+  });
+
+  it('rn001 rn002 accepts 0 and the ceilings (age 99, months 240)', () => {
+    expect(validateLimits(valuesWith({ minAgeYears: '0', minMonthsPrevious: '0' }))).toEqual({});
+    expect(validateLimits(valuesWith({ minAgeYears: '99', minMonthsPrevious: '240' }))).toEqual({});
   });
 });

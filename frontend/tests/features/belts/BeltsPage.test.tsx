@@ -47,9 +47,10 @@ function rowNames(): string[] {
   return tableRows().map((cells) => cells[1] ?? '');
 }
 
-async function openBelts(role: 'examiner' | 'guardian' = 'examiner') {
+/** The edits below change name, order and colors: fields only for the admin master (#143). */
+async function openBelts(role: 'master' | 'examiner' | 'guardian' = 'master') {
   const result = await renderApp({ route: '/faixas', signedInAs: role });
-  if (role === 'examiner') await screen.findByRole('table', { name: 'Faixas' });
+  if (role !== 'guardian') await screen.findByRole('table', { name: 'Faixas' });
   return result;
 }
 

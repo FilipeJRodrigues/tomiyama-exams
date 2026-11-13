@@ -66,7 +66,8 @@ function controlPuts(): PutControl {
 }
 
 async function openBelts(): Promise<RenderAppResult> {
-  const result = await renderApp({ route: '/faixas', signedInAs: 'examiner' });
+  // Enter in the Nome field: a field only for the admin master (#143).
+  const result = await renderApp({ route: '/faixas', signedInAs: 'master' });
   await screen.findByRole('heading', { name: 'Faixas', level: 1 });
   await screen.findByRole('button', { name: 'Editar faixa Cinza' });
   return result;
