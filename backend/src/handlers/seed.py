@@ -3,7 +3,10 @@
 The load is idempotent: running it again neither duplicates items nor
 overwrites edits made on screen. After the seed it moves the requirements
 written before profiles existed to the main profile, once, with its own
-marker (``repository.requirements.migrate_to_main_profile``).
+marker (``repository.requirements.migrate_to_main_profile``), and then checks
+every requirement's profile attributes once more, with another marker
+(``repository.requirements.migrate_profile_belts``, v2): only after that
+marker the main profile is read through the ``by_profile_belt`` index.
 
 With low provisioned capacity (dev, free tier) the writes are throttled and
 retried, so the load can take minutes. It stops ``SAFETY_MARGIN_SECONDS``
@@ -38,24 +41,26 @@ DEADLINE_REASON = (
 
 
 def seed_all(deadline: float | None = None) -> dict[str, int]:
-    """Insert the missing seed items, then move older requirements to the main profile.
+    """Insert the missing seed items, then run the two requirement profile migrations.
 
-    The migration runs after the seed so that items of a seed interrupted
+    The migrations run after the seed so that items of a seed interrupted
     before profiles existed are moved too; new seed items are already born in
-    the main profile.
+    the main profile. v2 runs after v1 and also fixes what v1 skipped (an
+    item moved to another belt between v1's scan and its write).
 
     Args:
         deadline: ``time.monotonic()`` value after which the load stops.
 
     Returns:
-        Number of items inserted per entity, and of requirements moved to the
-        main profile (``requirement_profiles``).
+        Number of items inserted per entity, and of requirements written by
+        the two profile migrations (``requirement_profiles``: moved to the
+        main profile by v1 plus fixed by v2; each migration logs its own count).
     """
-    return {
-        "belts": belt_repo.seed_belts(SEED_BELTS, deadline=deadline),
-        "requirements": requirement_repo.seed_requirements(seed_requirements(), deadline=deadline),
-        "requirement_profiles": requirement_repo.migrate_to_main_profile(deadline=deadline),
-    }
+    belts = belt_repo.seed_belts(SEED_BELTS, deadline=deadline)
+    requirements = requirement_repo.seed_requirements(seed_requirements(), deadline=deadline)
+    moved = requirement_repo.migrate_to_main_profile(deadline=deadline)
+    fixed = requirement_repo.migrate_profile_belts(deadline=deadline)
+    return {"belts": belts, "requirements": requirements, "requirement_profiles": moved + fixed}
 
 
 def _deadline(context: Any) -> float | None:

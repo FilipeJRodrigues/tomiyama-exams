@@ -173,6 +173,29 @@ def profile_belt_key(profile_id: str, belt_id: str) -> str:
     return f"{profile_id}#{belt_id}"
 
 
+def profile_attributes_to_fix(
+    profile_id: Any, profile_belt: Any, belt_id: str
+) -> tuple[str, str] | None:
+    """Return the ``profile_id`` and ``profile_belt`` a stored item must get, or None if right.
+
+    An item without ``profile_id`` belongs to the main profile, and an item
+    is found in ``by_profile_belt`` only if its ``profile_belt`` is
+    ``<profile_id>#<belt_id>`` of its current belt. Used by the v2 migration
+    (#144), which fixes items written before profiles existed and items whose
+    belt changed without ``profile_belt`` (code from before profiles).
+
+    Args:
+        profile_id: Stored ``profile_id`` (None when absent).
+        profile_belt: Stored ``profile_belt`` (None when absent).
+        belt_id: Stored ``belt_id``.
+    """
+    profile = profile_id or MAIN_PROFILE_ID
+    key = profile_belt_key(profile, belt_id)
+    if profile_id == profile and profile_belt == key:
+        return None
+    return profile, key
+
+
 def resolve_profile(profile_id: str, lookup: Lookup) -> RequirementProfile:
     """Return the profile with exactly this id (``main`` is the main profile).
 

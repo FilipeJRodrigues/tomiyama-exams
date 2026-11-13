@@ -61,15 +61,19 @@ Mappings:
   # writes both GSIs, so each runs at min(4, 4, 4) items/s. by_profile_belt
   # does not project answer_count, so a mark never writes to it. Its 4 WCU came
   # from Students and StudentsByOwner (2 -> 1 each), Answers (3 -> 2) and the
-  # spare unit; its 1 RCU from Belts (3 -> 2). Until the exam sheet moves to
-  # by_profile_belt and by_belt is dropped (later step of #144), nothing
-  # queries it but the profiles other than the main one.
+  # spare unit. Since step 3a of #144 every read of a profile's items (exam
+  # sheet, score after each mark, lists, copy) queries by_profile_belt, the main
+  # profile included once the v2 migration finished, so it takes the read
+  # capacity by_belt had (by_belt 5 -> 1 RCU, by_profile_belt 1 -> 5): the
+  # Brown belt sheet costs ~4.5 RCU whatever the number of profiles. by_belt is
+  # still written until it is dropped (step 3c) and is read only by the
+  # fallback of the main profile while the v2 migration has not finished.
   # Each mark (RN006) is a transaction that checks the exam and the event and
   # writes the answer: 2 WCU in each of Exams, Events and Answers (plus 2 in
   # Requirements and the by_belt write on the first mark of an item), and its
-  # response reads the belt's items (by_belt) and the exam's answers. The
-  # answers query is strongly consistent (1 RCU per 4 KB): ~2.5 RCU per mark on
-  # a 58-item belt, up to 10 on a full 139-item exam (see backend/README.md).
+  # response reads the sheet's items (by_profile_belt) and the exam's answers.
+  # The answers query is strongly consistent (1 RCU per 4 KB): ~2.5 RCU per mark
+  # on a 58-item belt, up to 10 on a full 139-item exam (see backend/README.md).
   DevCapacity:
     Belts:
       Read: 2
@@ -90,10 +94,10 @@ Mappings:
       Read: 3
       Write: 4
     RequirementsByBelt:
-      Read: 5
+      Read: 1
       Write: 4
     RequirementsByProfileBelt:
-      Read: 1
+      Read: 5
       Write: 4
     Settings:
       Read: 1
@@ -729,7 +733,9 @@ Resources:
 
   # Requirements (examiners only). Each function also reads the requirement
   # profiles item of Settings (only that item: dynamodb:LeadingKeys) to find
-  # a profile other than the main one (#144).
+  # a profile other than the main one (#144). The list and the creation (the
+  # default order reads the belt) also read the v2 migration marker, which
+  # tells when the main profile may be read through by_profile_belt.
   ListRequirementsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -745,7 +751,9 @@ Resources:
               Resource: !GetAtt SettingsTable.Arn
               Condition:
                 ForAllValues:StringEquals:
-                  dynamodb:LeadingKeys: [requirement_profiles]
+                  dynamodb:LeadingKeys:
+                    - requirement_profiles
+                    - migration:requirements:profile-belt:v2
       Events:
         Api:
           Type: HttpApi
@@ -769,7 +777,9 @@ Resources:
               Resource: !GetAtt SettingsTable.Arn
               Condition:
                 ForAllValues:StringEquals:
-                  dynamodb:LeadingKeys: [requirement_profiles]
+                  dynamodb:LeadingKeys:
+                    - requirement_profiles
+                    - migration:requirements:profile-belt:v2
       Events:
         Api:
           Type: HttpApi
@@ -955,7 +965,8 @@ Resources:
 
   # Background copy of a profile (no route; invoked only by the two functions
   # above, InvocationType=Event). Reads the belts (Scan), the source's and the
-  # copy's items (Query on the two GSIs; by_belt only for the main profile),
+  # copy's items (Query on by_profile_belt; on by_belt only for the main
+  # profile while the v2 migration marker, GetItem, is not there yet),
   # writes each missing copy (conditional PutItem) and the progress and status
   # of the profile (UpdateItem on its item of Settings). ~700 items at
   # CopyItemsPerSecond take ~6 min in dev; a run stops 60 s before the
@@ -982,6 +993,12 @@ Resources:
               Condition:
                 ForAllValues:StringEquals:
                   dynamodb:LeadingKeys: [requirement_profiles]
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [migration:requirements:profile-belt:v2]
             - Effect: Allow
               Action: dynamodb:Scan
               Resource: !GetAtt BeltsTable.Arn
@@ -1128,7 +1145,11 @@ Resources:
             Path: /events/{id}/exams
             Method: GET
 
-  # Exam sheet and marking (examiners only, RN006/RN007)
+  # Exam sheet and marking (examiners only, RN006/RN007). The sheet's items
+  # (and the score after a mark or unmark) come from by_profile_belt; the main
+  # profile comes from by_belt only until the v2 migration finished, which
+  # they learn from its marker in Settings (GetItem on that item only, once
+  # per container: dynamodb:LeadingKeys).
   GetExamSheetFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -1146,7 +1167,14 @@ Resources:
               Action: dynamodb:Query
               Resource:
                 - !Sub ${RequirementsTable.Arn}/index/by_belt
+                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
                 - !GetAtt AnswersTable.Arn
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [migration:requirements:profile-belt:v2]
       Events:
         Api:
           Type: HttpApi
@@ -1186,7 +1214,15 @@ Resources:
               Resource: !GetAtt AnswersTable.Arn
             - Effect: Allow
               Action: dynamodb:Query
-              Resource: !Sub ${RequirementsTable.Arn}/index/by_belt
+              Resource:
+                - !Sub ${RequirementsTable.Arn}/index/by_belt
+                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [migration:requirements:profile-belt:v2]
       Events:
         Api:
           Type: HttpApi
@@ -1222,7 +1258,15 @@ Resources:
               Resource: !GetAtt AnswersTable.Arn
             - Effect: Allow
               Action: dynamodb:Query
-              Resource: !Sub ${RequirementsTable.Arn}/index/by_belt
+              Resource:
+                - !Sub ${RequirementsTable.Arn}/index/by_belt
+                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [migration:requirements:profile-belt:v2]
       Events:
         Api:
           Type: HttpApi
@@ -1760,14 +1804,23 @@ Resources:
 
   InitialData:
     Type: Custom::InitialData
+    # The profile migrations run only after the functions that write
+    # requirements run the new code: code from before profiles, still
+    # answering, could otherwise create or move an item without profile_belt
+    # after the v2 migration checked it (#144, step 3a).
+    DependsOn:
+      - CreateRequirementFunction
+      - UpdateRequirementFunction
     Properties:
       ServiceToken: !GetAtt SeedFunction.Arn
       # Seconds CloudFormation waits for an answer (default 3600) if the
       # function dies without replying; a bit more than its timeout.
       ServiceTimeout: 960
       # Bump to re-run the (idempotent) seed on the next deploy. "3": moves the
-      # requirements to the main profile (#144).
-      SeedVersion: "3"
+      # requirements to the main profile (#144). "4": the v2 migration, which
+      # fixes profile_belt on every item before the main profile is read
+      # through by_profile_belt (#144, step 3a).
+      SeedVersion: "4"
 
   # -------------------------------------------------------------------- Logs
   # One log group for every function (Globals.LoggingConfig), with a short

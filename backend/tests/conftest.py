@@ -180,12 +180,14 @@ def aws() -> Iterator[None]:
         user_repo.reset_cache()
         image_repo.reset_cache()
         profile_repo.reset_cache()
+        requirement_repo.reset_cache()
         _create_tables()
         yield
     tables.reset_cache()
     user_repo.reset_cache()
     image_repo.reset_cache()
     profile_repo.reset_cache()
+    requirement_repo.reset_cache()
 
 
 @pytest.fixture

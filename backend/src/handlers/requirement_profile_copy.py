@@ -6,7 +6,9 @@ Invoked asynchronously (``InvocationType=Event``) by ``POST
 
 1. reads the profile (nothing to do if it is gone or already ``READY``) and
    its source (the main profile or another ready one);
-2. reads, belt by belt, the source's items and the items already copied;
+2. reads, belt by belt, the source's items and the items already copied
+   (``by_profile_belt``; the main profile through ``by_belt`` until the v2
+   migration finished);
 3. writes each missing copy (``copy_to_profile``: deterministic id, every
    field of the item, never ``answer_count``) with a conditional ``PutItem``,
    at most ``COPY_ITEMS_PER_SECOND`` per second, so that in dev the copy

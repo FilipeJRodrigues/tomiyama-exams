@@ -141,9 +141,11 @@ def _sheet_items(exam_event: ExamEvent, exam: Exam) -> list[Requirement]:
     """Return the items of the exam's sheet, in sheet order (RN006, RN007).
 
     The target belt's items of the sheet profile only (today the main profile;
-    step 3 of #144 makes ``exam_rules.sheet_profile_id`` return the event's
+    step 3b of #144 makes ``exam_rules.sheet_profile_id`` return the event's
     profile). Every reader of the sheet's items goes through here: the sheet
-    and the score after a mark or unmark.
+    and the score after a mark or unmark. One query on ``by_profile_belt``,
+    which reads only that profile's items of the belt (until the v2
+    migration finished, the main profile comes from ``by_belt``, filtered).
     """
     return requirement_repo.list_profile_belt(
         exam_rules.sheet_profile_id(exam_event), exam.target_belt_id
@@ -209,8 +211,8 @@ def _summary_after(
     The answers query is strongly consistent, so it already sees this write and
     any mark written just before; applying our own write again is a safeguard
     for the caller's optimistic update. The totals come from the sheet's items
-    (``_sheet_items``, read from the ``by_belt`` GSI), which are always
-    eventually consistent.
+    (``_sheet_items``, read from a GSI), which are always eventually
+    consistent.
     """
     answers = _correct_by_item(answer_repo.list_by_exam(exam.id))
     if answer is None:

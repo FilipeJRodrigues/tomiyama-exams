@@ -16,11 +16,22 @@ from cfnlint.decode import decode
 
 from handlers import requirement_profile_copy as copy_worker
 from repository.requirement_profiles import COPY_FUNCTION_ENV, REQUIREMENT_PROFILES_ID
+from repository.requirements import PROFILE_BELT_MIGRATION_MARKER_ID
 
 TEMPLATE = Path(__file__).resolve().parents[2] / "infra" / "template.yaml"
 SETTINGS_ARN = {"Fn::GetAtt": ["SettingsTable", "Arn"]}
 COPY_ARN = {"Fn::GetAtt": ["CopyRequirementProfileFunction", "Arn"]}
 PROFILES_ONLY = {"ForAllValues:StringEquals": {"dynamodb:LeadingKeys": [REQUIREMENT_PROFILES_ID]}}
+# Step 3a of #144: the v2 migration marker, read to know when the main profile
+# may be read through by_profile_belt.
+MARKER_ONLY = {
+    "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": [PROFILE_BELT_MIGRATION_MARKER_ID]}
+}
+PROFILES_AND_MARKER = {
+    "ForAllValues:StringEquals": {
+        "dynamodb:LeadingKeys": [REQUIREMENT_PROFILES_ID, PROFILE_BELT_MIGRATION_MARKER_ID]
+    }
+}
 
 ROUTES = {
     "ListRequirementProfilesFunction": ("GET", "/requirement-profiles", "list_profiles"),
@@ -54,13 +65,17 @@ GRANTED = {
     "CopyRequirementProfileFunction": {
         ("dynamodb:GetItem", "Settings[profiles]"),
         ("dynamodb:UpdateItem", "Settings[profiles]"),
+        # Step 3a: reads (never writes) the v2 marker to read a main source.
+        ("dynamodb:GetItem", "Settings[v2 marker]"),
         ("dynamodb:Scan", "BeltsTable"),
         ("dynamodb:Query", "RequirementsTable/index/by_belt"),
         ("dynamodb:Query", "RequirementsTable/index/by_profile_belt"),
         ("dynamodb:PutItem", "RequirementsTable"),
     },
 }
-# DevCapacity before step 2: the copy must fit in what step 1 left (25/25).
+# DevCapacity: the copy must fit in what step 1 left (25/25). Step 3a moved
+# the read capacity of by_belt to by_profile_belt (5 <-> 1), where every read
+# of a profile's items goes, the exam sheet included.
 DEV_CAPACITY = {
     "Belts": {"Read": 2, "Write": 1},
     "Students": {"Read": 3, "Write": 1},
@@ -68,8 +83,8 @@ DEV_CAPACITY = {
     "Exams": {"Read": 2, "Write": 3},
     "ExamsByStudent": {"Read": 1, "Write": 1},
     "Requirements": {"Read": 3, "Write": 4},
-    "RequirementsByBelt": {"Read": 5, "Write": 4},
-    "RequirementsByProfileBelt": {"Read": 1, "Write": 4},
+    "RequirementsByBelt": {"Read": 1, "Write": 4},
+    "RequirementsByProfileBelt": {"Read": 5, "Write": 4},
     "Settings": {"Read": 1, "Write": 1},
     "Events": {"Read": 2, "Write": 3},
     "Answers": {"Read": 3, "Write": 2},
@@ -92,8 +107,10 @@ def _functions(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _target(statement: dict[str, Any], resource: Any) -> str:
-    """Name what a statement reaches: a table, an index, a function or the profiles item."""
+    """Name what a statement reaches: a table, an index, a function or a Settings item."""
     if resource == SETTINGS_ARN:
+        if statement.get("Condition") == MARKER_ONLY:
+            return "Settings[v2 marker]"
         assert statement.get("Condition") == PROFILES_ONLY, statement
         return "Settings[profiles]"
     assert "Condition" not in statement, statement
@@ -196,16 +213,18 @@ def test_rn017_no_other_function_invokes_lambda(template: dict[str, Any]) -> Non
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("name", "condition"),
     [
-        "ListRequirementsFunction",
-        "CreateRequirementFunction",
-        "UpdateRequirementFunction",
-        "DeleteRequirementFunction",
+        # Step 3a: the list and the default order of a new item read a belt of
+        # the main profile, so they also read the v2 marker.
+        ("ListRequirementsFunction", PROFILES_AND_MARKER),
+        ("CreateRequirementFunction", PROFILES_AND_MARKER),
+        ("UpdateRequirementFunction", PROFILES_ONLY),
+        ("DeleteRequirementFunction", PROFILES_ONLY),
     ],
 )
 def test_rn017_requirement_functions_read_only_the_profiles_item(
-    template: dict[str, Any], name: str
+    template: dict[str, Any], name: str, condition: dict[str, Any]
 ) -> None:
     statements = [
         statement
@@ -218,7 +237,7 @@ def test_rn017_requirement_functions_read_only_the_profiles_item(
             "Effect": "Allow",
             "Action": "dynamodb:GetItem",
             "Resource": SETTINGS_ARN,
-            "Condition": PROFILES_ONLY,
+            "Condition": condition,
         }
     ]
 
@@ -258,7 +277,7 @@ def test_rn017_profiles_use_no_new_table_nor_index(template: dict[str, Any]) -> 
     ]
 
 
-def test_rn017_dev_capacity_is_unchanged(template: dict[str, Any]) -> None:
+def test_rn017_dev_capacity_moves_reads_to_the_profile_index(template: dict[str, Any]) -> None:
     capacity = template["Mappings"]["DevCapacity"]
 
     assert capacity == DEV_CAPACITY
