@@ -120,6 +120,11 @@ def _requirement_payload(belt_id: str, sort_order: Any) -> dict:
     }
 
 
+def _requirement_event(payload: dict, path: dict[str, str] | None = None) -> dict:
+    """Request by the admin master: only the master writes items of the main profile (#144)."""
+    return _event(payload, path, user=MASTER)
+
+
 def test_rn015_requirement_sort_order_limit_is_9999() -> None:
     assert MAX_REQUIREMENT_SORT_ORDER == 9999
 
@@ -127,7 +132,7 @@ def test_rn015_requirement_sort_order_limit_is_9999() -> None:
 def test_rn015_requirement_sort_order_at_ceiling_is_accepted(seeded: list) -> None:
     payload = _requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER)
 
-    response = requirement_handlers.create_requirement(_event(payload), None)
+    response = requirement_handlers.create_requirement(_requirement_event(payload), None)
 
     assert response["statusCode"] == 201
     [saved] = requirement_repo.list_all()
@@ -137,7 +142,7 @@ def test_rn015_requirement_sort_order_at_ceiling_is_accepted(seeded: list) -> No
 def test_rn015_requirement_sort_order_past_ceiling_is_400_on_create(seeded: list) -> None:
     payload = _requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER + 1)
 
-    response = requirement_handlers.create_requirement(_event(payload), None)
+    response = requirement_handlers.create_requirement(_requirement_event(payload), None)
 
     assert response["statusCode"] == 400
     assert response_json(response) == {"message": "Ordem: deve estar entre 0 e 9999"}
@@ -149,13 +154,14 @@ def test_rn015_requirement_sort_order_past_ceiling_is_400_on_update(
     seeded: list, value: int
 ) -> None:
     created = requirement_handlers.create_requirement(
-        _event(_requirement_payload(seeded[0].id, 1)), None
+        _requirement_event(_requirement_payload(seeded[0].id, 1)), None
     )
     requirement_id = response_json(created)["id"]
     before = requirement_repo.list_all()
 
     response = requirement_handlers.update_requirement(
-        _event(_requirement_payload(seeded[0].id, value), path={"id": requirement_id}), None
+        _requirement_event(_requirement_payload(seeded[0].id, value), path={"id": requirement_id}),
+        None,
     )
 
     assert response["statusCode"] == 400
@@ -165,12 +171,12 @@ def test_rn015_requirement_sort_order_past_ceiling_is_400_on_update(
 
 def test_rn015_default_sort_order_past_ceiling_asks_for_explicit_order(seeded: list) -> None:
     requirement_handlers.create_requirement(
-        _event(_requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER)), None
+        _requirement_event(_requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER)), None
     )
     before = requirement_repo.list_all()
     payload = _requirement_payload(seeded[0].id, None)
 
-    response = requirement_handlers.create_requirement(_event(payload), None)
+    response = requirement_handlers.create_requirement(_requirement_event(payload), None)
 
     assert response["statusCode"] == 400
     assert response_json(response) == {
@@ -181,11 +187,11 @@ def test_rn015_default_sort_order_past_ceiling_asks_for_explicit_order(seeded: l
 
 def test_rn015_default_sort_order_at_ceiling_is_accepted(seeded: list) -> None:
     requirement_handlers.create_requirement(
-        _event(_requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER - 1)), None
+        _requirement_event(_requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER - 1)), None
     )
 
     response = requirement_handlers.create_requirement(
-        _event(_requirement_payload(seeded[0].id, None)), None
+        _requirement_event(_requirement_payload(seeded[0].id, None)), None
     )
 
     assert response["statusCode"] == 201
@@ -194,11 +200,11 @@ def test_rn015_default_sort_order_at_ceiling_is_accepted(seeded: list) -> None:
 
 def test_rn015_full_belt_still_accepts_explicit_order(seeded: list) -> None:
     requirement_handlers.create_requirement(
-        _event(_requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER)), None
+        _requirement_event(_requirement_payload(seeded[0].id, MAX_REQUIREMENT_SORT_ORDER)), None
     )
 
     response = requirement_handlers.create_requirement(
-        _event(_requirement_payload(seeded[0].id, 5)), None
+        _requirement_event(_requirement_payload(seeded[0].id, 5)), None
     )
 
     assert response["statusCode"] == 201

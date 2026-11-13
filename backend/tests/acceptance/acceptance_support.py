@@ -105,6 +105,9 @@ MSG_MASTER_ONLY_BELT_FIELDS = (  # RN015, decision of 2026-11-12 (#142)
 )
 MSG_REQUIREMENT_BELT_NOT_FOUND = "Faixa: faixa não encontrada"  # RN017
 MSG_REQUIREMENT_NOT_FOUND = "Requisito não encontrado"  # RN017
+MSG_MAIN_PROFILE_MASTER_ONLY = (  # RN017, decision of 2026-11-12 (#144)
+    "Somente o administrador master altera o perfil principal de requisitos"
+)
 
 
 def msg_minimum_age(belt_name: str, years: int) -> str:

@@ -1,11 +1,18 @@
 """Requirement routes, examiners only (RN017).
 
-- ``GET /requirements``: list, filterable by ``belt_id`` and ``kind``, ordered by
-  belt and sheet order, with no limit that cuts long belts (Marrom: 139 items).
-- ``POST /requirements``: add an item; without ``sort_order`` it goes to the end.
-- ``PUT /requirements/{id}``: edit an item; refused (409) if it has answers and
-  the belt or kind changes (description, expected answer, category and order
-  stay editable).
+Every item belongs to a requirement profile; without ``profile_id`` the routes
+use the main profile, the only one so far (``domain.requirement_profiles``).
+Creating, editing and deleting items of the main profile is reserved to the
+admin master (decision of 2026-11-12); listing is open to every examiner.
+
+- ``GET /requirements``: list the items of one profile, filterable by
+  ``belt_id`` and ``kind``, ordered by belt and sheet order, with no limit that
+  cuts long belts (Marrom: 139 items).
+- ``POST /requirements``: add an item to a profile; without ``sort_order`` it
+  goes to the end of the belt in that profile.
+- ``PUT /requirements/{id}``: edit an item; its profile never changes (400),
+  and it is refused (409) if it has answers and the belt or kind changes
+  (description, expected answer, category and order stay editable).
 - ``DELETE /requirements/{id}``: remove an item; refused (409) if any exam has
   an answer for it.
 """
@@ -15,6 +22,12 @@ import uuid
 from typing import Any
 
 from domain.errors import NotFoundError, ValidationError
+from domain.requirement_profiles import (
+    check_can_edit,
+    check_profile_unchanged,
+    find_profile,
+    profile_id_field,
+)
 from domain.requirements import (
     MSG_REQUIREMENT_NOT_FOUND,
     Requirement,
@@ -50,8 +63,8 @@ def _kind_filter(event: Event) -> RequirementKind | None:
         raise ValidationError("Filtro tipo: use THEORY ou PRACTICE") from exc
 
 
-def _next_sort_order(belt_id: str) -> int:
-    items = requirement_repo.list_by_belt(belt_id)
+def _next_sort_order(profile_id: str, belt_id: str) -> int:
+    items = requirement_repo.list_profile_belt(profile_id, belt_id)
     return max((item.sort_order for item in items), default=0) + 1
 
 
@@ -64,18 +77,22 @@ def _get_or_404(requirement_id: str) -> Requirement:
 
 @api_handler
 def list_requirements(event: Event, context: Any) -> Response:
-    """List items, optionally filtered by belt and kind."""
+    """List the items of one profile (default: main), optionally filtered by belt and kind.
+
+    Checks, in order: examiner (403), kind filter (400), profile (404) and belt (404).
+    """
     require_examiner(current_user(event))
     kind = _kind_filter(event)
+    profile = find_profile(query_param(event, "profile_id"))
     belt_id = query_param(event, "belt_id")
     belts = belt_repo.list_belts()
 
     if belt_id:
         if belt_id not in {belt.id for belt in belts}:
             raise NotFoundError("Faixa não encontrada")
-        items = requirement_repo.list_by_belt(belt_id)
+        items = requirement_repo.list_profile_belt(profile.id, belt_id)
     else:
-        items = requirement_repo.list_all()
+        items = requirement_repo.list_by_profile(profile.id)
     if kind:
         items = [item for item in items if item.kind == kind]
     return json_response(200, [item.to_dict() for item in sort_requirements(items, belts)])
@@ -83,36 +100,53 @@ def list_requirements(event: Event, context: Any) -> Response:
 
 @api_handler
 def create_requirement(event: Event, context: Any) -> Response:
-    """Add an item to a belt."""
+    """Add an item to a belt in a profile (default: main).
+
+    Checks, in order: examiner (403), body (400), profile (404), fields (400)
+    and, in the main profile, the admin master (403).
+    """
     user = current_user(event)
     require_examiner(user)
     payload = json_body(event)
+    profile = find_profile(profile_id_field(payload))
     belts_by_id = {belt.id: belt for belt in belt_repo.list_belts()}
     belt_id = payload.get("belt_id")
-    default_order = _next_sort_order(belt_id) if belt_id in belts_by_id else 1
+    default_order = _next_sort_order(profile.id, belt_id) if belt_id in belts_by_id else 1
     requirement = build_requirement(
         payload,
         belts_by_id,
         requirement_id=str(uuid.uuid4()),
         default_sort_order=default_order,
+        profile_id=profile.id,
     )
+    check_can_edit(profile.id, user)
     requirement_repo.create_requirement(requirement)
-    logger.info("Requirement %s created by %s", requirement.id, user.sub)
+    logger.info("Requirement %s created by %s in %s", requirement.id, user.sub, profile.id)
     return json_response(201, requirement.to_dict())
 
 
 @api_handler
 def update_requirement(event: Event, context: Any) -> Response:
-    """Edit an item; belt and kind are locked while it has answers (checked in the write)."""
+    """Edit an item; belt and kind are locked while it has answers (checked in the write).
+
+    Checks, in order: examiner (403), path id and item (404), body (400, a
+    different ``profile_id`` included), the admin master on items of the main
+    profile (403) and the conditional write (404 if deleted meanwhile, 409 on
+    the lock).
+    """
     user = current_user(event)
     require_examiner(user)
     existing = _get_or_404(path_param(event, "id", not_found=MSG_REQUIREMENT_NOT_FOUND))
+    payload = json_body(event)
+    check_profile_unchanged(payload, existing.profile_id)
     updated = build_requirement(
-        json_body(event),
+        payload,
         {belt.id: belt for belt in belt_repo.list_belts()},
         requirement_id=existing.id,
         default_sort_order=existing.sort_order,
+        profile_id=existing.profile_id,
     )
+    check_can_edit(existing.profile_id, user)
     requirement_repo.save_requirement(updated)
     logger.info("Requirement %s updated by %s", updated.id, user.sub)
     return json_response(200, updated.to_dict())
@@ -120,10 +154,15 @@ def update_requirement(event: Event, context: Any) -> Response:
 
 @api_handler
 def delete_requirement(event: Event, context: Any) -> Response:
-    """Remove an item that has no answers (conditional delete on ``answer_count``)."""
+    """Remove an item that has no answers (conditional delete on ``answer_count``).
+
+    Checks, in order: examiner (403), path id and item (404), the admin master
+    on items of the main profile (403) and answers (409).
+    """
     user = current_user(event)
     require_examiner(user)
     requirement = _get_or_404(path_param(event, "id", not_found=MSG_REQUIREMENT_NOT_FOUND))
+    check_can_edit(requirement.profile_id, user)
     requirement_repo.delete_requirement(requirement.id)
     logger.info("Requirement %s deleted by %s", requirement.id, user.sub)
     return no_content()

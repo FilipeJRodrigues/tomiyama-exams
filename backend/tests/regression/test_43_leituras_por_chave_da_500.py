@@ -36,7 +36,7 @@ from collections.abc import Callable
 import pytest
 from conftest import (
     DYNAMODB_THROTTLING_CODES,
-    EXAMINER,
+    MASTER,
     SCENARIO_REQUIREMENT,
     SCENARIO_ROUTES,
     api_event,
@@ -181,9 +181,10 @@ def test_rn017_throttled_reread_after_refused_requirement_edit_is_503(
     )
     before = dynamodb_snapshot()
 
+    # Items of the main profile: only the admin master reaches the write (#144).
     response = requirement_handlers.update_requirement(
         api_event(
-            EXAMINER,
+            MASTER,
             path={"id": SCENARIO_REQUIREMENT.id},
             body=scenario_requirement_body(**changes),
         ),

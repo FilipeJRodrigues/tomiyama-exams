@@ -132,6 +132,12 @@ THROTTLING_ERRORS = frozenset(
     {"ProvisionedThroughputExceededException", "ThrottlingException", "RequestLimitExceeded"}
 )
 
+# Errors ``retry_throttled`` repeats: throttling plus ``TransactionConflictException``,
+# which a single-item write gets while a transaction (e.g. a marking, RN006)
+# holds the same item; it lasts as long as that transaction. Botocore does not
+# retry it. Kept apart from ``THROTTLING_ERRORS``, which maps to 503 in HTTP.
+RETRYABLE_WRITE_ERRORS = THROTTLING_ERRORS | {"TransactionConflictException"}
+
 
 def raise_if_throttled(exc: ClientError, source: str) -> None:
     """Turn throttling that outlasted botocore's retries into a 503; ignore other errors.
@@ -240,6 +246,56 @@ class DeadlineExceededError(Exception):
     """The write did not finish before the caller's deadline."""
 
 
+def retry_throttled[T](
+    call: Callable[[], T],
+    label: str,
+    *,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> T:
+    """Run a DynamoDB call, retrying passing errors with backoff until it succeeds or the deadline.
+
+    Throttling (low provisioned capacity on the table or on a GSI) and
+    ``TransactionConflictException`` (the item is inside a transaction in
+    progress, such as a marking) are retried (``RETRYABLE_WRITE_ERRORS``)
+    with exponential backoff and full jitter. Botocore's own retries (up to
+    ~25 s in legacy mode) run first, inside each attempt, so callers should
+    keep that much slack after the deadline. Any other error is raised at once.
+    Only deploy-time writes (seeds, profile migration) use it.
+
+    Args:
+        call: The DynamoDB call, without arguments.
+        label: What the call does, for the log and the deadline error.
+        deadline: ``clock()`` value after which no new attempt starts; None waits forever.
+        sleep: Injected for tests.
+        clock: Injected for tests.
+
+    Returns:
+        What ``call`` returned.
+
+    Raises:
+        DeadlineExceededError: Still throttled or in conflict when the deadline passed.
+        ClientError: Any error not in ``RETRYABLE_WRITE_ERRORS``, unchanged.
+    """
+    attempt = 0
+    while True:
+        if deadline is not None and clock() >= deadline:
+            raise DeadlineExceededError(f"Deadline passed before {label}")
+        try:
+            return call()
+        except ClientError as exc:
+            code = exc.response["Error"]["Code"]
+            if code not in RETRYABLE_WRITE_ERRORS:
+                raise
+        delay = random.uniform(0, min(BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS * 2**attempt))
+        if deadline is not None and clock() + delay >= deadline:
+            raise DeadlineExceededError(f"{code} on {label} until the deadline")
+        attempt += 1
+        logger.info("%s on %s, retry %d in %.2fs", code, label, attempt, delay)
+        sleep(delay)
+
+
 def put_if_absent(
     target: Any,
     item: dict[str, Any],
@@ -250,11 +306,8 @@ def put_if_absent(
 ) -> bool:
     """Insert ``item`` only if its ``id`` does not exist, retrying on throttling.
 
-    Throttling (low provisioned capacity on the table or on a GSI) is retried
-    with exponential backoff and full jitter until it succeeds or the deadline
-    passes. Botocore's own retries (up to ~25 s in legacy mode) run first,
-    inside each attempt, so callers should keep that much slack after the
-    deadline.
+    Throttling and transaction conflicts are retried as in ``retry_throttled``,
+    until the write succeeds or the deadline passes.
 
     Args:
         target: DynamoDB ``Table`` resource.
@@ -269,22 +322,16 @@ def put_if_absent(
     Raises:
         DeadlineExceededError: Still throttled when the deadline passed.
     """
-    attempt = 0
-    while True:
-        if deadline is not None and clock() >= deadline:
-            raise DeadlineExceededError(f"Deadline passed before writing {item.get('id')!r}")
-        try:
-            target.put_item(Item=item, ConditionExpression="attribute_not_exists(id)")
-            return True
-        except ClientError as exc:
-            code = exc.response["Error"]["Code"]
-            if code == "ConditionalCheckFailedException":
-                return False
-            if code not in THROTTLING_ERRORS:
-                raise
-        delay = random.uniform(0, min(BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS * 2**attempt))
-        if deadline is not None and clock() + delay >= deadline:
-            raise DeadlineExceededError(f"Throttled writing {item.get('id')!r} until the deadline")
-        attempt += 1
-        logger.info("Throttled writing %s, retry %d in %.2fs", item.get("id"), attempt, delay)
-        sleep(delay)
+    try:
+        retry_throttled(
+            lambda: target.put_item(Item=item, ConditionExpression="attribute_not_exists(id)"),
+            f"writing {item.get('id')!r}",
+            deadline=deadline,
+            sleep=sleep,
+            clock=clock,
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True

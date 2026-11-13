@@ -105,11 +105,11 @@ def test_rn015_valid_colours_are_stored_in_upper_case(field: str) -> None:
 
 
 def test_seed_is_idempotent_and_keeps_edits(aws: None) -> None:
-    assert seed.seed_all() == {"belts": 12, "requirements": 692}
+    assert seed.seed_all() == {"belts": 12, "requirements": 692, "requirement_profiles": 0}
     edited = apply_belt_update(belt("Cinza"), _payload(min_age_years=6), SEED_BELTS)
     belt_repo.save_belt(edited)
 
-    assert seed.seed_all() == {"belts": 0, "requirements": 0}
+    assert seed.seed_all() == {"belts": 0, "requirements": 0, "requirement_profiles": 0}
     belts = belt_repo.list_belts()
     assert len(belts) == 12
     assert next(b for b in belts if b.name == "Cinza").min_age_years == 6

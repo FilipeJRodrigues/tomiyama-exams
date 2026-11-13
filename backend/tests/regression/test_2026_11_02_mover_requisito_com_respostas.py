@@ -19,7 +19,7 @@ from dataclasses import replace
 from datetime import date
 
 import pytest
-from conftest import EXAMINER, api_event, belt_id, make_student, response_json
+from conftest import EXAMINER, MASTER, api_event, belt_id, make_student, response_json
 
 from domain import dates
 from domain.events import EventStatus, ExamEvent
@@ -74,9 +74,11 @@ def test_rn006_rn007_moving_answered_item_keeps_the_exam_answer(seeded: None) ->
     )
     assert marked["statusCode"] == 200, marked["body"]
 
+    # The admin master, the only one who edits the main profile (#144): an
+    # examiner would get the 403 and the item would stay for the wrong reason.
     requirement_handlers.update_requirement(
         api_event(
-            EXAMINER,
+            MASTER,
             path={"id": "t1"},
             body={
                 "belt_id": belt_id("Cinza"),

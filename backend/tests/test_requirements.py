@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import EXAMINER, GUARDIAN, api_event, belt_id, response_json
+from conftest import EXAMINER, GUARDIAN, MASTER, api_event, belt_id, response_json
 
 from domain.belts import SEED_BELTS
 from domain.errors import ValidationError
@@ -211,7 +211,8 @@ def test_rn017_list_invalid_filters(seeded_requirements: None) -> None:
 def test_rn017_create_appends_to_belt(seeded_requirements: None) -> None:
     payload = _payload()
     del payload["sort_order"]
-    response = handlers.create_requirement(api_event(EXAMINER, body=payload), None)
+    # Items of the main profile: only the admin master writes them (#144).
+    response = handlers.create_requirement(api_event(MASTER, body=payload), None)
     assert response["statusCode"] == 201
     created = response_json(response)
     assert created["sort_order"] == 15  # Cinza has 14 seeded items
@@ -225,12 +226,12 @@ def test_rn017_create_with_unknown_belt(seeded_requirements: None) -> None:
 
 def test_rn017_update_and_delete(seeded_requirements: None) -> None:
     target = seed_requirements()[0]
-    event = api_event(EXAMINER, path={"id": target.id}, body=_payload(description="Novo texto"))
+    event = api_event(MASTER, path={"id": target.id}, body=_payload(description="Novo texto"))
     response = handlers.update_requirement(event, None)
     assert response["statusCode"] == 200
     assert requirement_repo.get_requirement(target.id).description == "Novo texto"
 
-    response = handlers.delete_requirement(api_event(EXAMINER, path={"id": target.id}), None)
+    response = handlers.delete_requirement(api_event(MASTER, path={"id": target.id}), None)
     assert response["statusCode"] == 204
-    response = handlers.delete_requirement(api_event(EXAMINER, path={"id": target.id}), None)
+    response = handlers.delete_requirement(api_event(MASTER, path={"id": target.id}), None)
     assert response["statusCode"] == 404

@@ -49,9 +49,15 @@ Mappings:
       LogRetentionDays: 30
   # Provisioned capacity used only in dev (prod is PAY_PER_REQUEST). The free
   # tier covers 25 RCU and 25 WCU summed over every table and GSI of the
-  # account in the Region; these add up to 25 RCU and 24 WCU (1 WCU spare).
-  # Requirements and by_belt get the most WCU for the 692-item seed (a write
-  # to the table also writes the GSI, so the seed runs at min(4, 4) items/s).
+  # account in the Region; these add up to 25 RCU and 25 WCU (none spare).
+  # Requirements, by_belt and by_profile_belt get the most WCU for the 692-item
+  # seed and the move to the main profile (#144): a write to the table also
+  # writes both GSIs, so each runs at min(4, 4, 4) items/s. by_profile_belt
+  # does not project answer_count, so a mark never writes to it. Its 4 WCU came
+  # from Students and StudentsByOwner (2 -> 1 each), Answers (3 -> 2) and the
+  # spare unit; its 1 RCU from Belts (3 -> 2). Until the exam sheet moves to
+  # by_profile_belt and by_belt is dropped (later step of #144), nothing
+  # queries it but the profiles other than the main one.
   # Each mark (RN006) is a transaction that checks the exam and the event and
   # writes the answer: 2 WCU in each of Exams, Events and Answers (plus 2 in
   # Requirements and the by_belt write on the first mark of an item), and its
@@ -60,14 +66,14 @@ Mappings:
   # a 58-item belt, up to 10 on a full 139-item exam (see backend/README.md).
   DevCapacity:
     Belts:
-      Read: 3
+      Read: 2
       Write: 1
     Students:
       Read: 3
-      Write: 2
+      Write: 1
     StudentsByOwner:
       Read: 2
-      Write: 2
+      Write: 1
     Exams:
       Read: 2
       Write: 3
@@ -80,6 +86,9 @@ Mappings:
     RequirementsByBelt:
       Read: 5
       Write: 4
+    RequirementsByProfileBelt:
+      Read: 1
+      Write: 4
     Settings:
       Read: 1
       Write: 1
@@ -88,7 +97,7 @@ Mappings:
       Write: 3
     Answers:
       Read: 3
-      Write: 3
+      Write: 2
 
 Globals:
   Function:
@@ -225,9 +234,13 @@ Resources:
           AttributeType: S
         - AttributeName: sort_order
           AttributeType: N
+        - AttributeName: profile_belt
+          AttributeType: S
       KeySchema:
         - AttributeName: id
           KeyType: HASH
+      # CloudFormation creates or deletes only one GSI per table update:
+      # by_profile_belt is added now, and by_belt goes in a later deploy.
       GlobalSecondaryIndexes:
         - IndexName: by_belt
           KeySchema:
@@ -242,6 +255,30 @@ Resources:
             - !Ref AWS::NoValue
             - ReadCapacityUnits: !FindInMap [DevCapacity, RequirementsByBelt, Read]
               WriteCapacityUnits: !FindInMap [DevCapacity, RequirementsByBelt, Write]
+        # Items of one requirement profile in a belt (profile_belt =
+        # "<profile_id>#<belt_id>"), in sheet order. Every field of the model
+        # is projected but answer_count, so the first mark of an item (RN006)
+        # does not write here. A new model field must be added to the list.
+        - IndexName: by_profile_belt
+          KeySchema:
+            - AttributeName: profile_belt
+              KeyType: HASH
+            - AttributeName: sort_order
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+              - belt_id
+              - kind
+              - category
+              - description
+              - expected_answer
+              - profile_id
+          ProvisionedThroughput: !If
+            - IsProd
+            - !Ref AWS::NoValue
+            - ReadCapacityUnits: !FindInMap [DevCapacity, RequirementsByProfileBelt, Read]
+              WriteCapacityUnits: !FindInMap [DevCapacity, RequirementsByProfileBelt, Write]
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [IsProd, true, false]
 
@@ -1502,8 +1539,10 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: handlers.seed.handler
-      # Lambda maximum. With 4 WCU the 692 items take ~3 min; the handler stops
-      # 60 s before this limit and answers FAILED, so the stack never hangs.
+      # Lambda maximum. With 4 WCU the 692 items take ~3 min (the seed on a new
+      # stack, or the move to the main profile, #144, on the next deploy of an
+      # existing one); the handler stops 60 s before this limit and answers
+      # FAILED, so the stack never hangs.
       Timeout: 900
       Policies:
         - DynamoDBCrudPolicy:
@@ -1520,8 +1559,9 @@ Resources:
       # Seconds CloudFormation waits for an answer (default 3600) if the
       # function dies without replying; a bit more than its timeout.
       ServiceTimeout: 960
-      # Bump to re-run the (idempotent) seed on the next deploy.
-      SeedVersion: "2"
+      # Bump to re-run the (idempotent) seed on the next deploy. "3": moves the
+      # requirements to the main profile (#144).
+      SeedVersion: "3"
 
   # -------------------------------------------------------------------- Logs
   # One log group for every function (Globals.LoggingConfig), with a short

@@ -162,6 +162,21 @@ def test_put_if_absent_retries_every_throttling_code(
     assert put_if_absent(Target(), {"id": "x"}) is True
 
 
+def test_put_if_absent_retries_a_transaction_conflict(aws: None, no_backoff: None) -> None:
+    # The item is held by a transaction in progress; the conflict ends with it.
+    inner = tables.table(SETTINGS_TABLE_ENV)
+    failures = iter([True, True])
+
+    class Target:
+        def put_item(self, **kwargs: Any) -> Any:
+            if next(failures, False):
+                raise _error("TransactionConflictException")
+            return inner.put_item(**kwargs)
+
+    assert put_if_absent(Target(), {"id": "x"}) is True
+    assert inner.get_item(Key={"id": "x"})["Item"] == {"id": "x"}
+
+
 def test_put_if_absent_raises_other_errors_at_once() -> None:
     calls = []
 
@@ -190,7 +205,11 @@ def test_put_if_absent_stops_at_the_deadline() -> None:
 
 
 def test_seed_completes_when_half_the_writes_are_throttled(throttled: dict[str, Any]) -> None:
-    assert seed.seed_all() == {"belts": len(SEED_BELTS), "requirements": 692}
+    assert seed.seed_all() == {
+        "belts": len(SEED_BELTS),
+        "requirements": 692,
+        "requirement_profiles": 0,
+    }
 
     assert throttled[REQUIREMENTS_TABLE_ENV].throttled >= 692
     assert throttled[BELTS_TABLE_ENV].throttled >= len(SEED_BELTS)
@@ -205,7 +224,7 @@ def test_seed_under_throttling_stays_idempotent(throttled: dict[str, Any]) -> No
     seed.seed_all()
     requirement_repo.delete_requirement(items[0].id)
 
-    assert seed.seed_all() == {"belts": 0, "requirements": 0}
+    assert seed.seed_all() == {"belts": 0, "requirements": 0, "requirement_profiles": 0}
     assert requirement_repo.get_requirement(items[0].id) is None
 
 
