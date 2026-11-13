@@ -42,8 +42,8 @@ futuro (ex.: Jiu-jitsu), mas só Judô é carregado agora.
 | Perfil | Quem é | O que faz |
 |---|---|---|
 | **Responsável/aluno** | Qualquer pessoa que cria conta (cadastro aberto, e-mail + senha) | Cadastra **um ou mais alunos** (pais com vários filhos); vê e edita só os próprios alunos; vê a elegibilidade de cada um |
-| **Examinador** | Usuário administrador | Gerencia faixas, requisitos e eventos; confirma presença; marca os itens do exame |
-| **Admin master** | Um examinador com poder extra *(decisão do responsável, 2026-11-02)* | Tudo do examinador **e** é o **único** que escolhe/troca o sensei; gere as assinaturas do certificado; **não** decide exames |
+| **Examinador** | Usuário administrador | Gerencia requisitos e eventos; nas faixas, altera idade mínima e carência; confirma presença; marca os itens do exame |
+| **Admin master** | Um examinador com poder extra *(decisão do responsável, 2026-11-02)* | Tudo do examinador **e** é o **único** que escolhe/troca o sensei e que altera nome, kyū, ordem, nível e cores das faixas *(2026-11-12)*; gere as assinaturas do certificado; **não** decide exames |
 | **Sensei** | Um examinador específico, escolhido pelo master nas configurações | Tudo do examinador **e** é o **único** que aprova/reprova; gere as assinaturas do certificado |
 
 Como os perfis nascem:
@@ -87,7 +87,9 @@ local ao exibir (sempre `dd/mm/aaaa`).
 | `color_primary` | `#RRGGBB` | cor da faixa |
 | `color_secondary` | `#RRGGBB`, opcional | cor das pontas (faixas de duas cores) |
 
-Faixas não são criadas nem excluídas pela tela (só editadas). Carga inicial no § 4.
+Faixas não são criadas nem excluídas pela tela (só editadas). Só o **admin master** altera
+`name`, `kyu`, `sort_order`, `level` e as cores; qualquer examinador altera `min_age_years` e
+`min_months_previous` *(decisão do responsável, 2026-11-12)*. Carga inicial no § 4.
 
 ### 3.2 Requisito da faixa (`BeltRequirement`) — **um registro por item avaliado**
 | Campo | Tipo | Regras |
@@ -272,7 +274,10 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
 - **RN014 — Datas.** Nascimento e "desde" não podem ser futuros; "desde" ≥ nascimento
   (*"Datas inválidas: verifique nascimento e data da faixa atual"*).
 - **RN015 — Faixas.** Só examinador edita; nome e ordem únicos; idade e carência ≥ 0;
-  cores `#RRGGBB`.
+  cores `#RRGGBB`. Idade mínima e carência: qualquer examinador; nome, kyū, ordem, nível e
+  cores: só o admin master — outro examinador que envie um desses campos com valor
+  diferente do gravado → *"Somente o administrador master altera nome, kyū, ordem, nível e
+  cores da faixa"* (403); reenviar o mesmo valor é aceito *(decisão do responsável, 2026-11-12)*.
 - **RN016 — Evento.** Só examinador gerencia. Encerrado bloqueia presença e marcação.
   Evento com exames não pode ser excluído (*"Evento possui exames registrados"*).
 - **RN017 — Requisitos.** Só examinador gerencia; faixa precisa existir; listagem filtrável
@@ -334,7 +339,8 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
 - Recarregar o exame ao voltar o foco na janela (dois examinadores no mesmo exame).
 
 ### 6.5 Faixas, Requisitos e Eventos (examinadores)
-CRUDs simples. Faixas na ordem da graduação; eventos do mais recente para o mais antigo. Requisitos com filtro por faixa (padrão: Branca/Cinza) e por tipo.
+CRUDs simples. Faixas na ordem da graduação (o examinador edita idade mínima e carência; nome,
+kyū, ordem, nível e cores, só o master); eventos do mais recente para o mais antigo. Requisitos com filtro por faixa (padrão: Branca/Cinza) e por tipo.
 Enums sempre como seletor com rótulo em pt-BR.
 
 ### 6.6 Academia (aba de templates, examinadores)
@@ -435,6 +441,7 @@ acentuação do português.
 | Aparelhos | Notebook e celular/tablet |
 | Hospedagem | Tudo local |
 | Admin master e assinaturas (2026-11-02) | Grupo **master** (o primeiro examinador; outros só pelo console): único que escolhe o sensei, **não** decide exames. Certificado com 1–3 assinaturas (nome, graduação, imagem, posição), geridas pelo master e pelo sensei; ≥ 1 completa para emitir |
+| Edição de faixas (2026-11-12) | Só o **admin master** altera nome, kyū, ordem, nível e cores; os demais examinadores alteram idade mínima e carência |
 
 ---
 

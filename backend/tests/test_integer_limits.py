@@ -9,20 +9,26 @@ import json
 from typing import Any
 
 import pytest
-from conftest import EXAMINER, api_event, response_json
+from conftest import EXAMINER, MASTER, api_event, response_json
 
 from domain import validation
-from domain.belts import MAX_MIN_AGE_YEARS, MAX_MIN_MONTHS_PREVIOUS, MAX_SORT_ORDER
+from domain.belts import (
+    MASTER_ONLY_FIELDS,
+    MAX_MIN_AGE_YEARS,
+    MAX_MIN_MONTHS_PREVIOUS,
+    MAX_SORT_ORDER,
+)
 from domain.errors import ValidationError
 from domain.requirements import MAX_SORT_ORDER as MAX_REQUIREMENT_SORT_ORDER
+from domain.users import User
 from handlers import belts as belt_handlers
 from handlers import requirements as requirement_handlers
 from repository import belts as belt_repo
 from repository import requirements as requirement_repo
 
 
-def _event(payload: dict, path: dict[str, str] | None = None) -> dict:
-    event = api_event(EXAMINER, path=path)
+def _event(payload: dict, path: dict[str, str] | None = None, *, user: User = EXAMINER) -> dict:
+    event = api_event(user, path=path)
     event["body"] = json.dumps(payload)
     event["isBase64Encoded"] = False
     return event
@@ -50,6 +56,12 @@ def test_rn015_int_field_cap_applies_with_only_minimum() -> None:
 
 
 # --- belts -------------------------------------------------------------------------
+# Only the admin master changes the order (#142); any examiner changes age and months.
+
+
+def _belt_editor(field: str) -> User:
+    return MASTER if field in MASTER_ONLY_FIELDS else EXAMINER
+
 
 BELT_LIMITS = [
     ("sort_order", MAX_SORT_ORDER, "Ordem: deve estar entre 0 e 99"),
@@ -69,7 +81,9 @@ def test_rn015_belt_field_at_ceiling_is_accepted(
     target = belt_repo.list_belts()[-1]
     payload = {**target.to_dict(), field: maximum}
 
-    response = belt_handlers.update_belt(_event(payload, path={"id": target.id}), None)
+    response = belt_handlers.update_belt(
+        _event(payload, path={"id": target.id}, user=_belt_editor(field)), None
+    )
 
     assert response["statusCode"] == 200
     saved = {belt.id: belt for belt in belt_repo.list_belts()}[target.id]
@@ -84,7 +98,9 @@ def test_rn015_belt_field_past_ceiling_is_400(
     target = before[-1]
     payload = {**target.to_dict(), field: maximum + 1}
 
-    response = belt_handlers.update_belt(_event(payload, path={"id": target.id}), None)
+    response = belt_handlers.update_belt(
+        _event(payload, path={"id": target.id}, user=_belt_editor(field)), None
+    )
 
     assert response["statusCode"] == 400
     assert response_json(response) == {"message": message}
