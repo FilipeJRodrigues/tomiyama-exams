@@ -24,6 +24,8 @@ const CLOSED_NAME = 'Exame março/2026';
 const ROUTE = '/dia-do-exame';
 const LIST = 'Alunos do evento';
 const TITLE = 'Dia do exame';
+const EVENT_NOT_FOUND =
+  /^O evento escolhido não foi encontrado\. Ele pode ter sido apagado\. Escolha um evento na lista\.$/;
 
 const CLOSE_TEXT =
   'Encerrar o evento “Exame novembro/2026” (21/11/2026)? A presença e a marcação dos itens ficam bloqueadas, mas o sensei ainda pode decidir os exames em andamento. O evento pode ser reaberto depois.';
@@ -246,8 +248,10 @@ describe('exam day, "Encerrar evento" / "Reabrir evento" (§ 6.3, § 6.5)', () =
     expect(puts).toBe(1);
   });
 
-  it('an event deleted meanwhile: the 404 is shown and, once closed, the focus goes to the title', async () => {
-    const { user } = await openExamDay();
+  // The two cases below were rewritten for #28 (user's decision): the screen used to show the
+  // mute "Nenhum evento aberto." or to move to the other open event on its own.
+  it('an event deleted meanwhile: the 404 is shown and, once closed, the notice takes the place of the list and the focus goes to the title', async () => {
+    const { user, router } = await openExamDay();
     const dialog = await openClose(user);
     db.events = db.events.filter((event) => event.id !== OPEN);
     await user.click(within(dialog).getByRole('button', { name: 'Encerrar' }));
@@ -255,12 +259,19 @@ describe('exam day, "Encerrar evento" / "Reabrir evento" (§ 6.3, § 6.5)', () =
 
     await user.keyboard('{Escape}');
     await dialogGone();
-    expect(await screen.findByText('Nenhum evento aberto.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(EVENT_NOT_FOUND);
+    expect(screen.queryByText('Nenhum evento aberto.')).not.toBeInTheDocument();
+    expect(picker()).toHaveValue('');
+    expect(picker().selectedOptions[0]).toHaveTextContent('Nenhum evento escolhido');
+    expect(screen.queryByRole('table', { name: LIST })).not.toBeInTheDocument();
     expect(statusButtons()).toHaveLength(0);
+    await waitFor(() => {
+      expect(router.state.location.search).toBe('');
+    });
     expect(screen.getByRole('heading', { level: 1, name: TITLE })).toHaveFocus();
   });
 
-  it('an event deleted meanwhile with another open event: the screen moves to it, the focus goes to the title', async () => {
+  it('rn005 an event deleted meanwhile with another open event: the screen does not move to it, the notice asks for a choice and the focus goes to the title', async () => {
     const otherId = '5e1b7c2a-3d4f-4a6b-8c9d-0e1f2a3b4c09';
     db.events.push(makeEvent(otherId, { name: 'Exame outubro/2026', exam_date: '2026-10-25' }));
     const { user, router } = await openExamDay();
@@ -271,15 +282,26 @@ describe('exam day, "Encerrar evento" / "Reabrir evento" (§ 6.3, § 6.5)', () =
 
     await user.keyboard('{Escape}');
     await dialogGone();
-    // The button of another event is not the one the user pressed: the focus does not go there.
-    expect(
-      await screen.findByRole('button', { name: 'Encerrar evento Exame outubro/2026' }),
-    ).not.toHaveFocus();
-    expect(picker()).toHaveValue(otherId);
+    expect(await screen.findByRole('alert')).toHaveTextContent(EVENT_NOT_FOUND);
+    // Neither the list nor the button of the other open event: no one picked it.
+    expect(picker()).toHaveValue('');
+    expect(picker().selectedOptions[0]).toHaveTextContent('Nenhum evento escolhido');
+    expect(screen.queryByRole('table', { name: LIST })).not.toBeInTheDocument();
+    expect(statusButtons()).toHaveLength(0);
     await waitFor(() => {
-      expect(router.state.location.search).toBe(`?evento=${otherId}`);
+      expect(router.state.location.search).toBe('');
     });
     expect(screen.getByRole('heading', { level: 1, name: TITLE })).toHaveFocus();
+
+    // The examiner picks the other event: its list and its button, and the notice leaves.
+    await user.selectOptions(picker(), otherId);
+    await screen.findByRole('table', { name: LIST });
+    const button = screen.getByRole('button', { name: 'Encerrar evento Exame outubro/2026' });
+    expect(statusButtons()).toEqual([button]);
+    // The button of another event is not the one the user pressed: the focus does not go there.
+    expect(button).not.toHaveFocus();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(router.state.location.search).toBe(`?evento=${otherId}`);
   });
 
   it('the notice closes with "Fechar aviso" (focus to the title) and leaves with another event', async () => {
