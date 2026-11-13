@@ -13,11 +13,15 @@ profile, and ``migrate_to_main_profile`` (run by the ``InitialData`` custom
 resource) writes both attributes on them. Until the exam sheet moves to
 ``by_profile_belt`` (and ``by_belt`` is dropped), the main profile is listed
 through ``by_belt`` and the table, so an item not migrated yet is never left
-out of the list.
+out of the list. The other profiles are read only through ``by_profile_belt``.
+
+Copies of a profile (``put_copy``) are written by the background copy
+(``handlers.requirement_profile_copy``), one conditional ``PutItem`` each.
 """
 
 import logging
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
@@ -121,6 +125,15 @@ def list_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
     return [_from_item(item) for item in items]
 
 
+def list_profile_belts(profile_id: str, belt_ids: Iterable[str]) -> list[Requirement]:
+    """Return every item of one profile, belt by belt (``list_profile_belt`` for each belt).
+
+    For a profile other than the main one this reads only its own items
+    (``by_profile_belt``), whatever the size of the other profiles.
+    """
+    return [item for belt_id in belt_ids for item in list_profile_belt(profile_id, belt_id)]
+
+
 def list_all() -> list[Requirement]:
     """Return every item of every belt and profile (unordered)."""
     return [_from_item(item) for item in paginate(table(REQUIREMENTS_TABLE_ENV).scan)]
@@ -147,6 +160,35 @@ def create_requirement(requirement: Requirement) -> None:
     except ClientError as exc:
         raise_if_throttled(exc, "PutItem on Requirements")
         raise
+
+
+def put_copy(
+    requirement: Requirement,
+    *,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Insert an item copied into a profile, unless it is already there.
+
+    The copy has a deterministic id (``copied_requirement_id``), so the
+    conditional write makes a repeated copy harmless; it never carries
+    ``answer_count``. Throttling and transaction conflicts are retried until
+    ``deadline`` (``retry_throttled``; ``sleep`` and ``clock`` injected for tests).
+
+    Returns:
+        True if inserted, False if the item already existed.
+
+    Raises:
+        DeadlineExceededError: Still throttled when the deadline passed.
+    """
+    return put_if_absent(
+        table(REQUIREMENTS_TABLE_ENV),
+        _to_item(requirement),
+        deadline=deadline,
+        sleep=sleep,
+        clock=clock,
+    )
 
 
 def save_requirement(requirement: Requirement) -> None:

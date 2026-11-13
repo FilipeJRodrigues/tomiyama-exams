@@ -108,16 +108,30 @@ o percentual por item). Carga inicial no **Apêndice A** (692 itens), no perfil 
 ### 3.2.1 Perfil de requisitos (`RequirementProfile`) *(decisão do responsável, 2026-11-12)*
 | Campo | Tipo | Regras |
 |---|---|---|
-| `name` | texto | ex.: "Principal" |
+| `name` | texto ≤ 60 | obrigatório; único entre os perfis, sem diferenciar maiúsculas e acentos; "Principal" é do perfil principal |
 | `is_main` | booleano | só o perfil principal |
+| `status` | enum `COPYING` / `READY` | "Copiando" / "Pronto"; o principal é sempre `READY` |
+| `source_profile_id` | FK → Perfil de requisitos | perfil de origem da cópia (padrão: principal) |
+| `created_by` | FK → Usuário | examinador que criou |
+| `created_at` | data e hora | |
 
 Cada requisito pertence a um perfil. O **perfil principal** tem id fixo (`main`, nome
 "Principal"), guarda os itens do Apêndice A e **só o admin master** cria, edita ou exclui
-itens dele; nunca é excluído. Os itens gravados antes dos perfis passam para o principal
-sem mudar exames nem respostas. Em etapas seguintes: qualquer examinador cria um perfil
-como **cópia completa** do principal (ou de outro perfil) e o edita livremente; o evento
-escolhe o perfil (padrão: principal), que não muda depois que o evento tem exames; perfil
-não principal só é excluído se nenhum evento o usar. Por enquanto só existe o principal.
+itens dele; nunca é renomeado nem excluído. Os itens gravados antes dos perfis passam para
+o principal sem mudar exames nem respostas. **Qualquer examinador** cria um perfil como
+**cópia completa** do principal ou de outro perfil pronto, renomeia qualquer perfil que não
+seja o principal e cria, edita e exclui os itens dele (a RN017 vale dentro do perfil).
+Existem no máximo **3 perfis no total**: o principal e 2 criados pelos examinadores; todo
+perfil gravado conta, qualquer que seja o status (um perfil em cópia já ocupa a vaga). Com 3
+perfis, criar outro é recusado (*"Limite de 3 perfis de requisitos atingido. Exclua um perfil
+para criar outro."*) *(decisão do responsável, 2026-11-13)*. A
+cópia dos itens é feita em segundo plano: o perfil nasce `COPYING` e passa a `READY` ao
+fim; enquanto copia, os itens dele não são alterados (*"O perfil ainda está sendo copiado.
+Aguarde o fim da cópia para alterar os itens."*), e uma cópia parada (sem sinal de vida há
+15 minutos) pode ser retomada por qualquer examinador. A cópia não leva respostas de exames.
+Em etapas seguintes: o evento escolhe o perfil (padrão: principal), que não muda depois que
+o evento tem exames; perfil não principal só é excluído se nenhum evento o usar. Até lá, a
+ficha de todo exame usa só os itens do principal (RN006, RN007).
 
 ### 3.3 Aluno (`Student`) — pertence ao responsável que o cadastrou
 | Campo | Tipo | Regras |
@@ -246,10 +260,13 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   2026-11-02)*.
 - **RN006 — Marcação.** Examinador marca cada item como certo/errado; marcar de novo
   **substitui** (correção antes da decisão); registra quem marcou. O item precisa ser da
-  faixa-alvo (*"Item não pertence à faixa do exame"*). Bloqueado com exame decidido ou
+  faixa-alvo (*"Item não pertence à faixa do exame"*) e do perfil de requisitos do exame
+  (*"Item não pertence ao perfil de requisitos do exame"*, 400): a ficha, o percentual
+  (RN007) e a marcação usam só os itens da faixa-alvo nesse perfil; enquanto o evento ainda
+  não escolhe o perfil (§ 3.2.1), é sempre o **principal**. Bloqueado com exame decidido ou
   evento encerrado. Duas marcações simultâneas no mesmo item não podem gerar erro 500.
 - **RN007 — Percentual de acertos.** Por tipo (teórico e prático, separados):
-  `acertos ÷ total de itens do tipo na faixa-alvo × 100`, 1 casa decimal, exibido em pt-BR
+  `acertos ÷ total de itens do tipo na faixa-alvo (no perfil do exame) × 100`, 1 casa decimal, exibido em pt-BR
   ("72,5%"). Item não marcado conta como não acertado. Mostrar junto "marcados X de N".
   Faixa sem itens de um tipo → percentual "—". **Sempre recalculado** (nunca gravado).
 - **RN008 — Decisão do sensei.** Só o usuário configurado como sensei aprova/reprova,
@@ -301,8 +318,17 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   principal). Itens do **perfil principal**: só o admin master cria, edita ou exclui —
   outro examinador → *"Somente o administrador master altera o perfil principal de
   requisitos"* (403); o perfil de um item não muda (*"Perfil: o perfil de um requisito não
-  pode ser alterado"*, 400) *(decisão do responsável, 2026-11-12)*. Item com respostas não
-  pode ser excluído (*"Requisito possui respostas registradas"*).
+  pode ser alterado"*, 400) *(decisão do responsável, 2026-11-12)*. Itens dos **outros
+  perfis**: qualquer examinador cria, edita ou exclui, depois que a cópia do perfil termina
+  (*"O perfil ainda está sendo copiado. Aguarde o fim da cópia para alterar os itens."*,
+  409). Perfis: nome único sem diferenciar maiúsculas e acentos (*"Já existe um perfil de
+  requisitos com este nome"*, 409); o principal não é renomeado (*"O nome do perfil
+  principal não pode ser alterado"*, 403); o perfil de origem precisa existir e estar
+  pronto *(decisão do responsável, 2026-11-12)*. No máximo 3 perfis no total, o principal
+  incluído; um perfil em cópia já conta (*"Limite de 3 perfis de requisitos atingido. Exclua
+  um perfil para criar outro."*, 409; quando o nome também está repetido, vale esta
+  mensagem) *(decisão do responsável, 2026-11-13)*. Item com respostas não pode ser excluído
+  (*"Requisito possui respostas registradas"*).
 - **RN018 — Histórico preservado.** Aluno **com exames** não pode ser excluído pelo
   responsável (*"Aluno possui exames registrados"*); o examinador pode inativá-lo.
   Nunca apagar exames em cascata ao excluir aluno (apagaria o histórico e contornaria a
@@ -363,8 +389,13 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
 CRUDs simples. Faixas na ordem da graduação (o examinador edita idade mínima e carência; nome,
 kyū, ordem, nível e cores, só o master); eventos do mais recente para o mais antigo. Requisitos com filtro por faixa (padrão: Branca/Cinza) e por tipo.
 Requisitos com seletor de perfil (padrão: o **principal**, com selo "Principal"; para quem
-não é master, o principal aparece com cadeado e só para leitura) e, numa etapa seguinte,
-botão "Novo perfil" (nome + perfil de origem) *(decisão do responsável, 2026-11-12)*.
+não é master, o principal aparece com cadeado e só para leitura), botão "Novo perfil" (nome e
+perfil de origem, padrão: principal) e "Renomear" nos perfis que não são o principal. Um
+perfil em cópia aparece como "Copiando… (N de M)", com os itens só para leitura; uma cópia
+parada aparece como "Cópia parada", com o botão "Retomar cópia" *(decisão do responsável,
+2026-11-12)*. Com 3 perfis (o limite, contando o principal), "Novo perfil" é recusado com
+*"Limite de 3 perfis de requisitos atingido. Exclua um perfil para criar outro."*
+*(decisão do responsável, 2026-11-13)*.
 Enums sempre como seletor com rótulo em pt-BR.
 
 ### 6.6 Academia (aba de templates, examinadores)
@@ -467,6 +498,7 @@ acentuação do português.
 | Admin master e assinaturas (2026-11-02) | Grupo **master** (o primeiro examinador; outros só pelo console): único que escolhe o sensei, **não** decide exames. Certificado com 1–3 assinaturas (nome, graduação, imagem, posição), geridas pelo master e pelo sensei; ≥ 1 completa para emitir |
 | Edição de faixas (2026-11-12) | Só o **admin master** altera nome, kyū, ordem, nível e cores; os demais examinadores alteram idade mínima e carência |
 | Perfis de requisitos (2026-11-12) | Perfil **principal** fixo (Apêndice A), alterado só pelo **admin master**; os demais examinadores criam perfis próprios (cópia completa) e os editam; o evento escolhe o perfil (padrão: principal) |
+| Limite de perfis de requisitos (2026-11-13) | No máximo **3 perfis no total**: o principal + 2 criados pelos examinadores; perfil em cópia conta |
 
 ---
 

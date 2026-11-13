@@ -8,7 +8,7 @@ main profile.
 import json
 import uuid
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -22,6 +22,8 @@ from domain.requirement_profiles import MAIN_PROFILE_ID
 _SEED_FILE = Path(__file__).resolve().parent.parent / "seed_data" / "requirements.json"
 # Fixed namespace so seeded items get the same UUID on every deploy (idempotent seed).
 _SEED_NAMESPACE = uuid.UUID("2b8f0c57-91d4-4a8e-b6f3-5e0d7c1a9f42")
+# Fixed namespace of the items copied into a profile (``copied_requirement_id``).
+_COPY_NAMESPACE = uuid.UUID("7d4e2a91-3c6b-4f08-9a15-c2e8b0f6d374")
 
 MAX_CATEGORY = 60
 MAX_TEXT = 2000
@@ -67,6 +69,29 @@ class Requirement:
 def seed_requirement_id(belt_name: str, sort_order: int) -> str:
     """Return the deterministic id of a seeded item."""
     return str(uuid.uuid5(_SEED_NAMESPACE, f"{belt_name}|{sort_order}"))
+
+
+def copied_requirement_id(profile_id: str, source_requirement_id: str) -> str:
+    """Return the deterministic id of an item copied into a profile.
+
+    The same source item always lands on the same id in the same profile, so
+    a copy that runs again (a retry, or a resume after a stop) never
+    duplicates an item.
+    """
+    return str(uuid.uuid5(_COPY_NAMESPACE, f"{profile_id}|{source_requirement_id}"))
+
+
+def copy_to_profile(source: Requirement, profile_id: str) -> Requirement:
+    """Return the copy of an item in another profile: every field but the id and the profile.
+
+    The answers counter (``answer_count``) is not part of the model, so a copy
+    never carries the source's answers (RN006).
+    """
+    return replace(
+        source,
+        id=copied_requirement_id(profile_id, source.id),
+        profile_id=profile_id,
+    )
 
 
 @lru_cache(maxsize=1)

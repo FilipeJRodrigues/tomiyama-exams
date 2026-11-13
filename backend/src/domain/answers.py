@@ -1,8 +1,10 @@
 """Exam answers: each item marked as correct or wrong by an examiner (RN006).
 
 One answer per (exam, item); marking again replaces the previous answer while
-the exam is in progress (RN010) and the event is open (RN016). An item without
-an answer is "not marked" and counts as not correct (RN007).
+the exam is in progress (RN010) and the event is open (RN016). Only the items
+of the exam's sheet are marked: target belt and sheet profile
+(``domain.exams.sheet_profile_id``). An item without an answer is "not marked"
+and counts as not correct (RN007).
 """
 
 from dataclasses import dataclass
@@ -10,11 +12,12 @@ from typing import Any
 
 from domain.errors import ConflictError, ValidationError
 from domain.events import ExamEvent
-from domain.exams import MSG_EVENT_CLOSED, Exam, ExamStatus
+from domain.exams import MSG_EVENT_CLOSED, Exam, ExamStatus, sheet_profile_id
 from domain.exams import MSG_EXAM_DECIDED as MSG_EXAM_DECIDED
 from domain.requirements import Requirement
 
 MSG_ITEM_NOT_IN_BELT = "Item não pertence à faixa do exame"
+MSG_ITEM_NOT_IN_PROFILE = "Item não pertence ao perfil de requisitos do exame"
 MSG_INVALID_CORRECT = "Marcação inválida: envie correct como true (certo) ou false (errado)"
 MSG_MARK_TRY_AGAIN = "Outra marcação está em andamento. Tente de novo."
 
@@ -54,10 +57,16 @@ def parse_correct(payload: dict[str, Any]) -> bool:
 def ensure_can_mark(exam: Exam, event: ExamEvent, requirement: Requirement) -> None:
     """Check that the item may be marked or unmarked in the exam now (RN006).
 
+    The item must be on the exam's sheet: of the target belt and of the sheet
+    profile. The belt is checked first, so an item of another belt answers
+    the belt message whatever its profile. A requirement's profile never
+    changes (``check_profile_unchanged``), so this read-time check needs no
+    condition in the answer transaction, unlike the belt.
+
     Raises:
         ConflictError: If the exam is decided (RN010).
         ValidationError: If the event is closed (RN016) or the item is not of
-            the exam's target belt.
+            the exam's target belt or of its sheet profile.
     """
     if exam.status != ExamStatus.IN_PROGRESS:
         raise ConflictError(MSG_EXAM_DECIDED)
@@ -65,6 +74,8 @@ def ensure_can_mark(exam: Exam, event: ExamEvent, requirement: Requirement) -> N
         raise ValidationError(MSG_EVENT_CLOSED)
     if requirement.belt_id != exam.target_belt_id:
         raise ValidationError(MSG_ITEM_NOT_IN_BELT)
+    if requirement.profile_id != sheet_profile_id(event):
+        raise ValidationError(MSG_ITEM_NOT_IN_PROFILE)
 
 
 def mark(

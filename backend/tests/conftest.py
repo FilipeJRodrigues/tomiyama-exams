@@ -24,6 +24,7 @@ os.environ["SETTINGS_TABLE"] = "test-settings"
 os.environ["EVENTS_TABLE"] = "test-events"
 os.environ["ANSWERS_TABLE"] = "test-answers"
 os.environ["IMAGES_BUCKET"] = "test-academy-images"
+os.environ["REQUIREMENT_PROFILE_COPY_FUNCTION"] = "test-copy-requirement-profile"
 
 from domain import dates  # noqa: E402
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
@@ -41,6 +42,7 @@ from handlers import students as student_handlers  # noqa: E402
 from repository import belts as belt_repo  # noqa: E402
 from repository import events as event_repo  # noqa: E402
 from repository import images as image_repo  # noqa: E402
+from repository import requirement_profiles as profile_repo  # noqa: E402
 from repository import requirements as requirement_repo  # noqa: E402
 from repository import settings as settings_repo  # noqa: E402
 from repository import students as student_repo  # noqa: E402
@@ -177,11 +179,13 @@ def aws() -> Iterator[None]:
         tables.reset_cache()
         user_repo.reset_cache()
         image_repo.reset_cache()
+        profile_repo.reset_cache()
         _create_tables()
         yield
     tables.reset_cache()
     user_repo.reset_cache()
     image_repo.reset_cache()
+    profile_repo.reset_cache()
 
 
 @pytest.fixture
@@ -316,6 +320,57 @@ def api_event(
 def response_json(response: dict[str, Any]) -> Any:
     """Return the decoded JSON body of a handler response."""
     return json.loads(response["body"])
+
+
+# --- Background copy of a requirement profile (#144) ---
+
+
+@dataclass
+class CopyInvocations:
+    """Asynchronous ``Invoke`` calls of the profile copy function, caught before AWS.
+
+    Attributes:
+        calls: ``FunctionName``, ``InvocationType`` and decoded ``Payload`` of
+            each call, in order.
+        error_code: While set, every call fails with this AWS error code (the
+            copy could not be queued).
+    """
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    error_code: str | None = None
+
+    @property
+    def profile_ids(self) -> list[str]:
+        """The ``profile_id`` of every successful call, in order."""
+        return [call["Payload"]["profile_id"] for call in self.calls]
+
+
+@pytest.fixture
+def copy_invocations(aws: None, monkeypatch: pytest.MonkeyPatch) -> CopyInvocations:
+    """Catch Lambda ``Invoke`` (the copy is not run: tests call it themselves)."""
+    from botocore.client import BaseClient
+
+    invocations = CopyInvocations()
+    original = BaseClient._make_api_call
+
+    def patched(self: BaseClient, operation_name: str, api_params: dict[str, Any]) -> Any:
+        if operation_name != "Invoke":
+            return original(self, operation_name, api_params)
+        if invocations.error_code is not None:
+            raise ClientError(
+                {"Error": {"Code": invocations.error_code, "Message": "refused"}}, operation_name
+            )
+        invocations.calls.append(
+            {
+                "FunctionName": api_params["FunctionName"],
+                "InvocationType": api_params["InvocationType"],
+                "Payload": json.loads(api_params["Payload"]),
+            }
+        )
+        return {"StatusCode": 202}
+
+    monkeypatch.setattr(BaseClient, "_make_api_call", patched)
+    return invocations
 
 
 # --- Certificate signature images (RN012), independent of the S3 key format ---
