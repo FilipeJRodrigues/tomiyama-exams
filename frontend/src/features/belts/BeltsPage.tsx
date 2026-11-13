@@ -184,6 +184,12 @@ export function BeltsPage() {
   const retryFocus = useRetryFocus([belts], titleRef);
   const dialogRef = useRef<HTMLDivElement>(null);
   const openings = useRef(0);
+  /**
+   * Key of the dialog that is open now, or null while it closes or is closed. A ref, not the
+   * `dialog` state: a reread that answers late reads it when the answer comes, not the value
+   * its closure saw when it started (#143).
+   */
+  const openKey = useRef<number | null>(null);
   /** The PUT's lock: also held while the dialog closes after a PUT that worked (#88). */
   const lock = useSendLock();
 
@@ -192,12 +198,14 @@ export function BeltsPage() {
     setSavedName(null);
     lock.release();
     openings.current += 1;
+    openKey.current = openings.current;
     setDialog({ belt, opened: true, key: openings.current });
   };
 
   const closeEditor = () => {
     // Nothing closes the dialog while the belt is on its way to the API.
     if (lock.held() || update.isPending) return;
+    openKey.current = null;
     setDialog((current) => current && { ...current, opened: false });
   };
 
@@ -219,6 +227,7 @@ export function BeltsPage() {
         onSuccess: (saved) => {
           // No new PUT while the dialog fades out: until `dialogClosed`.
           lock.keepUntilClosed();
+          openKey.current = null;
           setSavedName(saved.name);
           setDialog((current) => current && { ...current, opened: false });
         },
@@ -231,17 +240,23 @@ export function BeltsPage() {
   /**
    * Reads the dialog's belt again (after the 403 of a belt the master changed meanwhile): the
    * list reloads, the dialog takes the stored belt and the old error goes away.
+   *
+   * Resolves with null when the dialog that asked for it closed or gave way to another one
+   * while the list was on its way: the answer is dropped, with no `update.reset()` (it would
+   * drop the callbacks of another belt's PUT) nor `setDialog` (#143).
    */
-  const rereadBelt = async (): Promise<Belt> => {
+  const rereadBelt = async (): Promise<Belt | null> => {
+    const key = openKey.current;
     const beltId = dialog?.belt.id;
-    if (!beltId) throw new ApiError(404, MSG_BELT_NOT_FOUND);
+    if (key === null || !beltId) return null;
     const result = await belts.refetch();
+    if (openKey.current !== key) return null;
     if (result.isError) throw result.error;
     const stored = result.data?.find((belt) => belt.id === beltId);
     if (!stored) throw new ApiError(404, MSG_BELT_NOT_FOUND);
     update.reset();
     setDialog((current) =>
-      current && current.belt.id === beltId ? { ...current, belt: stored } : current,
+      current && current.key === key ? { ...current, belt: stored } : current,
     );
     return stored;
   };

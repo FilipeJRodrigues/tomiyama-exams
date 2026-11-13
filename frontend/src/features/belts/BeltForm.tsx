@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Group, NativeSelect, Stack, Text, TextInput } from '@mantine/core';
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
-import { useId, useRef, useState, type SubmitEvent } from 'react';
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
 
 import { ApiError, errorMessage } from '../../api/client';
 import type { Belt, BeltInput, BeltLevel } from '../../api/types';
@@ -80,9 +80,10 @@ interface Props {
   onCancel: () => void;
   /**
    * Reads the belt again after the 403 of a belt changed meanwhile: resolves with the stored
-   * belt (which becomes `belt`) or rejects with the reason.
+   * belt (which becomes `belt`), with null when the answer was dropped because this dialog
+   * closed or gave way to another one meanwhile, or rejects with the reason.
    */
-  onReread: () => Promise<Belt>;
+  onReread: () => Promise<Belt | null>;
 }
 
 /**
@@ -103,6 +104,14 @@ export function BeltForm({ belt, isMaster, error, saving, onSubmit, onCancel, on
   const [rereadError, setRereadError] = useState<unknown>(null);
   const [reread, setReread] = useState(false);
   const rereadButtonRef = useRef<HTMLButtonElement>(null);
+  /** False once the form is gone: a late reread then changes nothing (#143). */
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const change = <K extends BeltField>(field: K, value: BeltFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -131,20 +140,23 @@ export function BeltForm({ belt, isMaster, error, saving, onSubmit, onCancel, on
     setRereading(true);
     setRereadError(null);
     try {
-      await onReread();
+      const stored = await onReread();
+      // The dialog closed or another one took its place meanwhile: nothing to show (#143).
+      if (stored === null || !mounted.current) return;
       setReread(true);
       // The error and its button went away: the focus goes to the first field (§ 6.7).
       window.setTimeout(() => {
-        focusIfLost(document.getElementById(fieldId('minAgeYears')));
+        if (mounted.current) focusIfLost(document.getElementById(fieldId('minAgeYears')));
       }, 0);
     } catch (problem) {
+      if (!mounted.current) return;
       setRereadError(problem);
       // The button was disabled while reading: the focus goes back to it (§ 6.7).
       window.setTimeout(() => {
-        focusIfLost(rereadButtonRef.current);
+        if (mounted.current) focusIfLost(rereadButtonRef.current);
       }, 0);
     } finally {
-      setRereading(false);
+      if (mounted.current) setRereading(false);
     }
   };
 
