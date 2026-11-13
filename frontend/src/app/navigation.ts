@@ -13,6 +13,8 @@ import type { Role } from '../auth/types';
 export const paths = {
   login: '/entrar',
   signUp: '/cadastro',
+  /** Password recovery (§ 2): the e-mail, then the code and the new password. */
+  forgotPassword: '/recuperar-senha',
   students: '/alunos',
   studentNew: '/alunos/novo',
   /** Route pattern of the student form in edit mode; build links with `studentPath`. */

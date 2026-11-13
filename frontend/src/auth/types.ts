@@ -51,12 +51,22 @@ export interface AuthService {
   /** Confirm the e-mail with the code and sign in automatically when possible. */
   confirmSignUp(email: string, code: string): Promise<ConfirmSignUpResult>;
   resendSignUpCode(email: string): Promise<void>;
+  /**
+   * Password recovery, step 1: e-mails a 6-digit code when the account exists. Resolves the
+   * same way for an unknown e-mail: the screens never tell whether an account exists.
+   */
+  resetPassword(email: string): Promise<void>;
+  /** Password recovery, step 2: the code from the e-mail and the new password. */
+  confirmResetPassword(email: string, code: string, newPassword: string): Promise<void>;
   /** ID token for the `Authorization` header; null when signed out. */
   getIdToken(): Promise<string | null>;
 }
 
-/** Failures the screens react to beyond showing the message. */
-export type AuthErrorCode = 'USER_NOT_CONFIRMED' | 'ALREADY_CONFIRMED';
+/**
+ * Failures the screens react to beyond showing the message. `PASSWORD_RESET_REQUIRED`: the
+ * academy reset the password in the Cognito console; the login goes to the recovery code step.
+ */
+export type AuthErrorCode = 'USER_NOT_CONFIRMED' | 'ALREADY_CONFIRMED' | 'PASSWORD_RESET_REQUIRED';
 
 /** Authentication failure with a pt-BR message safe to show. */
 export class AuthError extends Error {

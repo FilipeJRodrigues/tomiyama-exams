@@ -15,13 +15,24 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 
 import { paths } from '../../app/navigation';
 import type { LoginRedirectState } from '../../app/guards';
-import { MOCK_MASTER_EMAIL, MOCK_TEMPORARY_PASSWORD } from '../../auth/mockConstants';
+import {
+  MOCK_MASTER_EMAIL,
+  MOCK_RESET_CODE,
+  MOCK_RESET_REQUIRED_EMAIL,
+  MOCK_TEMPORARY_PASSWORD,
+} from '../../auth/mockConstants';
 import { AuthError, ROLE_LABELS, type Role } from '../../auth/types';
 import { useAuth } from '../../auth/useAuth';
 import { AuthCard } from './AuthCard';
+import { TOUCH_LINK } from './touchLink';
 import { ErrorAlert } from './ErrorAlert';
 import { PASSWORD_HINT, newPasswordProblem } from './passwordRules';
-import { confirmedEmailOf, type SignUpPageState } from './routeState';
+import {
+  confirmedEmailOf,
+  passwordResetEmailOf,
+  type ForgotPasswordPageState,
+  type SignUpPageState,
+} from './routeState';
 
 function messageOf(error: unknown): string {
   return error instanceof AuthError ? error.message : 'Não foi possível entrar. Tente de novo.';
@@ -92,7 +103,10 @@ function NewPasswordForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** § 6.1: login by e-mail and password, with the first-login password change. */
+/**
+ * § 6.1: login by e-mail and password, with the first-login password change and the way to
+ * the password recovery (also taken when the academy reset the password in the console).
+ */
 export function LoginPage() {
   const { status, signIn, supportsRoleChoice } = useAuth();
   const location = useLocation();
@@ -100,7 +114,9 @@ export function LoginPage() {
   const errorId = useId();
   // After the e-mail confirmation, when the automatic sign-in did not happen.
   const [confirmedEmail] = useState(() => confirmedEmailOf(location.state));
-  const [email, setEmail] = useState(confirmedEmail ?? '');
+  // After the password recovery.
+  const [passwordResetEmail] = useState(() => passwordResetEmailOf(location.state));
+  const [email, setEmail] = useState(confirmedEmail ?? passwordResetEmail ?? '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>(confirmedEmail ? 'guardian' : 'examiner');
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +147,13 @@ export function LoginPage() {
       if (step === 'NEW_PASSWORD_REQUIRED') setNeedsNewPassword(true);
       else goToApp();
     } catch (caught) {
+      if (caught instanceof AuthError && caught.code === 'PASSWORD_RESET_REQUIRED') {
+        // The code went to the e-mail when the academy reset the password: straight to the
+        // code step, which explains it and offers a new code.
+        const state: ForgotPasswordPageState = { resetEmail: email.trim(), resetRequired: true };
+        void navigate(paths.forgotPassword, { state });
+        return;
+      }
       setError(messageOf(caught));
       if (caught instanceof AuthError && caught.code === 'USER_NOT_CONFIRMED') {
         setUnconfirmedEmail(email.trim());
@@ -141,11 +164,18 @@ export function LoginPage() {
   };
 
   return (
-    <AuthCard title="Entrar">
+    <AuthCard title="Entrar" focusTitle={passwordResetEmail !== null}>
       {supportsRoleChoice && (
         <Alert color="orange" title="Dados simulados" role="note">
           Qualquer e-mail entra. A senha “{MOCK_TEMPORARY_PASSWORD}” simula o primeiro acesso. Como
-          examinador, o e-mail “{MOCK_MASTER_EMAIL}” entra como administrador master.
+          examinador, o e-mail “{MOCK_MASTER_EMAIL}” entra como administrador master. O e-mail “
+          {MOCK_RESET_REQUIRED_EMAIL}” simula uma senha redefinida pela academia; na recuperação de
+          senha, o código é “{MOCK_RESET_CODE}”.
+        </Alert>
+      )}
+      {passwordResetEmail && (
+        <Alert color="green" variant="light" icon={<IconCircleCheck aria-hidden />} role="status">
+          Senha alterada. Entre com a nova senha.
         </Alert>
       )}
       {confirmedEmail && (
@@ -214,6 +244,16 @@ export function LoginPage() {
           </Button>
         </Stack>
       </form>
+      <Text size="sm">
+        <Anchor
+          component={Link}
+          to={paths.forgotPassword}
+          state={{ draftEmail: email.trim() || undefined } satisfies ForgotPasswordPageState}
+          style={TOUCH_LINK}
+        >
+          Esqueci minha senha
+        </Anchor>
+      </Text>
       <Text size="sm">
         Não tem conta?{' '}
         <Anchor component={Link} to={paths.signUp}>

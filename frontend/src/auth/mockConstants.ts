@@ -26,3 +26,12 @@ export const MOCK_EXPIRED_CODE = '000000';
 
 /** E-mail that simulates an account that already exists. */
 export const MOCK_EXISTING_EMAIL = 'existente@example.com';
+
+/** Code the simulated password recovery "sends" by e-mail (`MOCK_EXPIRED_CODE` also applies). */
+export const MOCK_RESET_CODE = '123456';
+
+/**
+ * E-mail whose password the academy "reset in the Cognito console": its login goes to the
+ * recovery code step until a new password is set.
+ */
+export const MOCK_RESET_REQUIRED_EMAIL = 'redefinir@example.com';

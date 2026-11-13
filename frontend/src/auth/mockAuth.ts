@@ -4,6 +4,8 @@ import {
   MOCK_EXPIRED_CODE,
   MOCK_MASTER_EMAIL,
   MOCK_MASTER_ID,
+  MOCK_RESET_CODE,
+  MOCK_RESET_REQUIRED_EMAIL,
   MOCK_SIGN_UP_CODE,
   MOCK_TEMPORARY_PASSWORD,
   MOCK_USER_IDS,
@@ -32,8 +34,8 @@ function alreadyConfirmed(): AuthError {
 }
 
 /** Same rules as the Cognito pool: at least 8 characters, no space at the edges. */
-function passwordProblem(password: string): string | null {
-  if (!password.trim()) return 'Informe a senha.';
+function passwordProblem(password: string, emptyMessage = 'Informe a senha.'): string | null {
+  if (!password.trim()) return emptyMessage;
   if (password !== password.trim()) return 'A senha não pode começar nem terminar com espaço.';
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `A senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
@@ -87,6 +89,10 @@ function defaultStorage(): Storage | null {
  * Simulated sign-up: the code is always `MOCK_SIGN_UP_CODE` (`MOCK_EXPIRED_CODE` simulates
  * an expired one) and `MOCK_EXISTING_EMAIL` already has an account. The accounts (e-mail
  * only, never the password) live in memory.
+ *
+ * Simulated password recovery: any valid e-mail "receives" `MOCK_RESET_CODE` (the answer is
+ * the same for unknown ones, as in Cognito); `MOCK_EXPIRED_CODE` simulates an expired code.
+ * `MOCK_RESET_REQUIRED_EMAIL` signs in only after a new password is set this way.
  */
 export function createMockAuth(storage: Storage | null = defaultStorage()): AuthService {
   let user = readStored(storage);
@@ -94,6 +100,8 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
   /** E-mails of the accounts waiting for the code. */
   const unconfirmed = new Set<string>();
   const confirmed = new Set<string>([MOCK_EXISTING_EMAIL]);
+  /** E-mails whose password the academy reset (login blocked until the recovery). */
+  const resetRequired = new Set<string>([MOCK_RESET_REQUIRED_EMAIL]);
 
   function finish(next: AuthUser): SignInStep {
     user = next;
@@ -117,6 +125,11 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
       if (unconfirmed.has(normalizeEmail(cleanEmail))) {
         return Promise.reject(
           new AuthError('Confirme o e-mail antes de entrar.', 'USER_NOT_CONFIRMED'),
+        );
+      }
+      if (resetRequired.has(normalizeEmail(cleanEmail))) {
+        return Promise.reject(
+          new AuthError('É preciso redefinir a senha antes de entrar.', 'PASSWORD_RESET_REQUIRED'),
         );
       }
       const next = mockUser(cleanEmail, role);
@@ -185,6 +198,29 @@ export function createMockAuth(storage: Storage | null = defaultStorage()): Auth
       }
       // Like Cognito (InvalidParameterException "User is already confirmed.").
       if (confirmed.has(normalizeEmail(email))) return Promise.reject(alreadyConfirmed());
+      return Promise.resolve();
+    },
+
+    resetPassword(email: string) {
+      if (!EMAIL_PATTERN.test(normalizeEmail(email))) {
+        return Promise.reject(new AuthError('Informe um e-mail válido.'));
+      }
+      return Promise.resolve();
+    },
+
+    confirmResetPassword(email: string, code: string, newPassword: string) {
+      const cleanCode = code.trim();
+      if (!cleanCode) return Promise.reject(new AuthError('Informe o código.'));
+      if (cleanCode === MOCK_EXPIRED_CODE) {
+        return Promise.reject(new AuthError('Código expirado. Peça um novo.'));
+      }
+      // Like Cognito with PreventUserExistenceErrors: an unknown e-mail reads as a bad code.
+      if (cleanCode !== MOCK_RESET_CODE || !EMAIL_PATTERN.test(normalizeEmail(email))) {
+        return Promise.reject(new AuthError('Código incorreto.'));
+      }
+      const problem = passwordProblem(newPassword, 'Informe a nova senha.');
+      if (problem) return Promise.reject(new AuthError(problem));
+      resetRequired.delete(normalizeEmail(email));
       return Promise.resolve();
     },
 

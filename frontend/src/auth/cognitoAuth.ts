@@ -2,9 +2,11 @@ import { Amplify } from 'aws-amplify';
 import {
   autoSignIn,
   confirmSignIn,
+  confirmResetPassword,
   confirmSignUp,
   fetchAuthSession,
   resendSignUpCode,
+  resetPassword,
   signIn,
   signOut,
   signUp,
@@ -26,13 +28,17 @@ const NETWORK = 'Não foi possível falar com o servidor. Verifique a conexão e
 const INVALID_PASSWORD = 'A senha não atende aos requisitos: pelo menos 8 caracteres.';
 const NOT_CONFIRMED = 'Confirme o e-mail antes de entrar.';
 const ALREADY_CONFIRMED = 'Este e-mail já foi confirmado. Entre com seu e-mail e senha.';
+const PASSWORD_RESET_REQUIRED = 'É preciso redefinir a senha antes de entrar.';
+const RESET_NOT_CONFIRMED =
+  'Este e-mail ainda não foi confirmado. Confirme o e-mail antes de redefinir a senha.';
+const CODE_MISMATCH = 'Código incorreto.';
 
 /** pt-BR messages for the Cognito errors the login can hit (by `error.name`). */
 const COGNITO_MESSAGES: Record<string, string> = {
   NotAuthorizedException: 'E-mail ou senha incorretos.',
   UserNotFoundException: 'E-mail ou senha incorretos.',
   UserNotConfirmedException: NOT_CONFIRMED,
-  PasswordResetRequiredException: 'É preciso redefinir a senha antes de entrar.',
+  PasswordResetRequiredException: PASSWORD_RESET_REQUIRED,
   InvalidPasswordException: INVALID_PASSWORD,
   LimitExceededException: TOO_MANY,
   TooManyRequestsException: TOO_MANY,
@@ -50,7 +56,7 @@ const SIGN_UP_MESSAGES: Record<string, string> = {
   // Cognito answers this for a malformed e-mail (the screen already blocks a password
   // with spaces at the edges, the other case of this error).
   InvalidParameterException: 'Informe um e-mail válido.',
-  CodeMismatchException: 'Código incorreto.',
+  CodeMismatchException: CODE_MISMATCH,
   ExpiredCodeException: 'Código expirado. Peça um novo.',
   CodeDeliveryFailureException: 'Não foi possível enviar o código por e-mail. Tente de novo.',
   LimitExceededException: TOO_MANY,
@@ -64,14 +70,36 @@ const SIGN_UP_MESSAGES: Record<string, string> = {
   NetworkError: NETWORK,
 };
 
+/**
+ * pt-BR messages for the Cognito errors of the password recovery. `UserNotFoundException`
+ * never reaches the screen as such: step 1 treats it as success and step 2 as a wrong code,
+ * so nobody learns whether an account exists (the pool also has PreventUserExistenceErrors).
+ */
+const RESET_MESSAGES: Record<string, string> = {
+  CodeMismatchException: CODE_MISMATCH,
+  UserNotFoundException: CODE_MISMATCH,
+  ExpiredCodeException: 'Código expirado. Peça um novo.',
+  InvalidPasswordException: INVALID_PASSWORD,
+  CodeDeliveryFailureException: 'Não foi possível enviar o código por e-mail. Tente de novo.',
+  // "User password cannot be reset in the current state" (temporary password not yet
+  // changed) or "User is disabled".
+  NotAuthorizedException:
+    'Não é possível redefinir a senha desta conta. Se você recebeu uma senha temporária, entre com ela; se não, fale com a academia.',
+  LimitExceededException: TOO_MANY,
+  TooManyRequestsException: TOO_MANY,
+  TooManyFailedAttemptsException: TOO_MANY,
+  EmptyResetPasswordUsername: 'Informe o e-mail.',
+  EmptyConfirmResetPasswordUsername: 'Informe o e-mail.',
+  EmptyConfirmResetPasswordConfirmationCode: 'Informe o código.',
+  EmptyConfirmResetPasswordNewPassword: 'Informe a nova senha.',
+  NetworkError: NETWORK,
+};
+
 export const SIGN_UP_FALLBACK = 'Não foi possível criar a conta. Tente de novo.';
 export const CONFIRM_SIGN_UP_FALLBACK = 'Não foi possível confirmar o e-mail. Tente de novo.';
 export const RESEND_CODE_FALLBACK = 'Não foi possível reenviar o código. Tente de novo.';
-
-/** Sign-in steps the app does not handle but can explain (by `nextStep.signInStep`). */
-const SIGN_IN_STEP_MESSAGES: Record<string, string | undefined> = {
-  RESET_PASSWORD: COGNITO_MESSAGES.PasswordResetRequiredException,
-};
+export const RESET_PASSWORD_FALLBACK = 'Não foi possível enviar o código. Tente de novo.';
+export const CONFIRM_RESET_FALLBACK = 'Não foi possível redefinir a senha. Tente de novo.';
 
 function errorName(error: unknown): string {
   return error instanceof Error ? error.name : '';
@@ -90,10 +118,30 @@ function notConfirmed(): AuthError {
   return new AuthError(NOT_CONFIRMED, 'USER_NOT_CONFIRMED');
 }
 
+function passwordResetRequired(): AuthError {
+  return new AuthError(PASSWORD_RESET_REQUIRED, 'PASSWORD_RESET_REQUIRED');
+}
+
 function toAuthError(error: unknown): AuthError {
   if (error instanceof AuthError) return error;
   if (errorName(error) === 'UserNotConfirmedException') return notConfirmed();
+  if (errorName(error) === 'PasswordResetRequiredException') return passwordResetRequired();
   return new AuthError(cognitoErrorMessage(error));
+}
+
+/** Message for a failure of the password recovery; `fallback` for the unknown ones. */
+export function resetErrorMessage(error: unknown, fallback: string): string {
+  return RESET_MESSAGES[errorName(error)] ?? fallback;
+}
+
+function toResetError(error: unknown, fallback: string): AuthError {
+  if (error instanceof AuthError) return error;
+  // On `ForgotPassword`: the account has no verified e-mail, i.e. the sign-up code was never
+  // entered. The sign-up already tells an existing e-mail apart, so this reveals nothing new.
+  if (errorName(error) === 'InvalidParameterException') {
+    return new AuthError(RESET_NOT_CONFIRMED, 'USER_NOT_CONFIRMED');
+  }
+  return new AuthError(resetErrorMessage(error, fallback));
 }
 
 function toSignUpError(error: unknown, fallback: string): AuthError {
@@ -120,9 +168,9 @@ export function mapSignInStep(step: string): SignInStep {
   if (step === 'DONE') return 'DONE';
   if (step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') return 'NEW_PASSWORD_REQUIRED';
   if (step === 'CONFIRM_SIGN_UP') throw notConfirmed();
-  // Amplify v6 returns these steps instead of throwing the matching Cognito exceptions.
-  const message = SIGN_IN_STEP_MESSAGES[step];
-  if (message) throw new AuthError(message);
+  // Amplify v6 returns this step instead of throwing `PasswordResetRequiredException`
+  // (password reset in the Cognito console); the login goes to the recovery code step.
+  if (step === 'RESET_PASSWORD') throw passwordResetRequired();
   throw new AuthError('Este tipo de login ainda não é aceito pelo sistema.');
 }
 
@@ -243,6 +291,33 @@ export function createCognitoAuth(config: CognitoConfig): AuthService {
         await resendSignUpCode({ username: normalizeEmail(email) });
       } catch (error) {
         throw toCodeStepError(error, 'InvalidParameterException', RESEND_CODE_FALLBACK);
+      }
+    },
+
+    async resetPassword(email) {
+      try {
+        await resetPassword({ username: normalizeEmail(email) });
+      } catch (error) {
+        // Same answer as a known e-mail (the pool's PreventUserExistenceErrors already does
+        // this; kept here in case the setting changes).
+        if (errorName(error) === 'UserNotFoundException') return;
+        throw toResetError(error, RESET_PASSWORD_FALLBACK);
+      }
+    },
+
+    async confirmResetPassword(email, code, newPassword) {
+      try {
+        await confirmResetPassword({
+          username: normalizeEmail(email),
+          confirmationCode: code.trim(),
+          newPassword,
+        });
+      } catch (error) {
+        // Not the "e-mail not confirmed" reading: step 2 sends only a code and a password.
+        if (errorName(error) === 'InvalidParameterException') {
+          throw new AuthError(CONFIRM_RESET_FALLBACK);
+        }
+        throw toResetError(error, CONFIRM_RESET_FALLBACK);
       }
     },
 

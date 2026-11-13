@@ -5,6 +5,7 @@ import { BeltsPage } from '../features/belts/BeltsPage';
 import { ExamDayPage } from '../features/exam-day/ExamDayPage';
 import { EventsPage } from '../features/events/EventsPage';
 import { ExamPage } from '../features/exam/ExamPage';
+import { ForgotPasswordPage } from '../features/auth/ForgotPasswordPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { SignUpPage } from '../features/auth/SignUpPage';
 import { NotFoundPage } from '../features/placeholder/PlaceholderPage';
@@ -24,6 +25,7 @@ export function createRoutes({ useMocks }: RoutesOptions): RouteObject[] {
   return [
     { path: paths.login, element: <LoginPage /> },
     { path: paths.signUp, element: <SignUpPage /> },
+    { path: paths.forgotPassword, element: <ForgotPasswordPage /> },
     {
       element: <RequireAuth />,
       children: [
