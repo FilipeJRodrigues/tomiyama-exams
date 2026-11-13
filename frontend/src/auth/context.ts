@@ -16,6 +16,9 @@ export interface AuthContextValue {
   /** Confirms the e-mail; on `SIGNED_IN` the session is already loaded. */
   confirmSignUp: (email: string, code: string) => Promise<ConfirmSignUpResult>;
   resendSignUpCode: (email: string) => Promise<void>;
+  /** Sends the recovery code; resolves the same way whether or not the account exists. */
+  resetPassword: (email: string) => Promise<void>;
+  confirmResetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   getIdToken: () => Promise<string | null>;
 }
 

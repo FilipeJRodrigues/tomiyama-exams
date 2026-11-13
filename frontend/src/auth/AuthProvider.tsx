@@ -89,6 +89,14 @@ export function AuthProvider({ service, children }: Props) {
     [service],
   );
 
+  const resetPassword = useCallback((email: string) => service.resetPassword(email), [service]);
+
+  const confirmResetPassword = useCallback(
+    (email: string, code: string, newPassword: string) =>
+      service.confirmResetPassword(email, code, newPassword),
+    [service],
+  );
+
   const getIdToken = useCallback(() => service.getIdToken(), [service]);
 
   const value = useMemo<AuthContextValue>(
@@ -102,6 +110,8 @@ export function AuthProvider({ service, children }: Props) {
       signUp,
       confirmSignUp,
       resendSignUpCode,
+      resetPassword,
+      confirmResetPassword,
       getIdToken,
     }),
     [
@@ -114,6 +124,8 @@ export function AuthProvider({ service, children }: Props) {
       signUp,
       confirmSignUp,
       resendSignUpCode,
+      resetPassword,
+      confirmResetPassword,
       getIdToken,
     ],
   );
