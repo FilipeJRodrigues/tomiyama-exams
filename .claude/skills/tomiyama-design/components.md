@@ -33,7 +33,7 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
   Se um dia levarem a cor principal, defina a cor do texto do item escolhido explicitamente (veja `colors.md`: ele não trata cor virtual).
 - **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências. No escuro, todos em `#2A2A2A`: só o `Card` e o `Popover` pegam isso da paleta; os outros precisam do fundo definido no tema (veja `colors.md`).
 - **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...): raio **`md`**, como hoje. Uma caixa de texto em pílula ou muito arredondada fica estranha.
-- **Bordas e foco:** os de `a11y.css`, refeitos com a paleta nova: `--app-input-border` passa a ser a borda de controle; `--app-focus-ring` vem da cor real de cada tema (veja `colors.md`).
+- **Bordas e foco:** os de `a11y.css`, refeitos com a paleta nova: a borda de controle vira uma variável só (por exemplo, `--app-control-border`, que substitui a `--app-input-border`), usada por todos os controles da tabela de `colors.md` e no inline de `MarkButtons`, sem hex solto; `--app-focus-ring` vem da cor real de cada tema (veja `colors.md`).
 
 ### Links
 
