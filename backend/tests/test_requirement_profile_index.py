@@ -3,7 +3,8 @@
 RN017 (lists and copy), RN006 and RN007 (exam sheet and score). Until step 3a
 the main profile was read through ``by_belt`` (all profiles' items of the
 belt, filtered) or a ``Scan``, because items written before profiles (no
-``profile_belt``) are not in ``by_profile_belt``. Now:
+``profile_belt``) are not in ``by_profile_belt``. Step 3c dropped ``by_belt``:
+the fallback below is a ``Scan`` of the table, with or without a belt. Now:
 
 - the v2 migration (``InitialData``, ``SeedVersion`` "4") fixes (a) items
   without ``profile_id`` and (b) items whose ``profile_belt`` is missing or not
@@ -68,7 +69,9 @@ MARKED_AT = "2027-03-20T13:45:00+00:00"
 TARGET = "Cinza/Azul"  # target belt of the default student (Cinza)
 OTHER_BELT = "Cinza"
 MARKER = requirement_repo.PROFILE_BELT_MIGRATION_MARKER_ID
-BY_BELT = f"Query {requirement_repo.BY_BELT_INDEX}"
+# The complete fallback of the main profile before the v2 marker (a Scan of the
+# table since step 3c, which dropped the by_belt index it used with a belt).
+FALLBACK = "Scan"
 BY_PROFILE_BELT = f"Query {requirement_repo.BY_PROFILE_BELT_INDEX}"
 
 
@@ -734,7 +737,7 @@ def test_rn017_before_the_v2_marker_main_lists_keep_items_missing_from_the_index
 
     assert _ids(by_belt) == [item.id for item in main_items]
     assert set(_ids(by_belt)) <= set(_ids(everything))
-    assert reads.of_requirements() == [BY_BELT, "Scan"]
+    assert reads.of_requirements() == [FALLBACK, FALLBACK]
     assert len(reads.of_marker()) == 2  # not seen: read again on each request
 
 
@@ -747,7 +750,7 @@ def test_rn006_rn007_before_the_v2_marker_sheet_and_score_keep_every_main_item(
     assert [item["id"] for item in sheet["items"]] == [item.id for item in main_items]
     assert sheet["summary"]["THEORY"]["total"] == 11
     assert sheet["summary"]["PRACTICE"]["total"] == 13
-    assert reads.of_requirements() == [BY_BELT]
+    assert reads.of_requirements() == [FALLBACK]
 
     marked = _ok(_mark(exam_repo.get_exam("event-1", "student-1"), main_items[1].id))
     assert marked["summary"]["THEORY"]["total"] == 11
@@ -767,7 +770,7 @@ def test_rn006_rn007_rn017_after_the_v2_marker_reads_query_only_by_profile_belt(
         "copy belt": _list(profile_id=copied_profile, belt_id=belt_id(TARGET)),
         "copy all": _list(profile_id=copied_profile),
     }
-    assert reads.of_requirements().count(BY_BELT) >= 1  # the fallback, so far
+    assert reads.of_requirements().count(FALLBACK) >= 1  # the fallback, so far
 
     assert requirement_repo.migrate_profile_belts() == 2  # the two items the index missed
 
@@ -864,7 +867,7 @@ def test_rn017_marker_is_read_on_each_request_until_seen_then_kept(
     for _ in range(3):
         _sheet(exam)
     assert len(reads.of_marker()) == 3
-    assert reads.of_requirements() == [BY_BELT] * 3
+    assert reads.of_requirements() == [FALLBACK] * 3
 
     requirement_repo.migrate_profile_belts()
     reads.clear()
@@ -897,7 +900,7 @@ def test_rn017_eventual_read_that_misses_the_marker_keeps_the_complete_fallback(
     sheet = _sheet(exam)
 
     assert [item["id"] for item in sheet["items"]] == [item.id for item in main_items]
-    assert reads.of_requirements() == [BY_BELT]
+    assert reads.of_requirements() == [FALLBACK]
     assert requirement_repo.profile_index_complete() is False  # nothing kept
 
 

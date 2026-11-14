@@ -44,12 +44,12 @@ Mappings:
   # Settings per environment.
   EnvConfig:
     # CopyItemsPerSecond: pace of the background copy of a requirement profile
-    # (#144). In dev each copied item costs 1 WCU in Requirements and in each
-    # of its 2 GSIs (4 WCU each): 2 items/s leaves half to the exam marking,
-    # and ~700 items take ~6 min. Prod is on-demand.
+    # (#144). In dev each copied item costs 1 WCU in Requirements and 1 in its
+    # GSI by_profile_belt (4 WCU each): 2 items/s leaves half to the exam
+    # marking, and ~700 items take ~6 min. Prod is on-demand.
     # DeleteItemsPerSecond: pace of the background deletion of a requirement
     # profile's items (#144). A deleted item costs the same as a copied one
-    # (1 WCU in Requirements and in each of its 2 GSIs), so the same pace.
+    # (1 WCU in Requirements and 1 in by_profile_belt), so the same pace.
     dev:
       LogRetentionDays: 7
       CopyItemsPerSecond: "2"
@@ -60,35 +60,41 @@ Mappings:
       DeleteItemsPerSecond: "10"
   # Provisioned capacity used only in dev (prod is PAY_PER_REQUEST). The free
   # tier covers 25 RCU and 25 WCU summed over every table and GSI of the
-  # account in the Region; these add up to 25 RCU and 25 WCU (none spare).
-  # Requirements, by_belt and by_profile_belt get the most WCU for the 692-item
-  # seed and the move to the main profile (#144): a write to the table also
-  # writes both GSIs, so each runs at min(4, 4, 4) items/s. by_profile_belt
-  # does not project answer_count, so a mark never writes to it. Its 4 WCU came
-  # from Students and StudentsByOwner (2 -> 1 each), Answers (3 -> 2) and the
-  # spare unit. Since step 3a of #144 every read of a profile's items (exam
-  # sheet, score after each mark, lists, copy) queries by_profile_belt, the main
-  # profile included once the v2 migration finished, so it takes the read
-  # capacity by_belt had (by_belt 5 -> 1 RCU, by_profile_belt 1 -> 5): the
-  # Brown belt sheet costs ~4.5 RCU whatever the number of profiles. by_belt is
-  # still written until it is dropped (step 3c) and is read only by the
-  # fallback of the main profile while the v2 migration has not finished.
+  # account in the Region; these add up to 24 RCU and 24 WCU (one spare unit
+  # of each).
+  # Requirements and its only GSI, by_profile_belt, get the most WCU for the
+  # 692-item seed and the migrations of #144: a write to the table also writes
+  # the GSI, so the load runs at min(4, 4) items/s. by_profile_belt does not
+  # project answer_count, so the first mark of an item writes no GSI. Every
+  # read of a profile's items (exam sheet, score after each mark, lists, copy)
+  # queries by_profile_belt (5 RCU), the main profile included once the v2
+  # migration finished. Whatever the number of profiles, the Brown belt sheet
+  # (139 items) costs ~4.5 RCU in the main profile and ~5.5 in a copied one
+  # (larger items): the index sustains ~1.1 and ~0.9 sheet reads a second,
+  # above what Answers allows the marks. Before the v2 marker the main profile
+  # is read with a Scan of the table instead (the fallback; see
+  # backend/README.md).
+  # Step 3c of #144 dropped by_belt (1 RCU, 4 WCU): Students and
+  # StudentsByOwner get back the WCU they lent to by_profile_belt in step 1
+  # (1 -> 2 each), Answers too (2 -> 3: its writes allow ~1.5 marks/s again,
+  # as before step 1, and on long exams its consistent reads limit first), and
+  # the 4th WCU and the RCU are left spare (24/24, as before step 1).
   # Each mark (RN006) is a transaction that checks the exam and the event and
   # writes the answer: 2 WCU in each of Exams, Events and Answers (plus 2 in
-  # Requirements and the by_belt write on the first mark of an item), and its
-  # response reads the sheet's items (by_profile_belt) and the exam's answers.
-  # The answers query is strongly consistent (1 RCU per 4 KB): ~2.5 RCU per mark
-  # on a 58-item belt, up to 10 on a full 139-item exam (see backend/README.md).
+  # Requirements on the first mark of an item), and its response reads the
+  # sheet's items (by_profile_belt) and the exam's answers. The answers query
+  # is strongly consistent (1 RCU per 4 KB): ~2.5 RCU per mark on a 58-item
+  # belt, up to 10 on a full 139-item exam (see backend/README.md).
   DevCapacity:
     Belts:
       Read: 2
       Write: 1
     Students:
       Read: 3
-      Write: 1
+      Write: 2
     StudentsByOwner:
       Read: 2
-      Write: 1
+      Write: 2
     Exams:
       Read: 2
       Write: 3
@@ -97,9 +103,6 @@ Mappings:
       Write: 1
     Requirements:
       Read: 3
-      Write: 4
-    RequirementsByBelt:
-      Read: 1
       Write: 4
     RequirementsByProfileBelt:
       Read: 5
@@ -112,7 +115,7 @@ Mappings:
       Write: 3
     Answers:
       Read: 3
-      Write: 2
+      Write: 3
 
 Globals:
   Function:
@@ -242,10 +245,10 @@ Resources:
         - !Ref AWS::NoValue
         - ReadCapacityUnits: !FindInMap [DevCapacity, Requirements, Read]
           WriteCapacityUnits: !FindInMap [DevCapacity, Requirements, Write]
+      # Only the attributes used as keys (CloudFormation refuses any other):
+      # belt_id left with the old by_belt index.
       AttributeDefinitions:
         - AttributeName: id
-          AttributeType: S
-        - AttributeName: belt_id
           AttributeType: S
         - AttributeName: sort_order
           AttributeType: N
@@ -254,22 +257,13 @@ Resources:
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-      # CloudFormation creates or deletes only one GSI per table update:
-      # by_profile_belt is added now, and by_belt goes in a later deploy.
+      # CloudFormation creates or deletes only one GSI per table update, and
+      # an update that does both fails. Step 1 of #144 added by_profile_belt;
+      # step 3c dropped by_belt (every profile's items of a belt). A stack
+      # that still has no by_profile_belt must first deploy the code of steps
+      # 3a/3b (which creates it and writes the v2 marker) and only then this
+      # one: see "Ordem de deploy da etapa 3c" in backend/README.md.
       GlobalSecondaryIndexes:
-        - IndexName: by_belt
-          KeySchema:
-            - AttributeName: belt_id
-              KeyType: HASH
-            - AttributeName: sort_order
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-          ProvisionedThroughput: !If
-            - IsProd
-            - !Ref AWS::NoValue
-            - ReadCapacityUnits: !FindInMap [DevCapacity, RequirementsByBelt, Read]
-              WriteCapacityUnits: !FindInMap [DevCapacity, RequirementsByBelt, Write]
         # Items of one requirement profile in a belt (profile_belt =
         # "<profile_id>#<belt_id>"), in sheet order. Every field of the model
         # is projected but answer_count, so the first mark of an item (RN006)
@@ -740,7 +734,8 @@ Resources:
   # profiles item of Settings (only that item: dynamodb:LeadingKeys) to find
   # a profile other than the main one (#144). The list and the creation (the
   # default order reads the belt) also read the v2 migration marker, which
-  # tells when the main profile may be read through by_profile_belt.
+  # tells when the main profile may be read through by_profile_belt (before
+  # it, through a Scan of the table, which their SAM policies already allow).
   ListRequirementsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -970,8 +965,8 @@ Resources:
 
   # Background copy of a profile (no route; invoked only by the two functions
   # above, InvocationType=Event). Reads the belts (Scan), the source's and the
-  # copy's items (Query on by_profile_belt; on by_belt only for the main
-  # profile while the v2 migration marker, GetItem, is not there yet),
+  # copy's items (Query on by_profile_belt; a Scan of Requirements only for a
+  # main source while the v2 migration marker, GetItem, is not there yet),
   # writes each missing copy (conditional PutItem) and the progress and status
   # of the profile (UpdateItem on its item of Settings). ~700 items at
   # CopyItemsPerSecond take ~6 min in dev; a run stops 60 s before the
@@ -1009,9 +1004,11 @@ Resources:
               Resource: !GetAtt BeltsTable.Arn
             - Effect: Allow
               Action: dynamodb:Query
-              Resource:
-                - !Sub ${RequirementsTable.Arn}/index/by_belt
-                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+              Resource: !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            # The fallback of a main source before the v2 marker.
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt RequirementsTable.Arn
             - Effect: Allow
               Action: dynamodb:PutItem
               Resource: !GetAtt RequirementsTable.Arn
@@ -1058,7 +1055,7 @@ Resources:
   # invoked only by the function above, InvocationType=Event). A function of
   # its own, not an action of the copy function: the copy never deletes an
   # item and this one never writes one. Reads the belts (Scan) and the ids of
-  # the profile's items (Query on by_profile_belt only, never by_belt nor the
+  # the profile's items (Query on by_profile_belt only, never a Scan of the
   # table), deletes each one (conditional DeleteItem: of this profile, with no
   # answers) and writes its sign of life and, at the end, the removal of the
   # profile (UpdateItem on the profiles item of Settings). ~700 items at
@@ -1260,9 +1257,11 @@ Resources:
 
   # Exam sheet and marking (examiners only, RN006/RN007). The sheet's items
   # (and the score after a mark or unmark) come from by_profile_belt; the main
-  # profile comes from by_belt only until the v2 migration finished, which
-  # they learn from its marker in Settings (GetItem on that item only, once
-  # per container: dynamodb:LeadingKeys).
+  # profile comes from a Scan of Requirements only until the v2 migration
+  # finished (the fallback, which step 3c moved from the dropped by_belt
+  # index: the same items were reachable), which they learn from its marker
+  # in Settings (GetItem on that item only, once per container:
+  # dynamodb:LeadingKeys).
   GetExamSheetFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -1279,9 +1278,11 @@ Resources:
             - Effect: Allow
               Action: dynamodb:Query
               Resource:
-                - !Sub ${RequirementsTable.Arn}/index/by_belt
                 - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
                 - !GetAtt AnswersTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt RequirementsTable.Arn
             - Effect: Allow
               Action: dynamodb:GetItem
               Resource: !GetAtt SettingsTable.Arn
@@ -1327,9 +1328,10 @@ Resources:
               Resource: !GetAtt AnswersTable.Arn
             - Effect: Allow
               Action: dynamodb:Query
-              Resource:
-                - !Sub ${RequirementsTable.Arn}/index/by_belt
-                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+              Resource: !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt RequirementsTable.Arn
             - Effect: Allow
               Action: dynamodb:GetItem
               Resource: !GetAtt SettingsTable.Arn
@@ -1371,9 +1373,10 @@ Resources:
               Resource: !GetAtt AnswersTable.Arn
             - Effect: Allow
               Action: dynamodb:Query
-              Resource:
-                - !Sub ${RequirementsTable.Arn}/index/by_belt
-                - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+              Resource: !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt RequirementsTable.Arn
             - Effect: Allow
               Action: dynamodb:GetItem
               Resource: !GetAtt SettingsTable.Arn
@@ -1932,7 +1935,10 @@ Resources:
       # Bump to re-run the (idempotent) seed on the next deploy. "3": moves the
       # requirements to the main profile (#144). "4": the v2 migration, which
       # fixes profile_belt on every item before the main profile is read
-      # through by_profile_belt (#144, step 3a).
+      # through by_profile_belt (#144, step 3a). Step 3c (dropping the old
+      # index) keeps "4": a stack that already ran it has the v2 marker, and
+      # one of steps 1-2 still runs it because its value is "3" (see "Ordem de
+      # deploy da etapa 3c" in backend/README.md).
       SeedVersion: "4"
 
   # -------------------------------------------------------------------- Logs

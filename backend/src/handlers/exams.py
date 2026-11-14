@@ -145,7 +145,8 @@ def _sheet_items(exam_event: ExamEvent, exam: Exam) -> list[Requirement]:
     reader of the sheet's items goes through here: the sheet
     and the score after a mark or unmark. One query on ``by_profile_belt``,
     which reads only that profile's items of the belt (until the v2
-    migration finished, the main profile comes from ``by_belt``, filtered).
+    migration finished, the main profile comes from a ``Scan`` of the table,
+    filtered).
     """
     return requirement_repo.list_profile_belt(
         exam_rules.sheet_profile_id(exam_event), exam.target_belt_id

@@ -154,7 +154,9 @@ def copied_profile(main_items: list[Requirement], copy_invocations: CopyInvocati
     copy = requirement_repo.list_profile_belt(profile_id, belt_id(TARGET))
     # The copy really is in the target belt: one copy per main item, plus its own item.
     assert len(copy) == len(main_items) + 1
-    assert len(requirement_repo.list_by_belt(belt_id(TARGET))) == 2 * len(main_items) + 1
+    # Every profile's items of the belt (the whole table: by_belt left in step 3c).
+    in_belt = [item for item in requirement_repo.list_all() if item.belt_id == belt_id(TARGET)]
+    assert len(in_belt) == 2 * len(main_items) + 1
     return profile_id
 
 

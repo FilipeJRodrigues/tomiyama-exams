@@ -68,26 +68,29 @@ GRANTED = {
         # Step 3a: reads (never writes) the v2 marker to read a main source.
         ("dynamodb:GetItem", "Settings[v2 marker]"),
         ("dynamodb:Scan", "BeltsTable"),
-        ("dynamodb:Query", "RequirementsTable/index/by_belt"),
         ("dynamodb:Query", "RequirementsTable/index/by_profile_belt"),
+        # Step 3c: a main source before the v2 marker is read with a Scan of
+        # the table (the query on by_belt, dropped, is gone).
+        ("dynamodb:Scan", "RequirementsTable"),
         ("dynamodb:PutItem", "RequirementsTable"),
     },
 }
-# DevCapacity: the copy must fit in what step 1 left (25/25). Step 3a moved
-# the read capacity of by_belt to by_profile_belt (5 <-> 1), where every read
-# of a profile's items goes, the exam sheet included.
+# DevCapacity: the copy must fit in what step 1 left. Step 3a moved the read
+# capacity of by_belt to by_profile_belt (5 <-> 1), where every read of a
+# profile's items goes, the exam sheet included. Step 3c dropped by_belt
+# (1 RCU, 4 WCU): Students, StudentsByOwner and Answers got back the WCU they
+# lent in step 1 (1 -> 2, 1 -> 2, 2 -> 3), and 1 RCU and 1 WCU are spare.
 DEV_CAPACITY = {
     "Belts": {"Read": 2, "Write": 1},
-    "Students": {"Read": 3, "Write": 1},
-    "StudentsByOwner": {"Read": 2, "Write": 1},
+    "Students": {"Read": 3, "Write": 2},
+    "StudentsByOwner": {"Read": 2, "Write": 2},
     "Exams": {"Read": 2, "Write": 3},
     "ExamsByStudent": {"Read": 1, "Write": 1},
     "Requirements": {"Read": 3, "Write": 4},
-    "RequirementsByBelt": {"Read": 1, "Write": 4},
     "RequirementsByProfileBelt": {"Read": 5, "Write": 4},
     "Settings": {"Read": 1, "Write": 1},
     "Events": {"Read": 2, "Write": 3},
-    "Answers": {"Read": 3, "Write": 2},
+    "Answers": {"Read": 3, "Write": 3},
 }
 
 
@@ -180,7 +183,7 @@ def test_rn017_a_dev_copy_fits_in_one_run(template: dict[str, Any]) -> None:
     # copies until 60 s before its timeout, with room for throttling.
     seconds_per_run = properties["Timeout"] - copy_worker.SAFETY_MARGIN_SECONDS
 
-    assert pace <= 2  # half of the 4 WCU of Requirements and its GSIs
+    assert pace <= 2  # half of the 4 WCU of Requirements and its GSI
     assert seconds_per_run >= 2 * 692 / pace
 
 
@@ -275,7 +278,6 @@ def test_rn017_profiles_use_no_new_table_nor_index(template: dict[str, Any]) -> 
     assert indexes == {
         "StudentsTable.by_owner",
         "ExamsTable.by_student",
-        "RequirementsTable.by_belt",
         "RequirementsTable.by_profile_belt",
     }
     # No other DynamoDB resource either (a global table, a stream, scaling).
@@ -289,8 +291,8 @@ def test_rn017_dev_capacity_moves_reads_to_the_profile_index(template: dict[str,
     capacity = template["Mappings"]["DevCapacity"]
 
     assert capacity == DEV_CAPACITY
-    assert sum(units["Read"] for units in capacity.values()) == 25
-    assert sum(units["Write"] for units in capacity.values()) == 25
+    assert sum(units["Read"] for units in capacity.values()) == 24
+    assert sum(units["Write"] for units in capacity.values()) == 24
 
 
 def test_rn017_settings_is_never_scanned_by_the_profile_functions(
