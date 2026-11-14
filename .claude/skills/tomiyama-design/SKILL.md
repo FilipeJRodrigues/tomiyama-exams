@@ -70,10 +70,11 @@ O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e tr
 - [ ] Vermelho só em erro e perigo; laranja do logo fora da interface.
 - [ ] Anel de foco visível em fundo branco, no fundo carvão e sobre o azul das telas de entrada.
 - [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`; campos com `md`.
-- [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor), sem fundo próprio, nem no hover.
+- [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor); sem fundo próprio (no hover, o mesmo dos outros itens).
 - [ ] No escuro, `Paper`, `Modal`, `Drawer` e o cabeçalho e o menu do `AppShell` em `#2A2A2A`, não no fundo da página.
-- [ ] Texto sobre o amarelo em azul, não branco nem preto (inclusive no `SegmentedControl` e no hover).
-- [ ] Botão desabilitado só para ação indisponível com o motivo escrito; nunca para mostrar estado.
+- [ ] Texto e ícones sobre o amarelo em azul, não branco nem preto: botão cheio (`--mantine-color-primary-contrast`), hover, polegar do `Switch`, ponto do `Radio`, ícone do `Checkbox`.
+- [ ] Nada desabilitado para mostrar o estado de algo somente leitura (§ 6.4); desabilitado só durante um envio, por ação indisponível com motivo escrito, ou nas pontas da navegação.
+- [ ] Item escolhido do `SegmentedControl` com indicador ≥ 3:1 contra o trilho e rótulo em negrito.
 - [ ] Barlow Condensed só nos títulos de página (`h1` da tela e `h2` de seção) e no nome "Tomiyama", nunca em título de cartão de lista; sem caixa alta.
 - [ ] Estado com ícone e texto, nunca só por cor; faixa sempre com o nome escrito.
 - [ ] Logo pelos arquivos de `frontend/src/assets/brand/`, sem distorcer, sem recolorir, com texto alternativo.

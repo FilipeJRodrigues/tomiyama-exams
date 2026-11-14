@@ -14,13 +14,20 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
   - **suave:** `light` ou `subtle`, para ações de apoio.
 - **Tamanho:** os botões Certo/Errado têm alvo ≥ 44 px (§ 6.4). No celular, prefira 44 px também nos outros botões de ação (card #149).
 - **Desabilitado:**
-  - **nunca para mostrar um estado** (contraste ruim, § 6.4): as marcações de um exame decidido aparecem como texto com ícone;
-  - **só para uma ação indisponível que traz o motivo escrito ao lado**, legível (≥ 4,5:1): por exemplo, "Baixar certificado" sem assinatura completa (§ 6.4) e o botão que confirma a decisão enquanto as marcações ainda salvam.
+  - **nunca para mostrar o estado de algo somente leitura** (contraste ruim, § 6.4): as marcações de um exame decidido ou de um evento encerrado aparecem como texto com ícone ("Certo", "Errado", "Não marcado"), não como Certo/Errado desabilitados;
+  - **aceito** quando a ação está momentaneamente ou logicamente indisponível:
+    - **durante um envio:** o botão que envia mostra o carregamento (`loading`) e os outros controles do formulário ou do diálogo ficam desabilitados até a resposta, como hoje;
+    - **ação indisponível com o motivo escrito ao lado**, legível (≥ 4,5:1): "Baixar certificado" sem assinatura completa (§ 6.4), o botão que confirma a decisão enquanto as marcações ainda salvam;
+    - **navegação nas pontas:** "Anterior" no primeiro aluno presente e "Próximo" no último, como hoje.
 
 ### Selos, seletores, campos e cartões
 
 - **Selos (`Badge`):** pílula, caixa de frase, cor pelo significado (sucesso, erro, aviso, neutro), sempre com texto.
-- **Seletores segmentados (`SegmentedControl`):** pílula, caixa de frase, **neutros** por padrão (como o filtro do Dia do exame). Se um dia levarem a cor principal, defina a cor do texto do item escolhido explicitamente (veja `colors.md`: ele não trata cor virtual).
+- **Seletores segmentados (`SegmentedControl`):** pílula, caixa de frase, **neutros**, com o **item escolhido bem visível**: o indicador padrão do Mantine dá só 1,11:1 contra o trilho no claro e 1,47:1 no escuro, e o rótulo escolhido só muda de cor (o filtro do Dia do exame está assim hoje, abaixo do § 6.7).
+  - **claro:** indicador `gray.7` com texto branco em negrito (7,35:1 contra o trilho `gray.1`; texto 8,18:1);
+  - **escuro:** indicador por volta de `#C9C9C9` com texto `#1C1C1C` em negrito (9,95:1 contra o trilho `dark.8`; texto 10,29:1).
+
+  Se um dia levarem a cor principal, defina a cor do texto do item escolhido explicitamente (veja `colors.md`: ele não trata cor virtual).
 - **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências. No escuro, todos em `#2A2A2A`: só o `Card` e o `Popover` pegam isso da paleta; os outros precisam do fundo definido no tema (veja `colors.md`).
 - **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...): raio **`md`**, como hoje. Uma caixa de texto em pílula ou muito arredondada fica estranha.
 - **Bordas e foco:** os de `a11y.css` (`--app-input-border`, `--app-focus-ring`), refeitos com a paleta nova.
@@ -51,12 +58,12 @@ O modelo é a moldura da POS TECH (veja o `SKILL.md`), em caixa de frase:
   - **"Tomiyama"** em Barlow Condensed;
   - **"Área de exames"** menor, em texto secundário. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama";
   - o selo **"Dados simulados"** (só com os dados de teste), logo depois, como hoje: some abaixo do `xs` e continua em caixa de frase.
-- **Lado direito do cabeçalho:** o e-mail e os botões Tema e Sair (variante `default`).
+- **Lado direito do cabeçalho:** o e-mail e os botões Tema e Sair (variante `default`). No escuro, o fundo do botão `default` (`dark.6`) é a cor do próprio cabeçalho, e a borda padrão (`dark.4`) dá 1,43:1: dê aos botões `default` uma borda por volta de `#828282` (3,74:1 sobre `#2A2A2A`), sem mudar a `--mantine-color-default-border` global.
 - **Sem linha amarela** sob o cabeçalho: no tema claro ela ficaria quase invisível (1,22:1), e a marca já vem do logo e da cor principal.
 - **Itens do menu:** ícone e texto na cor normal do texto. Hover num fundo diferente da superfície: `gray.0` no claro e por volta de `#3B3B3B` (`dark.5`) no escuro. O hover padrão do `NavLink` no escuro é `dark.6`, a mesma cor do menu, e não apareceria.
 - **Item ativo:**
   - texto e ícone na **cor principal** e em **negrito**;
-  - **sem fundo próprio**, nem no hover. O `NavLink` ativo pinta por padrão o fundo `--nl-bg` (`--mantine-primary-color-light`) e o `--nl-hover`, e o amarelo cai para menos de 3:1 no hover. O ativo fica sobre a superfície (azul 14,4:1 no claro; amarelo 11,7:1 no escuro) e, no hover, sobre o mesmo hover dos outros itens (azul 13,7:1; amarelo 9,2:1);
+  - **sem fundo próprio**: em repouso, o fundo do menu; no hover, o mesmo hover dos outros itens. O `NavLink` ativo pinta por padrão o fundo `--nl-bg` (`--mantine-primary-color-light`) e o `--nl-hover`, e, conforme a escala do amarelo, o texto pode ficar abaixo de 4,5:1 nesses fundos. O ativo fica sobre a superfície (azul 14,4:1 no claro; amarelo 11,7:1 no escuro) e, no hover, sobre o mesmo hover dos outros itens (azul 13,7:1; amarelo 9,2:1);
   - uma **barra vertical** de 3 a 4 px na cor principal, na borda esquerda do item. Assim, o item ativo não depende só da cor: tem barra, negrito e o `aria-current="page"` do React Router.
 - **Rodapé do menu** (e-mail e perfil): texto normal e texto secundário.
 - **Título da aba do navegador:** "Área de exames · Tomiyama".

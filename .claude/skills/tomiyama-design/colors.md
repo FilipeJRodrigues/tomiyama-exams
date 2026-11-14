@@ -29,7 +29,8 @@ O site abre no **tema escuro** na primeira visita (`defaultColorScheme="dark"`).
 | Texto secundário (`dimmed`) | `gray.7` (como hoje) | por volta de `#B8B8B8` (8,6:1 no fundo, 7,2:1 no cartão) |
 | **Cor principal** (`primary`): botão cheio, link, item ativo do menu, anel de foco | **azul** `#0A265F` | **amarelo** `#FCEC27`, com texto azul sobre ele |
 | Fundo das telas de entrada | azul `#0A265F` | azul `#0A265F` |
-| Hover de item de menu e de linha de lista | `gray.0` do Mantine | por volta de `#3B3B3B` (`dark.5`), diferente do cartão |
+| Hover de item do menu | `gray.0` do Mantine | por volta de `#3B3B3B` (`dark.5`), diferente do menu (o padrão do `NavLink` é `dark.6`) |
+| Hover de linha de tabela (`highlightOnHover`) | `gray.1` (padrão do `Table`) | por volta de `#3B3B3B` (`dark.5`, padrão do `Table`) |
 | Borda de campo em repouso | `gray.6` (como hoje) | por volta de `#828282` (4,4:1 no fundo, 3,7:1 no cartão) |
 | Erro e perigo | vermelho `#D62211` | vermelho mais claro, por volta de `#FF6B5B` |
 | Sucesso (Certo, Aprovado, Elegível) | verde (veja abaixo) | verde |
@@ -38,11 +39,16 @@ O site abre no **tema escuro** na primeira visita (`defaultColorScheme="dark"`).
 
 **O escuro é carvão neutro, não azulado**, como nas referências (veja o `SKILL.md`). A paleta `dark` do Mantine (`#242424` em `dark.7`, `#2E2E2E` em `dark.6`) já está perto; o `theme.ts` a ajusta para os alvos acima e deriva os outros tons dela. Com o carvão, o amarelo se destaca, e o azul fica para a cor principal do tema claro e para as telas de entrada.
 
-**Ajustar a paleta não basta para as superfícies.** No Mantine 9, só o `Card` e o `Popover` usam `dark.6`. O `Paper` (inclusive o `AuthCard`), o `Modal` e o `Drawer` (pelo `ModalBase`) e o cabeçalho e o menu do `AppShell` usam `--mantine-color-body`, que é o fundo da página (`dark.7`). Para eles ficarem em `#2A2A2A` no escuro, defina o fundo deles no tema (`Component.extend` com `styles` ou `vars`), sem mudar o `--mantine-color-body`, que continua sendo o fundo da página.
+**Ajustar a paleta não basta para as superfícies.** No Mantine 9, só o `Card` e o `Popover` usam `dark.6`. O `Paper` (inclusive o `AuthCard`), o `Modal` e o `Drawer` (pelo `ModalBase`) e o cabeçalho e o menu do `AppShell` usam `--mantine-color-body`, que é o fundo da página (`dark.7`); o cabeçalho fixo do `Modal` e do `Drawer` também tem esse fundo próprio. Para eles ficarem em `#2A2A2A` no escuro, defina o fundo deles no tema (inclusive o desse cabeçalho, senão sobra uma faixa `#1C1C1C`) (`Component.extend` com `styles` ou `vars`), sem mudar o `--mantine-color-body`, que continua sendo o fundo da página.
 
 **A cor principal muda de cor entre os temas.** O azul sobre o carvão dá 1,18:1 e o botão sumiria; o amarelo dá 13,9:1. No Mantine isso é um `virtualColor` (por exemplo, `primary` com `light: 'tomiyama-blue'` e `dark: 'tomiyama-yellow'`). O `cssVariablesResolver` do `theme.ts` corrige as cores reais (`tomiyama-blue`, `tomiyama-yellow`), mas **não** as variáveis da própria cor virtual: o Mantine gera `--mantine-color-primary-light`, `--mantine-color-primary-light-hover` e `--mantine-color-primary-light-color` direto da escala, sem a correção. É delas que vêm o fundo e o texto do item ativo do `NavLink` e do `Badge` e do `Alert` na variante `light`. O resolver precisa corrigir também essas variáveis, por tema, a partir da cor real de cada tema. O mesmo vale para o `--app-focus-ring`: monte-o com a cor real de cada tema (azul no claro, amarelo no escuro), não com `primary[8]`, que vira `var(--mantine-color-primary-8)`.
 
-**Texto sobre o amarelo é azul** (`#0A265F`, 11,8:1). No Mantine 9, o `autoContrast` sozinho dá **preto** sobre o amarelo (`--mantine-color-black`; 17,2:1, que passa, mas não é o azul decidido), e sem ele o texto fica **branco** (1,22:1, proibido). Para o azul, ligue `autoContrast: true` no tema e ponha `--mantine-primary-color-contrast: #0A265F` no tema escuro do `cssVariablesResolver`; confira o hover. O `SegmentedControl` e o `getContrastColor` calculam a cor do texto em JS e não tratam cor virtual: nesses, defina a cor do texto explicitamente.
+**Texto sobre o amarelo é azul** (`#0A265F`, 11,8:1). No Mantine 9, o `autoContrast` sozinho dá **preto** sobre o amarelo (`--mantine-color-black`; 17,2:1, que passa, mas não é o azul decidido), e sem ele o texto fica **branco** (1,22:1, proibido). Para o azul, ligue `autoContrast: true` no tema e ponha **`--mantine-color-primary-contrast: #0A265F`** no tema escuro do `cssVariablesResolver`. O nome segue o formato `--mantine-color-<nome da cor virtual>-contrast`, que é o que a variante `filled` de uma cor virtual lê (`default-variant-colors-resolver` do Mantine 9.7.4). A `--mantine-primary-color-contrast`, com nome parecido, não é lida por nenhum componente: pode ser definida junto, por coerência, mas sozinha não muda nada. Confira o hover.
+
+**Outros controles sobre o amarelo** calculam a cor em JS ou têm branco fixo no CSS, sem tratar cor virtual. Defina a cor explicitamente, em azul, no tema escuro:
+- o texto do item escolhido do `SegmentedControl`, se ele levar a cor principal;
+- o polegar do `Switch` (`--switch-thumb-bg`, branco por padrão: 1,22:1 no trilho amarelo), como em "Ativo" e "Só não marcados";
+- o ponto do `Radio` e o ícone do `Checkbox` (`iconColor`), que saem brancos pelo `getContrastColor`.
 
 **Informação usa a cor principal**, não `blue` fixo: um `color="blue"` no código vira `primary` (ou some) quando a paleta Tomiyama entrar.
 
