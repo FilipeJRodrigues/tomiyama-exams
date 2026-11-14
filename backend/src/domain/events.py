@@ -30,6 +30,7 @@ MSG_EVENT_HAS_EXAMS = "Evento possui exames registrados"
 MSG_EVENT_PROFILE_COPYING = (
     "O perfil ainda está sendo copiado. Aguarde o fim da cópia para usá-lo em um evento."
 )
+MSG_EVENT_PROFILE_DELETING = "O perfil está sendo excluído e não pode ser usado em um evento."
 MSG_EVENT_PROFILE_LOCKED = (
     "O perfil de requisitos do evento não pode ser alterado depois que o evento tem exames"
 )
@@ -87,8 +88,11 @@ def check_profile_usable(profile: RequirementProfile) -> None:
     """Allow an event to choose ``profile``: only a profile whose items are complete.
 
     Raises:
-        ConflictError: If the profile is not ``READY`` (still being copied).
+        ConflictError: If the profile is not ``READY`` (still being copied, or
+            being deleted), with the message of its status.
     """
+    if profile.status is ProfileStatus.DELETING:
+        raise ConflictError(MSG_EVENT_PROFILE_DELETING)
     if profile.status is not ProfileStatus.READY:
         raise ConflictError(MSG_EVENT_PROFILE_COPYING)
 

@@ -17,6 +17,15 @@ The main profile is not stored: it is ``MAIN_PROFILE``, always ``READY``. The
 others live in one item of the ``Settings`` table
 (``repository.requirement_profiles``).
 
+A profile other than the main one is deleted only if no event uses it
+(decision 5 of #144). Its items (~700) are deleted in the background
+(``handlers.requirement_profile_delete``): the profile goes to ``DELETING``,
+still holding its name and its place in the limit, and leaves the stored
+profiles when no item is left. While ``DELETING`` its items are not changed,
+and it is not renamed, copied from nor chosen by an event. A deletion with no
+sign of life for ``COPY_STALL_SECONDS`` is **stalled** and repeating the
+``DELETE`` resumes it.
+
 Items written before profiles existed have no ``profile_id`` and are read as
 items of the main profile.
 """
@@ -65,13 +74,28 @@ MSG_PROFILE_COPYING = (
 MSG_PROFILE_READY = "A cópia deste perfil já terminou"
 MSG_COPY_IN_PROGRESS = "A cópia deste perfil está em andamento. Aguarde."
 MSG_PROFILES_BUSY = "Os perfis de requisitos estão sendo alterados por outra pessoa. Tente de novo."
+MSG_MAIN_PROFILE_DELETE = "O perfil principal não pode ser excluído"
+MSG_PROFILE_IN_USE = "O perfil é usado por um evento e não pode ser excluído"
+MSG_PROFILE_IS_COPY_SOURCE = (
+    "O perfil está sendo copiado para outro perfil. Aguarde o fim da cópia, ou exclua o perfil"
+    " em cópia, para excluí-lo."
+)
+MSG_DELETE_COPY_IN_PROGRESS = (
+    "A cópia deste perfil está em andamento. Aguarde o fim da cópia para excluí-lo."
+)
+MSG_PROFILE_DELETING = "O perfil está sendo excluído"
+MSG_PROFILE_ITEMS_DELETING = (
+    "O perfil está sendo excluído. Os itens dele não podem mais ser alterados."
+)
+MSG_SOURCE_PROFILE_DELETING = "O perfil de origem está sendo excluído. Escolha outro perfil."
 
 
 class ProfileStatus(StrEnum):
-    """Whether the profile's items are complete (``READY``) or still being copied."""
+    """Whether the items are complete (``READY``), being copied or being deleted."""
 
     READY = "READY"
     COPYING = "COPYING"
+    DELETING = "DELETING"
 
 
 @dataclass(frozen=True)
@@ -92,6 +116,17 @@ class RequirementProfile:
             copying means the copy never started (it is stalled).
         copied_items: Items already in the profile, at the last progress.
         total_items: Items of the source, once the copy has read them.
+        delete_updated_at: Last sign of life of the deletion: the request that
+            asked for or resumed it, or the deletion's own progress. None
+            while deleting means the deletion never started (it is stalled).
+        delete_checked: True once a request has confirmed, after the profile
+            went to ``DELETING``, that no event uses it. Only then are items
+            deleted, and from then on the deletion is never cancelled. Not
+            part of the JSON representation.
+        delete_mark: Random identity of the current mark of deletion, new
+            every time the profile goes to ``DELETING`` and dropped when the
+            mark is undone. The events read under one mark never confirm nor
+            undo another. Not part of the JSON representation.
     """
 
     id: str
@@ -104,6 +139,9 @@ class RequirementProfile:
     copy_updated_at: str | None = None
     copied_items: int | None = None
     total_items: int | None = None
+    delete_updated_at: str | None = None
+    delete_checked: bool = False
+    delete_mark: str | None = None
 
     def is_copy_stalled(self, now_iso: str) -> bool:
         """Whether the profile is copying with no sign of life for ``COPY_STALL_SECONDS``."""
@@ -113,11 +151,22 @@ class RequirementProfile:
             return True
         return self.copy_updated_at <= stall_threshold(now_iso)
 
+    def is_delete_stalled(self, now_iso: str) -> bool:
+        """Whether the profile is deleting with no sign of life for ``COPY_STALL_SECONDS``."""
+        if self.status is not ProfileStatus.DELETING:
+            return False
+        if self.delete_updated_at is None:
+            return True
+        return self.delete_updated_at <= stall_threshold(now_iso)
+
     def to_dict(self, now_iso: str) -> dict[str, Any]:
-        """Return the JSON representation, with ``copy_stalled`` computed at ``now_iso``."""
+        """Return the JSON representation; the ``*_stalled`` flags are computed at ``now_iso``."""
         data = asdict(self)
+        del data["delete_checked"]
+        del data["delete_mark"]
         data["status"] = self.status.value
         data["copy_stalled"] = self.is_copy_stalled(now_iso)
+        data["delete_stalled"] = self.is_delete_stalled(now_iso)
         return data
 
     def to_item(self) -> dict[str, Any]:
@@ -127,7 +176,7 @@ class RequirementProfile:
         return {
             key: value
             for key, value in data.items()
-            if key not in {"id", "is_main"} and value is not None
+            if key not in {"id", "is_main"} and value is not None and value is not False
         }
 
     @classmethod
@@ -149,6 +198,9 @@ class RequirementProfile:
             copy_updated_at=item.get("copy_updated_at"),
             copied_items=optional_int("copied_items"),
             total_items=optional_int("total_items"),
+            delete_updated_at=item.get("delete_updated_at"),
+            delete_checked=bool(item.get("delete_checked", False)),
+            delete_mark=item.get("delete_mark"),
         )
 
 
@@ -253,16 +305,19 @@ def check_can_edit(profile: RequirementProfile, user: User) -> None:
     """Allow creating, editing and deleting a profile's items.
 
     The main profile's items are reserved to the admin master; the items of a
-    profile still being copied wait for the copy (it would write over them).
+    profile still being copied wait for the copy (it would write over them),
+    and the items of a profile being deleted are on their way out.
 
     Raises:
         ForbiddenError: If the profile is the main one and the user is not the master.
-        ConflictError: If the profile is still copying.
+        ConflictError: If the profile is still copying or is being deleted.
     """
     if profile.is_main and not user.is_master:
         raise ForbiddenError(MSG_MAIN_PROFILE_MASTER_ONLY)
     if profile.status is ProfileStatus.COPYING:
         raise ConflictError(MSG_PROFILE_COPYING)
+    if profile.status is ProfileStatus.DELETING:
+        raise ConflictError(MSG_PROFILE_ITEMS_DELETING)
 
 
 def parse_profile_name(payload: dict[str, Any]) -> str:
@@ -332,11 +387,11 @@ def plan_new_profile(
 ) -> RequirementProfile:
     """Build a new profile, ``COPYING`` from its source, checked against the stored ones.
 
-    Checks, in order: the source exists (404), its copy has finished (409),
-    the limit of ``MAX_PROFILES`` (409) and the name is free (409). When the
-    limit and a taken name both apply, the limit wins: no other name lets the
-    profile be created, only deleting one does (and deleting the namesake also
-    frees the name).
+    Checks, in order: the source exists (404), it is not being deleted (409),
+    its copy has finished (409), the limit of ``MAX_PROFILES`` (409) and the
+    name is free (409). When the limit and a taken name both apply, the limit
+    wins: no other name lets the profile be created, only deleting one does
+    (and deleting the namesake also frees the name).
 
     Args:
         stored: Every stored profile by id (the main one is not stored).
@@ -348,14 +403,16 @@ def plan_new_profile(
 
     Raises:
         NotFoundError: If the source does not exist.
-        ConflictError: If the source is still copying, the limit is reached
-            or the name is taken.
+        ConflictError: If the source is being deleted or still copying, the
+            limit is reached or the name is taken.
     """
     source_id = source_profile_id or MAIN_PROFILE_ID
     try:
         source = resolve_profile(source_id, stored.get)
     except NotFoundError as exc:
         raise NotFoundError(MSG_SOURCE_PROFILE_NOT_FOUND) from exc
+    if source.status is ProfileStatus.DELETING:
+        raise ConflictError(MSG_SOURCE_PROFILE_DELETING)
     if source.status is not ProfileStatus.READY:
         raise ConflictError(MSG_SOURCE_PROFILE_COPYING)
     check_profile_limit(stored.values())
@@ -389,11 +446,13 @@ def renamed(
 
     Raises:
         NotFoundError: If the profile does not exist (deleted meanwhile).
-        ConflictError: If another profile has the name.
+        ConflictError: If the profile is being deleted or another profile has the name.
     """
     current = stored.get(profile_id)
     if current is None:
         raise NotFoundError(MSG_PROFILE_NOT_FOUND)
+    if current.status is ProfileStatus.DELETING:
+        raise ConflictError(MSG_PROFILE_DELETING)
     check_name_available(name, stored.values(), exclude_id=profile_id)
     return replace(current, name=name)
 
@@ -402,13 +461,66 @@ def check_can_resume(profile: RequirementProfile, now_iso: str) -> None:
     """Allow resuming only a stalled copy.
 
     Raises:
-        ConflictError: If the profile is ready (the main one always is) or
-            its copy shows signs of life.
+        ConflictError: If the profile is being deleted, is ready (the main
+            one always is) or its copy shows signs of life.
     """
+    if profile.status is ProfileStatus.DELETING:
+        raise ConflictError(MSG_PROFILE_DELETING)
     if profile.status is not ProfileStatus.COPYING:
         raise ConflictError(MSG_PROFILE_READY)
     if not profile.is_copy_stalled(now_iso):
         raise ConflictError(MSG_COPY_IN_PROGRESS)
+
+
+def check_can_delete(profile_id: str) -> None:
+    """Refuse deleting the main profile, for everyone (the master included).
+
+    Raises:
+        ForbiddenError: If ``profile_id`` is the main profile's.
+    """
+    if profile_id == MAIN_PROFILE_ID:
+        raise ForbiddenError(MSG_MAIN_PROFILE_DELETE)
+
+
+def plan_deletion(
+    stored: Mapping[str, RequirementProfile], profile_id: str, now_iso: str
+) -> RequirementProfile:
+    """Return the stored profile as it goes to ``DELETING``, checked against the stored ones.
+
+    A profile already ``DELETING`` is returned as stored (nothing to mark).
+    Otherwise checks, in order: a copy of this profile with signs of life
+    (409; a stalled copy may be deleted, which frees its place) and another
+    profile still copying **from** this one (409: that copy reads these
+    items, and a stalled one may be resumed). Whether an event uses the
+    profile is checked by the caller, after the mark is stored.
+
+    Args:
+        stored: Every stored profile by id (the main one is not stored).
+        profile_id: Profile to delete; never the main one (``check_can_delete``).
+        now_iso: Time of the request, the deletion's first sign of life.
+
+    Raises:
+        NotFoundError: If the profile does not exist.
+        ConflictError: If its copy is in progress or it is the source of a
+            copy not finished yet.
+    """
+    current = stored.get(profile_id)
+    if current is None:
+        raise NotFoundError(MSG_PROFILE_NOT_FOUND)
+    if current.status is ProfileStatus.DELETING:
+        return current
+    if current.status is ProfileStatus.COPYING and not current.is_copy_stalled(now_iso):
+        raise ConflictError(MSG_DELETE_COPY_IN_PROGRESS)
+    for other in stored.values():
+        if other.status is ProfileStatus.COPYING and other.source_profile_id == profile_id:
+            raise ConflictError(MSG_PROFILE_IS_COPY_SOURCE)
+    return replace(
+        current,
+        status=ProfileStatus.DELETING,
+        delete_updated_at=now_iso,
+        delete_checked=False,
+        delete_mark=None,
+    )
 
 
 def sorted_profiles(stored: Iterable[RequirementProfile]) -> list[RequirementProfile]:

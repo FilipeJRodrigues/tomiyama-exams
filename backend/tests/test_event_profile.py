@@ -694,18 +694,29 @@ def test_rn016_profile_leaving_ready_before_the_write_refuses_the_new_event(
     assert event_repo.list_all() == []
 
 
+@pytest.mark.parametrize(
+    ("stored_status", "error", "match"),
+    [
+        # Step 3b-2: a profile being deleted has a status of its own, and its message.
+        ("DELETING", ConflictError, "O perfil está sendo excluído"),
+        # A status this code does not know: reading it back to choose the
+        # message fails; the transaction had already refused the event.
+        ("ARCHIVED", ValueError, "ARCHIVED"),
+    ],
+)
 def test_rn016_profile_in_any_status_but_ready_refuses_the_new_event(
-    aws: None, monkeypatch: pytest.MonkeyPatch
+    aws: None,
+    monkeypatch: pytest.MonkeyPatch,
+    stored_status: str,
+    error: type[Exception],
+    match: str,
 ) -> None:
-    # Step 3b-2 will mark a profile being deleted with a status of its own:
-    # whatever it is, the event is not written once the status is not READY.
+    # Whatever the status is, the event is not written once it is not READY.
     profile_id = _store_profile("Perfil do Sensei")
-    calls = _racing_transact(monkeypatch, lambda: _set_status(profile_id, "DELETING"))
+    calls = _racing_transact(monkeypatch, lambda: _set_status(profile_id, stored_status))
     event = ExamEvent("event-1", "Exame", date(2027, 3, 20), EventStatus.OPEN, NOW, NOW, profile_id)
 
-    # This code does not know the status yet, so reading it back to choose the
-    # message fails; the transaction had already refused the event.
-    with pytest.raises(ValueError, match="DELETING"):
+    with pytest.raises(error, match=match):
         event_repo.create_event(event)
 
     assert calls == [2]

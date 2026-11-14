@@ -4,8 +4,8 @@ Invoked asynchronously (``InvocationType=Event``) by ``POST
 /requirement-profiles`` and ``POST /requirement-profiles/{id}/copy`` with
 ``{"profile_id": "<id>"}``; no API route reaches it. A run:
 
-1. reads the profile (nothing to do if it is gone or already ``READY``) and
-   its source (the main profile or another ready one);
+1. reads the profile (nothing to do if it is gone, already ``READY`` or
+   being deleted) and its source (the main profile or another ready one);
 2. reads, belt by belt, the source's items and the items already copied
    (``by_profile_belt``; the main profile through ``by_belt`` until the v2
    migration finished);
@@ -112,6 +112,11 @@ def copy_profile(
         return _outcome(profile_id, "NOT_FOUND")
     if profile.status is ProfileStatus.READY:
         return _outcome(profile_id, "ALREADY_READY")
+    if profile.status is not ProfileStatus.COPYING:
+        # Being deleted (a stalled copy may be): a copy that wakes up later
+        # writes nothing. Past this point, the conditional progress stops it.
+        logger.warning("Requirement profile %s is %s: not copied", profile_id, profile.status.value)
+        return _outcome(profile_id, "STOPPED", written=0)
     try:
         source = resolve_profile(profile.source_profile_id or MAIN_PROFILE_ID, stored)
     except NotFoundError:

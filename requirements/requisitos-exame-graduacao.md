@@ -110,7 +110,7 @@ o percentual por item). Carga inicial no **Apêndice A** (692 itens), no perfil 
 |---|---|---|
 | `name` | texto ≤ 60 | obrigatório; único entre os perfis, sem diferenciar maiúsculas e acentos; "Principal" é do perfil principal |
 | `is_main` | booleano | só o perfil principal |
-| `status` | enum `COPYING` / `READY` | "Copiando" / "Pronto"; o principal é sempre `READY` |
+| `status` | enum `COPYING` / `READY` / `DELETING` | "Copiando" / "Pronto" / "Excluindo"; o principal é sempre `READY` |
 | `source_profile_id` | FK → Perfil de requisitos | perfil de origem da cópia (padrão: principal) |
 | `created_by` | FK → Usuário | examinador que criou |
 | `created_at` | data e hora | |
@@ -131,7 +131,18 @@ Aguarde o fim da cópia para alterar os itens."*), e uma cópia parada (sem sina
 15 minutos) pode ser retomada por qualquer examinador. A cópia não leva respostas de exames.
 O evento escolhe o perfil (padrão: principal; § 3.4, RN016), que não muda depois que o evento
 tem exames; a ficha de cada exame usa só os itens da faixa-alvo no perfil do seu evento
-(RN006, RN007). Em etapa seguinte: perfil não principal só é excluído se nenhum evento o usar.
+(RN006, RN007). **Exclusão:** qualquer examinador exclui um perfil que não seja o principal,
+desde que **nenhum evento o use**, aberto ou encerrado (*"O perfil é usado por um evento e não
+pode ser excluído"*, 409); o principal nunca é excluído, nem pelo master (*"O perfil principal
+não pode ser excluído"*, 403). Também não é excluído o perfil cuja cópia está em andamento
+(a cópia parada pode ser) nem o que é origem de outra cópia ainda não terminada. Os itens são
+apagados em segundo plano: o perfil passa a `DELETING` e, enquanto isso, continua contando no
+limite e ocupando o nome, os itens dele não são alterados (*"O perfil está sendo excluído. Os
+itens dele não podem mais ser alterados."*), e ele não é renomeado, não serve de origem de
+cópia nem é escolhido por um evento; ao fim, some da lista e libera o nome e a vaga. Uma
+exclusão parada (sem sinal de vida há 15 minutos) é retomada repetindo a exclusão. Evento
+gravado antes dos perfis vale como do principal e não impede nenhuma exclusão *(decisão do
+responsável, 2026-11-12)*.
 
 ### 3.3 Aluno (`Student`) — pertence ao responsável que o cadastrou
 | Campo | Tipo | Regras |
@@ -316,7 +327,8 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   Evento com exames não pode ser excluído (*"Evento possui exames registrados"*).
   O evento escolhe o perfil de requisitos (§ 3.2.1; padrão: o principal): o perfil precisa
   existir (*"Perfil de requisitos não encontrado"*, 404) e estar pronto (*"O perfil ainda está
-  sendo copiado. Aguarde o fim da cópia para usá-lo em um evento."*, 409). O perfil só muda
+  sendo copiado. Aguarde o fim da cópia para usá-lo em um evento."*, 409; perfil em exclusão:
+  *"O perfil está sendo excluído e não pode ser usado em um evento."*, 409). O perfil só muda
   enquanto o evento não tem exames (*"O perfil de requisitos do evento não pode ser alterado
   depois que o evento tem exames"*, 409, também quando a presença é confirmada no mesmo
   instante); reenviar o perfil atual é aceito *(decisão do responsável, 2026-11-12)*.
@@ -335,7 +347,19 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   pronto *(decisão do responsável, 2026-11-12)*. No máximo 3 perfis no total, o principal
   incluído; um perfil em cópia já conta (*"Limite de 3 perfis de requisitos atingido. Exclua
   um perfil para criar outro."*, 409; quando o nome também está repetido, vale esta
-  mensagem) *(decisão do responsável, 2026-11-13)*. Item com respostas não pode ser excluído
+  mensagem) *(decisão do responsável, 2026-11-13)*. **Exclusão de perfil:** qualquer
+  examinador exclui um perfil que não seja o principal (*"O perfil principal não pode ser
+  excluído"*, 403, para todos) e que nenhum evento use, aberto ou encerrado (*"O perfil é
+  usado por um evento e não pode ser excluído"*, 409); perfil com a cópia em andamento
+  (*"A cópia deste perfil está em andamento. Aguarde o fim da cópia para excluí-lo."*, 409;
+  a cópia parada pode ser excluída) ou que é origem de uma cópia não terminada (*"O perfil
+  está sendo copiado para outro perfil. Aguarde o fim da cópia, ou exclua o perfil em cópia,
+  para excluí-lo."*, 409) também não. Os itens são apagados em segundo plano e, até o fim, o
+  perfil (`DELETING`) conta no limite, ocupa o nome, não tem itens alterados (*"O perfil está
+  sendo excluído. Os itens dele não podem mais ser alterados."*, 409), não é renomeado
+  (*"O perfil está sendo excluído"*, 409) nem serve de origem (*"O perfil de origem está
+  sendo excluído. Escolha outro perfil."*, 409); item com respostas nunca é apagado pela
+  exclusão do perfil *(decisão do responsável, 2026-11-12)*. Item com respostas não pode ser excluído
   (*"Requisito possui respostas registradas"*).
 - **RN018 — Histórico preservado.** Aluno **com exames** não pode ser excluído pelo
   responsável (*"Aluno possui exames registrados"*); o examinador pode inativá-lo.
@@ -403,7 +427,11 @@ perfil em cópia aparece como "Copiando… (N de M)", com os itens só para leit
 parada aparece como "Cópia parada", com o botão "Retomar cópia" *(decisão do responsável,
 2026-11-12)*. Com 3 perfis (o limite, contando o principal), "Novo perfil" é recusado com
 *"Limite de 3 perfis de requisitos atingido. Exclua um perfil para criar outro."*
-*(decisão do responsável, 2026-11-13)*.
+*(decisão do responsável, 2026-11-13)*. Botão "Excluir" nos perfis que não são o principal,
+com confirmação; perfil usado por um evento não é excluído (a mensagem da RN017). Um perfil
+em exclusão aparece como "Excluindo…", com os itens só para leitura e fora dos seletores de
+origem e de evento; uma exclusão parada aparece como "Exclusão parada", com o botão "Retomar
+exclusão" *(decisão do responsável, 2026-11-12)*.
 Enums sempre como seletor com rótulo em pt-BR.
 
 ### 6.6 Academia (aba de templates, examinadores)
@@ -505,7 +533,7 @@ acentuação do português.
 | Hospedagem | Tudo local |
 | Admin master e assinaturas (2026-11-02) | Grupo **master** (o primeiro examinador; outros só pelo console): único que escolhe o sensei, **não** decide exames. Certificado com 1–3 assinaturas (nome, graduação, imagem, posição), geridas pelo master e pelo sensei; ≥ 1 completa para emitir |
 | Edição de faixas (2026-11-12) | Só o **admin master** altera nome, kyū, ordem, nível e cores; os demais examinadores alteram idade mínima e carência |
-| Perfis de requisitos (2026-11-12) | Perfil **principal** fixo (Apêndice A), alterado só pelo **admin master**; os demais examinadores criam perfis próprios (cópia completa) e os editam; o evento escolhe o perfil (padrão: principal), que não muda depois que o evento tem exames |
+| Perfis de requisitos (2026-11-12) | Perfil **principal** fixo (Apêndice A), alterado só pelo **admin master**; os demais examinadores criam perfis próprios (cópia completa) e os editam; o evento escolhe o perfil (padrão: principal), que não muda depois que o evento tem exames; perfil só pode ser **excluído** se nenhum evento o usar, e o principal nunca |
 | Limite de perfis de requisitos (2026-11-13) | No máximo **3 perfis no total**: o principal + 2 criados pelos examinadores; perfil em cópia conta |
 
 ---

@@ -264,6 +264,9 @@ def test_rn017_list_profiles_main_first_then_by_name(
         "copied_items": None,
         "total_items": None,
         "copy_stalled": False,
+        # Step 3b-2 (deletion): two more fields in every profile.
+        "delete_updated_at": None,
+        "delete_stalled": False,
     }
     assert {profile["status"] for profile in body[1:]} == {"COPYING"}
 
@@ -338,6 +341,9 @@ def test_rn017_any_examiner_creates_a_profile_copying_in_the_background(
         "copied_items": None,
         "total_items": None,
         "copy_stalled": False,
+        # Step 3b-2 (deletion): two more fields in every profile.
+        "delete_updated_at": None,
+        "delete_stalled": False,
     }
     assert copy_invocations.calls == [
         {
