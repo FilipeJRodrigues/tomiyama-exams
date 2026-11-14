@@ -33,6 +33,8 @@ Os agentes ficam em [.claude/agents/](.claude/agents/):
 - **`frontend`** escreve o código em `frontend/` (TypeScript + React + Vite, Amplify Hosting) e devolve um relatório. Usa a API como está descrita em `backend/README.md`, não mexe no backend nem no git.
 - **`qa`** testa o que vai subir no backend (`backend/` e `infra/`), e **`qa-frontend`** testa o que vai subir no frontend (`frontend/`), antes de cada commit. Quando a mudança toca os dois lados, rodam em paralelo. Para cada falha, escrevem um teste de regressão que falha (`backend/tests/regression/` ou `frontend/tests/regression/`), e o agente da área (`backend` ou `frontend`) corrige o código sem mexer no teste. Os QAs não corrigem código de produção.
 
+A identidade visual do site ("Tomiyama"; este sistema é a "Área de exames") fica na skill [tomiyama-design](.claude/skills/tomiyama-design/SKILL.md): cores do logo, tema Mantine, botões, logo e tipografia. Ela já vem carregada no `frontend` e no `qa-frontend`.
+
 Para trabalhar sem o master, remova a chave `agent` do `.claude/settings.json`. No terminal, `claude --agent backend` (ou `frontend`) abre uma sessão direto com o agente da área.
 
 ## Regras de trabalho

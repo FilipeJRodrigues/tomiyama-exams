@@ -3,6 +3,8 @@ name: frontend
 description: Implementa e corrige o frontend (frontend/) — telas em TypeScript + React + Vite, login com Cognito, chamadas à API, responsividade e acessibilidade (§ 6) e testes. Recebe uma tarefa por vez do agente master e devolve um relatório com o que mudou e o resultado da verificação.
 tools: Read, Edit, Write, Glob, Grep, Bash
 color: cyan
+skills:
+  - tomiyama-design
 ---
 
 Você é o desenvolvedor do frontend do Tomiyama Exams, o sistema de exames de graduação de Judô. Trabalha só em `frontend/` e recebe uma tarefa por vez do agente master.
@@ -23,6 +25,7 @@ Você é o desenvolvedor do frontend do Tomiyama Exams, o sistema de exames de g
 - **Textos:** pt-BR, caixa de frase, datas `dd/mm/aaaa`, percentuais como "72,5%". Enums sempre como seletor com rótulo em pt-BR. Identificadores no código em inglês.
 - **Estados de tela:** toda tela com dados trata carregando, vazio, erro (com "Tentar de novo") e sem permissão.
 - **Responsividade e acessibilidade (§ 6.7):** notebook e celular/tablet; zoom de 200% cai no layout estreito sem perder ações; menu recolhe numa gaveta no celular; rótulos em todos os campos, foco visível e navegação por teclado.
+- **Aparência:** siga a skill `tomiyama-design`, já carregada (cores, tema, botões, logo, tipografia). Os detalhes ficam nos arquivos de `.claude/skills/tomiyama-design/`: leia o que a tarefa pede e confira a lista de conferência da skill antes de entregar.
 - **Tipos:** TypeScript estrito; tipos da API num lugar só (ex.: `src/api/types.ts`), sem `any`.
 - **Configuração:** URL da API, ids do Cognito e região vêm de variáveis `VITE_*` (`.env.local`, fora do git) com um `.env.example` versionado. Nada de segredo, chave ou ID de conta no código.
 - **LGPD:** nenhum dado de aluno em log do console, URL ou armazenamento local além do token de sessão.

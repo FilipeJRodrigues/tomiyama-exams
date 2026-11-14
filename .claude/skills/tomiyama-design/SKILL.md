@@ -1,0 +1,83 @@
+---
+name: tomiyama-design
+description: Identidade visual do site da Academia Tomiyama (Área de exames e a futura landing page) — cores do logo, tema Mantine claro e escuro, tipografia, botões, selos, logo, cabeçalho e telas de entrada. Use ao criar ou alterar qualquer elemento visual em frontend/ e ao revisar a aparência de uma mudança.
+---
+
+# Identidade visual da Tomiyama
+
+Guia de referência da aparência do site. Decisões do responsável de 2026-11-14 (card #165). Ele diz **como o site se parece**; **o que cada tela mostra** continua no § 6 de `requirements/requisitos-exame-graduacao.md`, e o § 6.7 (acessibilidade) vale sempre por cima deste guia.
+
+## Marca
+
+- O nome que aparece no site é **"Tomiyama"**. Este sistema é a **"Área de exames"**, uma parte do site da academia; a landing page (card #168) é a outra.
+- Nomes internos não mudam: repositório, quadro "Tomiyama Exams", pacote `tomiyama-exams-frontend`.
+- A academia ensina judô e jiu-jitsu (o logo diz "Judô - Jiu Jitsu"). A base comum deste guia não fala só de judô; a camada da Área de exames é de judô.
+
+## Personalidade
+
+**Esportiva e vibrante**, com as cores fortes do logo: azul-marinho, amarelo e vermelho. **Escura por padrão**: fundo carvão com **um** destaque forte, o amarelo do logo. Vibrante não é poluída: os dados do exame vêm primeiro, e cada cor tem um papel fixo (veja `colors.md`). Quem usa é o examinador no celular, no tatame, e os pais em casa: tudo precisa ser lido de relance.
+
+## Referências
+
+O responsável trouxe duas referências (2026-11-14). As imagens ficam só na máquina dele (a pasta `logo/` está fora do git: uma é design de terceiros, a outra tem dados pessoais); o que vale é o texto abaixo.
+
+- **"Titan", landing de academia:** serve sobretudo para a landing page (card #168). Base escura quase preta com **um** destaque forte (lá, verde-limão; aqui, o amarelo do logo), títulos grandes em caixa de frase, cartões grandes bem arredondados, botões em pílula com seta num círculo, etiquetas em pílula com contorno, grade de cartões com fotos. O que é geral (escuro com um destaque, cantos grandes, pílulas) vale também para a Área de exames.
+- **"POS TECH", área logada de um curso:** serve para a moldura da Área de exames. Menu lateral e cabeçalho na cor de superfície, item ativo na cor de destaque com uma barra vertical na borda, cartões planos sobre um fundo um pouco mais escuro.
+- **O que não se copia:** a caixa alta da POS TECH (o § 6 pede caixa de frase), o rosa da POS TECH e o verde-limão da Titan (o destaque é o amarelo do logo), e blocos como saudação e calendário (seriam telas novas, fora do § 6).
+
+## Regras que nunca se quebram
+
+1. **Contraste** (§ 6.7): texto ≥ 4,5:1 e indicadores (borda de campo, anel de foco, contorno de selo, estado de botão) ≥ 3:1, **nos dois temas** e nos estados de hover, foco e selecionado.
+2. **Estado nunca só por cor:** ícone e texto acompanham a cor (Certo/Errado, Bloqueado, faixa sempre com o nome escrito).
+3. **Caixa de frase** (§ 6): nada de caixa alta decorativa, nem em títulos, selos ou botões. Por isso não há fonte só de maiúsculas.
+4. **Tema claro e escuro** sempre (o escuro é o padrão da primeira visita); nenhuma cor fixa que só funcione num deles.
+5. **Amarelo nunca sobre branco** (1,22:1): no tema claro ele só aparece sobre o azul.
+6. **Vermelho só para erro e perigo**, nunca como enfeite.
+7. **Sobre o fundo azul das telas de entrada** o texto é branco ou amarelo e o **anel de foco é amarelo**; o azul do foco some ali.
+8. **Mantine com tema próprio**, sem outra biblioteca de interface nem CSS-in-JS novo. Dependência nova só com o master.
+
+## Como aplicar
+
+Na ordem de preferência:
+
+1. **Tema** (`frontend/src/app/theme.ts`: `createTheme`, `cssVariablesResolver`) e `frontend/src/app/a11y.css`.
+2. **Props e variantes do Mantine** (`color`, `variant`, `radius`) e `Component.extend` no tema.
+3. **Módulo CSS** (`*.module.css`, com o `postcss-preset-mantine`) usando as variáveis `--mantine-*` e `--app-*`.
+
+Nunca escreva um hex solto num componente: as cores vêm do tema. As **6 cores-base** ficam neste guia; os **tons derivados** (as escalas de 10 tons do Mantine, hover, a paleta `dark`) ficam só no `theme.ts`. Se o `theme.ts` ainda não tiver a paleta Tomiyama (card #166, etapa 1), siga o tema que existe e avise o master, em vez de pintar uma tela à parte.
+
+## Arquivos de referência
+
+Leia o que a tarefa pede:
+
+- [colors.md](colors.md): cores-base, papel de cada cor nos dois temas, contrastes medidos e cores com significado (sucesso, erro, aviso).
+- [typography.md](typography.md): Barlow Condensed nos títulos, fonte do sistema no resto.
+- [components.md](components.md): botões, selos, campos, cabeçalho e menu, telas de entrada, selo de faixa, Certo/Errado e decisão.
+- [logo.md](logo.md): arquivos, tamanhos, texto alternativo e usos proibidos.
+
+## Ainda não
+
+- **Mascote e kanji 富山** fora do logo: só com a arte original da academia (card #167). Não recorte o mascote do JPEG nem use fonte japonesa.
+- **Landing page:** a base comum (cores, logo, tipografia, botões) vale para ela; o que for só dela entra neste guia quando for planejada (card #168).
+
+## Lista de conferência
+
+O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e trata cada item reprovado como falha (com teste de regressão quando der para testar):
+
+- [ ] Nenhum hex solto em componente; cores do tema ou variáveis CSS.
+- [ ] Contraste conferido nos **dois temas**, em repouso, hover, foco e selecionado (texto 4,5:1, indicadores 3:1).
+- [ ] Amarelo só sobre azul (claro) ou como cor principal (escuro); nunca sobre branco.
+- [ ] Vermelho só em erro e perigo; laranja do logo fora da interface.
+- [ ] Anel de foco visível em fundo branco, no fundo carvão e sobre o azul das telas de entrada.
+- [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`; campos com `md`.
+- [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor); sem fundo próprio (no hover, o mesmo dos outros itens).
+- [ ] No escuro, `Paper`, `Modal`, `Drawer` e o cabeçalho e o menu do `AppShell` em `#2A2A2A`, não no fundo da página.
+- [ ] Texto e ícones sobre o amarelo em azul, não branco nem preto: botão cheio (`--mantine-color-primary-contrast`), hover, polegar do `Switch` ligado (desligado continua claro), ponto do `Radio`, ícone do `Checkbox`.
+- [ ] Borda de controle única (`#737B83` / `#8F8F8F`) em campos, botões e `ActionIcon` `default`, `Checkbox` e `Radio` desmarcados, trilho do `Switch` desligado e Certo/Errado não escolhido, inclusive onde a cor está inline (`MarkButtons`).
+- [ ] Links (`Anchor`) sempre sublinhados.
+- [ ] Marcações somente leitura como texto com ícone, nunca como Certo/Errado desabilitados (§ 6.4); outro controle desabilitado só nos casos aceitos em `components.md` (envio, ação indisponível com motivo, pontas da navegação, campo que só outro perfil altera com motivo e valor legível).
+- [ ] Item escolhido do `SegmentedControl` com indicador ≥ 3:1 contra o trilho e rótulo em negrito.
+- [ ] Barlow Condensed só nos títulos de página (`h1` da tela e `h2` de seção) e no nome "Tomiyama", nunca em título de cartão de lista; sem caixa alta.
+- [ ] Estado com ícone e texto, nunca só por cor; faixa sempre com o nome escrito.
+- [ ] Logo pelos arquivos de `frontend/src/assets/brand/`, sem distorcer, sem recolorir, com texto alternativo.
+- [ ] Layout de 390 px e zoom de 200% sem perder ações (§ 6.7).
