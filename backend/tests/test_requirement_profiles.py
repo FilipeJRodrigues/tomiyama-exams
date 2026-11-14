@@ -561,8 +561,10 @@ def test_rn017_migration_skips_an_item_moved_to_another_belt_meanwhile(seeded: l
     assert "profile_belt" not in stored
     assert stored["belt_id"] == belt_id("Azul")
     assert stored["answer_count"] == 1
-    # Still read as a main item of its new belt.
-    assert LEGACY_ID in {item.id for item in requirement_repo.list_by_belt(belt_id("Azul"))}
+    # Still read as a main item of its new belt (by the fallback of the main
+    # profile, before the v2 marker: a Scan of the table since step 3c).
+    main_azul = requirement_repo.list_profile_belt(MAIN_PROFILE_ID, belt_id("Azul"))
+    assert LEGACY_ID in {item.id for item in main_azul}
 
 
 def test_rn017_migration_writes_the_profile_belt_of_the_belt_read(seeded: list) -> None:

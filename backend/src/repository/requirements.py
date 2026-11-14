@@ -1,11 +1,13 @@
 """Persistence of belt requirements in the ``Requirements`` table.
 
-Keys: PK ``id``; GSI ``by_belt`` (PK ``belt_id``, SK ``sort_order``) lists a
-belt's items in sheet order, of every profile; GSI ``by_profile_belt`` (PK
-``profile_belt`` = ``<profile_id>#<belt_id>``, SK ``sort_order``) lists the
-items of one profile in a belt. The ``answer_count`` attribute is kept by the
-answer transactions (``repository.answers``); while it is above zero the item
-cannot be deleted nor change its belt or kind.
+Keys: PK ``id``; GSI ``by_profile_belt`` (PK ``profile_belt`` =
+``<profile_id>#<belt_id>``, SK ``sort_order``) lists the items of one profile
+in a belt, in sheet order. It is the table's only GSI since step 3c of #144
+(the old ``by_belt``, every profile's items of a belt, was dropped). The
+``answer_count`` attribute is kept by the answer transactions
+(``repository.answers``); while it is above zero the item cannot be deleted
+nor change its belt or kind. ``by_profile_belt`` does not project it, so the
+first mark of an item (RN006) writes no GSI.
 
 Items written before requirement profiles existed have neither
 ``profile_id`` nor ``profile_belt``: they are read as items of the main
@@ -18,11 +20,15 @@ profiles, or skipped by v1), waits for ``by_profile_belt`` to be ``ACTIVE``
 and only then writes its marker.
 
 Every profile is read through ``by_profile_belt``. The main profile only
-once the v2 marker is seen (``profile_index_complete``): until then (the
-deploy that runs the migrations, with the new code already answering) it is
-read the way that never leaves an item out, ``by_belt`` filtered by profile
-or, without a belt, a ``Scan`` of the table. The other profiles never need
-it: their items are always written with ``profile_belt``.
+once the v2 marker is seen (``profile_index_complete``): until then it is
+read the way that never leaves an item out, a ``Scan`` of the table filtered
+by profile and belt (``_scan_main_profile``). Since step 3c that fallback
+only runs while a new stack is being created (between the functions and the
+marker written by ``InitialData``) or if the marker is missing from an
+existing stack (deleted by hand, or a stack of steps 1-2 of #144 deployed
+straight to this code); see "Ordem de deploy da etapa 3c" in
+backend/README.md. The other profiles never need it: their items are always
+written with ``profile_belt``.
 
 Copies of a profile (``put_copy``) are written by the background copy
 (``handlers.requirement_profile_copy``), one conditional ``PutItem`` each.
@@ -70,7 +76,6 @@ from repository.tables import (
 
 logger = logging.getLogger(__name__)
 
-BY_BELT_INDEX = "by_belt"
 BY_PROFILE_BELT_INDEX = "by_profile_belt"
 PROFILE_BELT = "profile_belt"
 SEED_MARKER_ID = "seed:requirements:v1"
@@ -80,7 +85,10 @@ PROFILE_MIGRATION_MARKER_ID = "migration:requirements:main-profile:v1"
 # while this code runs (only by hand, before deploying it again after a
 # rollback to code from before profiles; see backend/README.md).
 PROFILE_BELT_MIGRATION_MARKER_ID = "migration:requirements:profile-belt:v2"
-# Items read per page of the migration scan, to spread its reads (~5 RCU a page).
+# Items read per page of the migration scan, to spread its reads. Each page is
+# an eventually consistent read rounded up to 4 KB (0.5 RCU each): ~2.5 RCU with
+# items from before profiles (~180 bytes), ~3.5 with main ones (~250 bytes; ~23
+# RCU over the 692) and ~4 with copied ones (~310 bytes); see backend/README.md.
 MIGRATION_PAGE_SIZE = 100
 # Seconds between two checks of the status of ``by_profile_belt`` while it is
 # being built (CloudFormation does not wait for a new GSI to be ``ACTIVE``).
@@ -116,7 +124,7 @@ def profile_index_complete() -> bool:
     this code runs).
     The read is eventually consistent (0.5 RCU): it can miss a marker written
     a moment ago, never see one that is not there, and missing it only keeps
-    the complete fallback (``by_belt`` or the table) one request longer.
+    the complete fallback (a ``Scan`` of the table) one request longer.
 
     Raises:
         ServiceUnavailableError: If ``Settings`` kept throttling (503).
@@ -170,16 +178,6 @@ def get_requirement(requirement_id: str) -> Requirement | None:
     return _from_item(item) if item else None
 
 
-def list_by_belt(belt_id: str) -> list[Requirement]:
-    """Return every item of a belt, of every profile, in sheet order (no page limit cuts it)."""
-    items = paginate(
-        table(REQUIREMENTS_TABLE_ENV).query,
-        IndexName=BY_BELT_INDEX,
-        KeyConditionExpression=Key("belt_id").eq(belt_id),
-    )
-    return [_from_item(item) for item in items]
-
-
 def _query_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
     """Return the items of one profile in a belt from ``by_profile_belt``, in sheet order."""
     items = paginate(
@@ -198,20 +196,43 @@ def _needs_fallback(profile_id: str) -> bool:
     return profile_id == MAIN_PROFILE_ID and not profile_index_complete()
 
 
+def _sheet_order(requirement: Requirement) -> tuple[int, str]:
+    return requirement.sort_order, requirement.id
+
+
+def _scan_main_profile(belt_ids: Iterable[str]) -> list[Requirement]:
+    """Return the main profile's items of the given belts from one ``Scan`` of the table.
+
+    The fallback of the main profile until the v2 marker is seen: the table
+    is the only read that cannot miss an item still without ``profile_belt``
+    (written by code from before profiles) or with the key of a belt it was
+    moved from. Items without ``profile_id`` count as main. The answer is
+    shaped as the index would give it: belt by belt, in the given order,
+    each belt in sheet order (``sort_order``, then ``id``).
+
+    Raises:
+        ServiceUnavailableError: If a page kept throttling (503).
+    """
+    per_belt: dict[str, list[Requirement]] = {belt_id: [] for belt_id in belt_ids}
+    for item in list_all():
+        if item.profile_id == MAIN_PROFILE_ID and item.belt_id in per_belt:
+            per_belt[item.belt_id].append(item)
+    return [item for items in per_belt.values() for item in sorted(items, key=_sheet_order)]
+
+
 def list_profile_belt(profile_id: str, belt_id: str) -> list[Requirement]:
     """Return the items of one profile in a belt, in sheet order (no page limit cuts it).
 
     One query on ``by_profile_belt``, which reads only this profile's items
     of the belt. Until the v2 migration finished, the main profile is read
-    from ``by_belt`` instead (every profile's items of the belt, the ones
-    without ``profile_id`` counted as main), so the list is never missing an
-    item not migrated yet.
+    with a ``Scan`` of the table instead (``_scan_main_profile``), so the
+    list is never missing an item not migrated yet.
 
     Raises:
         ServiceUnavailableError: If a page or the marker read kept throttling (503).
     """
     if _needs_fallback(profile_id):
-        return [item for item in list_by_belt(belt_id) if item.profile_id == MAIN_PROFILE_ID]
+        return _scan_main_profile([belt_id])
     return _query_profile_belt(profile_id, belt_id)
 
 
@@ -228,12 +249,7 @@ def list_profile_belts(profile_id: str, belt_ids: Iterable[str]) -> list[Require
     """
     wanted = list(belt_ids)
     if _needs_fallback(profile_id):
-        belts = set(wanted)
-        return [
-            item
-            for item in list_all()
-            if item.profile_id == MAIN_PROFILE_ID and item.belt_id in belts
-        ]
+        return _scan_main_profile(wanted)
     return [item for belt_id in wanted for item in _query_profile_belt(profile_id, belt_id)]
 
 
@@ -550,7 +566,8 @@ def _move_to_main_profile(target: Any, item: dict[str, Any], deadline: float | N
     always matches ``belt_id`` (code from before profiles, still running
     during the deploy, may move the item to another belt between the scan and
     this write). A skipped item keeps no profile: it is still read as a main
-    item (through ``by_belt``) and gets its profile on its next edit. A
+    item (by the fallback of the main profile, until the v2 marker) and gets
+    its profile from the v2 migration, right after, or on its next edit. A
     ``TransactionConflictException`` (a marking holding the item, RN006) is
     retried by ``retry_throttled`` like throttling.
     """

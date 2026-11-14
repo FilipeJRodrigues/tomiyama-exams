@@ -64,6 +64,10 @@ def test_scenario_route_succeeds_without_throttling(exam_scenario: None, route: 
 
 
 # (route, DynamoDB operation, table) of every call that already answers 503.
+# The scenario has no v2 marker, so the main profile's items of a belt are read
+# by the fallback: a Scan of Requirements since step 3c of #144 (before, a Query
+# on the dropped by_belt index). The query on by_profile_belt, after the marker,
+# is in test_requirement_profile_index_without_by_belt.py.
 ALREADY_BUSY = [
     ("GET /belts", "Scan", BELTS_TABLE_ENV),
     ("GET /students", "Scan", STUDENTS_TABLE_ENV),
@@ -75,9 +79,9 @@ ALREADY_BUSY = [
     ("GET /students/{id}", "Scan", BELTS_TABLE_ENV),
     ("GET /requirements", "Scan", BELTS_TABLE_ENV),
     ("GET /requirements", "Scan", REQUIREMENTS_TABLE_ENV),
-    ("GET /requirements?belt_id", "Query", REQUIREMENTS_TABLE_ENV),
+    ("GET /requirements?belt_id", "Scan", REQUIREMENTS_TABLE_ENV),
     ("POST /requirements", "Scan", BELTS_TABLE_ENV),
-    ("POST /requirements", "Query", REQUIREMENTS_TABLE_ENV),
+    ("POST /requirements", "Scan", REQUIREMENTS_TABLE_ENV),
     ("PUT /requirements/{id}", "Scan", BELTS_TABLE_ENV),
     ("GET /events", "Scan", EVENTS_TABLE_ENV),
     ("DELETE /events/{id}", "Query", EXAMS_TABLE_ENV),
@@ -88,7 +92,7 @@ ALREADY_BUSY = [
     ("GET /events/{id}/exams", "Query", EXAMS_TABLE_ENV),
     ("GET /events/{id}/exams/{student_id}", "GetItem", EXAMS_TABLE_ENV),
     ("GET /events/{id}/exams/{student_id}", "GetItem", STUDENTS_TABLE_ENV),
-    ("GET /events/{id}/exams/{student_id}", "Query", REQUIREMENTS_TABLE_ENV),
+    ("GET /events/{id}/exams/{student_id}", "Scan", REQUIREMENTS_TABLE_ENV),
     ("GET /events/{id}/exams/{student_id}", "Query", ANSWERS_TABLE_ENV),
     ("PUT .../answers/{requirement_id}", "GetItem", EXAMS_TABLE_ENV),
     ("PUT .../answers/{requirement_id}", "TransactWriteItems", ANSWERS_TABLE_ENV),

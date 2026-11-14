@@ -116,25 +116,17 @@ def _create_tables() -> None:
         ],
     )
 
+    # As in the template since step 3c of #144: by_profile_belt is the only GSI.
     client.create_table(
         TableName=os.environ["REQUIREMENTS_TABLE"],
         BillingMode="PAY_PER_REQUEST",
         AttributeDefinitions=[
             {"AttributeName": "id", "AttributeType": "S"},
-            {"AttributeName": "belt_id", "AttributeType": "S"},
             {"AttributeName": "sort_order", "AttributeType": "N"},
             {"AttributeName": "profile_belt", "AttributeType": "S"},
         ],
         KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
         GlobalSecondaryIndexes=[
-            {
-                "IndexName": "by_belt",
-                "KeySchema": [
-                    {"AttributeName": "belt_id", "KeyType": "HASH"},
-                    {"AttributeName": "sort_order", "KeyType": "RANGE"},
-                ],
-                "Projection": {"ProjectionType": "ALL"},
-            },
             {
                 "IndexName": "by_profile_belt",
                 "KeySchema": [

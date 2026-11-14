@@ -5,7 +5,8 @@
 - only the functions that read a profile's items read the v2 marker in
   ``Settings``, with ``GetItem`` on that item only;
 - the read capacity of ``by_belt`` moved to ``by_profile_belt`` (dev free tier,
-  still 25/25).
+  then 25/25); step 3c dropped ``by_belt`` (24/24, see
+  ``test_template_without_by_belt.py``).
 """
 
 from pathlib import Path
@@ -91,8 +92,9 @@ def test_rn017_dev_read_capacity_moves_from_by_belt_to_by_profile_belt(
 ) -> None:
     capacity = template["Mappings"]["DevCapacity"]
 
-    assert capacity["RequirementsByBelt"] == {"Read": 1, "Write": 4}
+    # Step 3a gave by_profile_belt the read capacity of by_belt (5 RCU);
+    # step 3c dropped by_belt and its capacity (1 RCU, 4 WCU).
+    assert "RequirementsByBelt" not in capacity
     assert capacity["RequirementsByProfileBelt"] == {"Read": 5, "Write": 4}
-    # by_belt is still written until it is dropped (step 3c): same WCU.
-    assert sum(units["Read"] for units in capacity.values()) == 25
-    assert sum(units["Write"] for units in capacity.values()) == 25
+    assert sum(units["Read"] for units in capacity.values()) == 24
+    assert sum(units["Write"] for units in capacity.values()) == 24

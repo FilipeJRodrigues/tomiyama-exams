@@ -1,8 +1,9 @@
 """Template of the requirement profiles, step 1 of #144 (RN017).
 
 ``Requirements`` gains the GSI ``by_profile_belt`` (items of one profile in a
-belt, in sheet order) and keeps ``by_belt`` until the exam sheet moves to the
-new index: CloudFormation creates or deletes only one GSI per table update.
+belt, in sheet order) and kept ``by_belt`` until the exam sheet moved to the
+new index (step 3a): CloudFormation creates or deletes only one GSI per table
+update, so ``by_belt`` was dropped in a later deploy (step 3c).
 """
 
 import dataclasses
@@ -70,13 +71,14 @@ def test_rn017_profile_belt_index_projects_the_model_but_not_answer_count(
     assert projection["NonKeyAttributes"] == REQUIREMENT_PROFILE_BELT_ATTRIBUTES
 
 
-def test_rn017_by_belt_stays_until_the_sheet_moves(template: dict[str, Any]) -> None:
+def test_rn017_by_belt_is_dropped_once_the_sheet_moved(template: dict[str, Any]) -> None:
+    # Step 3c: the sheet moved to by_profile_belt in step 3a, so the old index
+    # (every profile's items of a belt, projection ALL) is gone.
     names = [
         index["IndexName"] for index in _requirements_table(template)["GlobalSecondaryIndexes"]
     ]
 
-    assert names == ["by_belt", "by_profile_belt"]
-    assert _index(template, "by_belt")["Projection"] == {"ProjectionType": "ALL"}
+    assert names == ["by_profile_belt"]
 
 
 def _policies(template: dict[str, Any], name: str) -> list[dict[str, Any]]:
@@ -111,30 +113,33 @@ def test_rn017_seed_function_writes_the_migration_marker(template: dict[str, Any
 @pytest.mark.parametrize(
     "name", ["GetExamSheetFunction", "MarkAnswerFunction", "UnmarkAnswerFunction"]
 )
-def test_rn017_exam_functions_read_both_requirement_indexes_and_only_the_v2_marker(
+def test_rn017_exam_functions_read_only_the_profile_index_and_only_the_v2_marker(
     template: dict[str, Any], name: str
 ) -> None:
     # Step 3a of #144: the sheet's items come from by_profile_belt; the main
-    # profile from by_belt only until the v2 migration marker is seen.
+    # profile from the fallback only until the v2 migration marker is seen.
+    # Step 3c: the fallback is a Scan of Requirements (by_belt was dropped).
     resources: list[Any] = []
     settings_statements: list[dict[str, Any]] = []
+    scanned: list[Any] = []
     for policy in _policies(template, name):
         for statement in policy.get("Statement", []):
             resource = statement["Resource"]
             resources.extend(resource if isinstance(resource, list) else [resource])
             if resource == {"Fn::GetAtt": ["SettingsTable", "Arn"]}:
                 settings_statements.append(statement)
+            if statement["Action"] == "dynamodb:Scan":
+                scanned.append(resource)
     index_resources = [
         resource
         for resource in resources
         if isinstance(resource, dict) and "/index/" in str(resource.get("Fn::Sub", ""))
     ]
 
-    # Least privilege: only the two indexes of Requirements, only to query.
-    assert index_resources == [
-        {"Fn::Sub": "${RequirementsTable.Arn}/index/by_belt"},
-        {"Fn::Sub": "${RequirementsTable.Arn}/index/by_profile_belt"},
-    ]
+    # Least privilege: only the index of Requirements, only to query; the Scan
+    # only on Requirements (the fallback), never on another table.
+    assert index_resources == [{"Fn::Sub": "${RequirementsTable.Arn}/index/by_profile_belt"}]
+    assert scanned == [REQUIREMENTS_ARN]
     # Settings: only GetItem, only on the v2 marker (never the academy record,
     # the signatures nor the profiles item), and nothing else reaches it.
     assert settings_statements == [

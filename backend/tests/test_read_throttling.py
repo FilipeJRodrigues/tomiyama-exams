@@ -131,7 +131,11 @@ PAGINATED_READS: list[tuple[Any, str, Callable[[], Any]]] = [
     (exam_repo, "query", lambda: exam_repo.list_by_event("event-1")),
     (event_repo, "scan", event_repo.list_all),
     (requirement_repo, "scan", requirement_repo.list_all),
-    (requirement_repo, "query", lambda: requirement_repo.list_by_belt("belt-1")),
+    # A profile other than main: one query on by_profile_belt (step 3c dropped
+    # by_belt, the query this entry used to throttle).
+    (requirement_repo, "query", lambda: requirement_repo.list_profile_belt("other", "belt-1")),
+    # Main before the v2 marker: the fallback, a Scan of the table.
+    (requirement_repo, "scan", lambda: requirement_repo.list_profile_belt("main", "belt-1")),
     (answer_repo, "query", lambda: answer_repo.list_by_exam("exam-1")),
 ]
 
@@ -146,7 +150,8 @@ PAGINATED_READS: list[tuple[Any, str, Callable[[], Any]]] = [
         "exams.list_by_event",
         "events.list_all",
         "requirements.list_all",
-        "requirements.list_by_belt",
+        "requirements.list_profile_belt",
+        "requirements.list_profile_belt (principal antes do marcador)",
         "answers.list_by_exam",
     ],
 )

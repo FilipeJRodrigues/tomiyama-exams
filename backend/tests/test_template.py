@@ -59,7 +59,7 @@ def _capacities(template: dict[str, Any]) -> dict[str, tuple[int, int]]:
 def test_every_table_and_gsi_is_provisioned_in_dev(template: dict[str, Any]) -> None:
     capacities = _capacities(template)
 
-    assert len(capacities) == 11  # 7 tables + 4 GSIs
+    assert len(capacities) == 10  # 7 tables + 3 GSIs (by_belt dropped in step 3c of #144)
     assert all(read >= 1 and write >= 1 for read, write in capacities.values())
     for properties in _tables(template).values():
         assert properties["BillingMode"] == {"Fn::If": ["IsProd", "PAY_PER_REQUEST", "PROVISIONED"]}
@@ -72,10 +72,10 @@ def test_dev_capacity_fits_the_free_tier(template: dict[str, Any]) -> None:
     assert sum(write for _, write in capacities.values()) <= FREE_TIER_UNITS
 
 
-# The seed (and the move to the main profile, #144) writes the table and both GSIs.
+# The seed (and the migrations of #144) writes the table and its only GSI
+# (by_belt, the second one, was dropped in step 3c).
 SEED_WRITERS = (
     "RequirementsTable",
-    "RequirementsTable.by_belt",
     "RequirementsTable.by_profile_belt",
 )
 
@@ -129,7 +129,7 @@ def test_seed_function_outlives_the_throttled_load(template: dict[str, Any]) -> 
     timeout = template["Resources"]["SeedFunction"]["Properties"]["Timeout"]
     service_timeout = template["Resources"]["InitialData"]["Properties"]["ServiceTimeout"]
     capacities = _capacities(template)
-    # Each item writes the table and both GSIs: the slowest of them sets the pace.
+    # Each item writes the table and its GSI: the slowest of them sets the pace.
     seed_writes = min(capacities[name][1] for name in SEED_WRITERS)
     expected_seconds = 692 / seed_writes
 
@@ -211,9 +211,29 @@ def test_rn006_answer_routes_with_least_privilege(
 
     assert _route(function) == (method, path)
     assert needed <= actions
-    # Only explicit statements: no table-wide CRUD policy, scans or batch writes.
+    # Only explicit statements: no table-wide CRUD policy or batch writes.
     assert all("Statement" in policy for policy in function["Properties"]["Policies"])
-    assert not actions & {"dynamodb:Scan", "dynamodb:BatchWriteItem", "dynamodb:*"}
+    assert not actions & {"dynamodb:BatchWriteItem", "dynamodb:*"}
+    # Scan only of the Requirements table itself: with by_belt dropped it is the
+    # path that protects the main profile before the v2 marker
+    # (_scan_main_profile). Decision of the product owner on 2026-11-14, step 3c
+    # of #144. The Scan stays alone in its statement, so it never comes with
+    # another table, an index or a wildcard resource. IAM matches actions
+    # ignoring case and with wildcards: "dynamodb:S*" counts as a Scan too.
+    requirements_arn = {"Fn::GetAtt": ["RequirementsTable", "Arn"]}
+    for policy in function["Properties"]["Policies"]:
+        for statement in policy["Statement"]:
+            action = statement["Action"]
+            granted = [action] if isinstance(action, str) else list(action)
+            patterns = [
+                re.escape(item).replace(r"\*", ".*").replace(r"\?", ".") for item in granted
+            ]
+            if not any(re.fullmatch(p, "dynamodb:Scan", re.IGNORECASE) for p in patterns):
+                continue
+            resource = statement.get("Resource")
+            resources = resource if isinstance(resource, list) else [resource]
+            assert granted == ["dynamodb:Scan"], (name, statement)
+            assert resources == [requirements_arn], (name, statement)
 
 
 def test_rn017_mark_answer_may_check_the_requirement_in_the_transaction(

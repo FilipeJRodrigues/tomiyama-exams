@@ -1,9 +1,12 @@
 """Leituras das rotas de marcação e da folha (RN006, RN007, #50).
 
 As marcações vêm da tabela base ``Answers`` com ``ConsistentRead=True``; as
-consultas em GSI (``by_belt``) não podem levar ``ConsistentRead``, que o
-DynamoDB recusa com ``ValidationException``. O teste espia os parâmetros de
-cada ``Query`` no botocore nas três rotas.
+consultas em GSI (``by_profile_belt``; ``by_belt`` até a etapa 3c do #144) não
+podem levar ``ConsistentRead``, que o DynamoDB recusa com
+``ValidationException``. O teste espia os parâmetros de cada ``Query`` no
+botocore nas três rotas, numa pilha já migrada (marcador da migração v2
+gravado): antes dele, o perfil principal é lido pelo caminho de proteção, um
+``Scan`` da tabela, coberto em ``test_requirement_profile_index_without_by_belt.py``.
 """
 
 import os
@@ -66,6 +69,9 @@ def exam(seeded: None) -> Exam:
                 sort_order=order,
             )
         )
+    # A migrated stack (the v2 marker exists): the main profile is read
+    # through by_profile_belt, the GSI whose query this file checks.
+    requirement_repo.migrate_profile_belts()
     stored = exam_repo.get_exam(exam_event.id, student.id)
     assert stored is not None
     return stored
@@ -94,7 +100,7 @@ def _path(exam: Exam, requirement_id: str | None = None) -> dict[str, str]:
 
 def _assert_reads(calls: list[dict[str, Any]]) -> None:
     on_index = [call for call in calls if "IndexName" in call]
-    assert on_index, "a rota deveria consultar o by_belt"
+    assert on_index, "a rota deveria consultar o by_profile_belt"
     assert all("ConsistentRead" not in call for call in on_index), on_index
     answers = [
         call

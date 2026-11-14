@@ -146,7 +146,7 @@ def test_rn017_deletion_function_with_least_privilege(template: dict[str, Any]) 
                 {
                     "Effect": "Allow",
                     "Action": "dynamodb:Query",
-                    # Never by_belt nor the table: the fallback of the main
+                    # Never a Scan of the table: the fallback of the main
                     # profile is out of its reach.
                     "Resource": {"Fn::Sub": "${RequirementsTable.Arn}/index/by_profile_belt"},
                 },
@@ -169,9 +169,9 @@ def test_rn017_a_dev_deletion_fits_in_one_run(template: dict[str, Any]) -> None:
     # before its timeout, with room for throttling.
     seconds_per_run = properties["Timeout"] - delete_worker.SAFETY_MARGIN_SECONDS
 
-    # A delete costs what a copy costs (the table and its 2 GSIs): the same pace.
+    # A delete costs what a copy costs (the table and its GSI): the same pace.
     assert pace == float(config["dev"]["CopyItemsPerSecond"])
-    assert pace <= 2  # half of the 4 WCU of Requirements and its GSIs
+    assert pace <= 2  # half of the 4 WCU of Requirements and its GSI
     assert seconds_per_run >= 2 * (692 / pace + delete_worker.SETTLE_SECONDS)
     assert float(config["prod"]["DeleteItemsPerSecond"]) > 0
 
@@ -246,10 +246,11 @@ def test_rn017_deletion_keeps_the_dev_capacity_and_adds_no_table(template: dict[
     capacity = template["Mappings"]["DevCapacity"]
     resources = template["Resources"]
 
-    assert sum(units["Read"] for units in capacity.values()) == 25
-    assert sum(units["Write"] for units in capacity.values()) == 25
+    # 24/24 since step 3c dropped by_belt (1 RCU, 4 WCU; see test_template_without_by_belt.py).
+    assert sum(units["Read"] for units in capacity.values()) == 24
+    assert sum(units["Write"] for units in capacity.values()) == 24
     assert capacity["Requirements"] == {"Read": 3, "Write": 4}
-    assert capacity["RequirementsByBelt"] == {"Read": 1, "Write": 4}
+    assert "RequirementsByBelt" not in capacity
     assert capacity["RequirementsByProfileBelt"] == {"Read": 5, "Write": 4}
     assert capacity["Events"] == {"Read": 2, "Write": 3}
     assert capacity["Settings"] == {"Read": 1, "Write": 1}
