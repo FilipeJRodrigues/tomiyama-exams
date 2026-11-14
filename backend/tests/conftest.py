@@ -39,6 +39,7 @@ from handlers import belts as belt_handlers  # noqa: E402
 from handlers import events as event_handlers  # noqa: E402
 from handlers import exams as exam_handlers  # noqa: E402
 from handlers import requirements as requirement_handlers  # noqa: E402
+from handlers import seed as seed_handler  # noqa: E402
 from handlers import students as student_handlers  # noqa: E402
 from repository import belts as belt_repo  # noqa: E402
 from repository import events as event_repo  # noqa: E402
@@ -553,6 +554,63 @@ def lag_eventual_reads(
 
     monkeypatch.setattr(BaseClient, "_make_api_call", lagging)
     return get_calls
+
+
+# --- clock of the InitialData load, moved only by its own waits (#144) ---
+
+
+@dataclass
+class FakeSeedTime:
+    """Time of the ``InitialData`` load in a test: it only advances when the load sleeps.
+
+    Attributes:
+        now: Current value of the clock, in seconds.
+        sleeps: Every wait the load asked for, in order.
+    """
+
+    now: float = 1_000.0
+    sleeps: list[float] = field(default_factory=list)
+
+    def clock(self) -> float:
+        """Return the current time (the injected ``clock``)."""
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        """Advance the clock instead of waiting (the injected ``sleep``)."""
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def fake_seed_time(monkeypatch: pytest.MonkeyPatch) -> FakeSeedTime:
+    """Run the seed handler and its migrations on a clock the test controls.
+
+    The deadline of ``handlers.seed`` (``_deadline``), every
+    ``retry_throttled`` of the load (``repository.tables``, used by
+    ``put_if_absent``, and ``repository.requirements``) and the wait for
+    ``by_profile_belt`` get the same injected ``clock`` and ``sleep``, so a
+    deadline is reached by the waits of the code under test alone, never by
+    how long the machine takes to run it.
+    """
+    fake = FakeSeedTime()
+    real_retry = tables.retry_throttled
+    real_wait = requirement_repo.wait_for_profile_index
+    real_deadline = seed_handler._deadline
+
+    def retry(call: Callable[[], Any], label: str, **kwargs: Any) -> Any:
+        kwargs.update(sleep=fake.sleep, clock=fake.clock)
+        return real_retry(call, label, **kwargs)
+
+    def wait(**kwargs: Any) -> None:
+        kwargs.update(sleep=fake.sleep, clock=fake.clock)
+        real_wait(**kwargs)
+
+    monkeypatch.setattr(tables, "retry_throttled", retry)
+    monkeypatch.setattr(requirement_repo, "retry_throttled", retry)
+    monkeypatch.setattr(requirement_repo, "wait_for_profile_index", wait)
+    monkeypatch.setattr(
+        seed_handler, "_deadline", lambda context: real_deadline(context, clock=fake.clock)
+    )
+    return fake
 
 
 # --- DynamoDB capacity limit that outlasted botocore's retries (#43) ---

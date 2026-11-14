@@ -86,6 +86,16 @@ MIGRATION_PAGE_SIZE = 100
 # being built (CloudFormation does not wait for a new GSI to be ``ACTIVE``).
 INDEX_POLL_SECONDS = 10
 
+
+class ProfileIndexNotActiveError(DeadlineExceededError):
+    """``by_profile_belt`` was still being built when the deadline passed.
+
+    A ``DeadlineExceededError`` of its own so that the seed handler tells this
+    wait (nothing to fix: repeat the deploy once the index is ready) from a
+    deadline met for lack of capacity or a lasting transaction conflict.
+    """
+
+
 # Whether this container has seen the v2 marker (``profile_index_complete``).
 # Only ``True`` is kept: the marker is not deleted while this code runs, so
 # once seen it stays (a container ends with its code version).
@@ -603,7 +613,8 @@ def migrate_profile_belts(*, deadline: float | None = None) -> int:
     ``PROFILE_BELT_MIGRATION_MARKER_ID``: from then on the main profile is
     read through ``by_profile_belt`` (``profile_index_complete``). Later
     deploys skip it (marker read with ``ConsistentRead``). A run that stops
-    (deadline or error) writes no marker, and the next one checks again.
+    (deadline or error) writes no marker, and the next one checks again; if
+    it stops waiting for the index, the error is ``ProfileIndexNotActiveError``.
     Throttled pages, reads and writes and writes that meet a marking in
     progress (``TransactionConflictException``) are retried with backoff
     until ``deadline``.
@@ -738,7 +749,8 @@ def wait_for_profile_index(
     ``INDEX_POLL_SECONDS`` (``sleep`` and ``clock`` injected for tests).
 
     Raises:
-        DeadlineExceededError: Still not ``ACTIVE`` when the deadline passed.
+        ProfileIndexNotActiveError: Still not ``ACTIVE`` when the deadline passed.
+        DeadlineExceededError: ``DescribeTable`` still throttled when the deadline passed.
         RuntimeError: The table has no such index (the template was not deployed).
     """
     requirements_table = table(REQUIREMENTS_TABLE_ENV)
@@ -764,6 +776,8 @@ def wait_for_profile_index(
         if status == "ACTIVE":
             return
         if deadline is not None and clock() + INDEX_POLL_SECONDS >= deadline:
-            raise DeadlineExceededError(f"Index {BY_PROFILE_BELT_INDEX} still {status}")
+            raise ProfileIndexNotActiveError(f"Index {BY_PROFILE_BELT_INDEX} still {status}")
         logger.info("Index %s is %s; checking again soon", BY_PROFILE_BELT_INDEX, status)
         sleep(INDEX_POLL_SECONDS)
+        if deadline is not None and clock() >= deadline:  # the sleep ran over
+            raise ProfileIndexNotActiveError(f"Index {BY_PROFILE_BELT_INDEX} still {status}")
