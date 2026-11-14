@@ -26,11 +26,15 @@ it: their items are always written with ``profile_belt``.
 
 Copies of a profile (``put_copy``) are written by the background copy
 (``handlers.requirement_profile_copy``), one conditional ``PutItem`` each.
+The items of a profile being deleted (``delete_profile_item``) are deleted by
+the background deletion (``handlers.requirement_profile_delete``), one
+conditional ``DeleteItem`` each.
 """
 
 import logging
 import time
 from collections.abc import Callable, Iterable
+from enum import StrEnum
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
@@ -349,6 +353,94 @@ def delete_requirement(requirement_id: str) -> None:
             raise_if_throttled(exc, "DeleteItem on Requirements")
             raise
         raise ConflictError(MSG_REQUIREMENT_HAS_ANSWERS) from exc
+
+
+def list_stored_profile_belt_ids(profile_id: str, belt_id: str) -> list[str]:
+    """Return the ids of the items of a **stored** profile in a belt (``by_profile_belt``).
+
+    For the background deletion of a profile. Always the index, never the
+    fallback of the main profile: the items of every other profile are
+    written with ``profile_belt``. The read is eventually consistent, as
+    every read of a GSI: an item written or deleted a moment ago may be
+    missing or still listed, so the caller reads again before it concludes
+    that nothing is left.
+
+    Raises:
+        ValueError: If ``profile_id`` is the main profile (never deleted).
+        ServiceUnavailableError: If a page kept throttling (503).
+    """
+    if profile_id == MAIN_PROFILE_ID:
+        raise ValueError("The items of the main profile are never deleted in bulk")
+    items = paginate(
+        table(REQUIREMENTS_TABLE_ENV).query,
+        IndexName=BY_PROFILE_BELT_INDEX,
+        KeyConditionExpression=Key(PROFILE_BELT).eq(profile_belt_key(profile_id, belt_id)),
+        ProjectionExpression="#id",
+        ExpressionAttributeNames={"#id": "id"},
+    )
+    return [item["id"] for item in items]
+
+
+class ProfileItemDeletion(StrEnum):
+    """What ``delete_profile_item`` did with one item."""
+
+    DELETED = "DELETED"
+    # Not there any more (already deleted; the index still listed it).
+    GONE = "GONE"
+    # Kept: an exam has an answer for it, which a profile no event uses should not have.
+    HAS_ANSWERS = "HAS_ANSWERS"
+    # Kept: the stored item belongs to another profile.
+    OTHER_PROFILE = "OTHER_PROFILE"
+
+
+def delete_profile_item(
+    requirement_id: str,
+    profile_id: str,
+    *,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> ProfileItemDeletion:
+    """Delete one item of a profile being deleted, only if it is of that profile and has no answers.
+
+    Both are conditions of the ``DeleteItem`` itself, read on the stored item
+    (the index does not carry ``answer_count``): an item of another profile
+    is never deleted, whatever the index listed, and neither is an item with
+    answers. Throttling and transaction conflicts are retried until
+    ``deadline`` (``retry_throttled``; ``sleep`` and ``clock`` injected for tests).
+
+    Raises:
+        ValueError: If ``profile_id`` is the main profile.
+        DeadlineExceededError: Still throttled when the deadline passed.
+    """
+    if profile_id == MAIN_PROFILE_ID:
+        raise ValueError("The items of the main profile are never deleted in bulk")
+    target = table(REQUIREMENTS_TABLE_ENV)
+    try:
+        retry_throttled(
+            lambda: target.delete_item(
+                Key={"id": requirement_id},
+                ConditionExpression=f"#profile = :profile AND ({NO_ANSWERS_CONDITION})",
+                ExpressionAttributeNames={"#profile": "profile_id"},
+                ExpressionAttributeValues={":profile": profile_id, ":zero": 0},
+                ReturnValuesOnConditionCheckFailure="ALL_OLD",
+            ),
+            f"deleting {requirement_id!r} of profile {profile_id!r}",
+            deadline=deadline,
+            sleep=sleep,
+            clock=clock,
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+        # The stored item, in DynamoDB's typed JSON ({"profile_id": {"S": ...}}).
+        stored = exc.response.get("Item")
+        if not stored:
+            return ProfileItemDeletion.GONE
+        if stored.get("profile_id", {}).get("S") != profile_id:
+            return ProfileItemDeletion.OTHER_PROFILE
+        return ProfileItemDeletion.HAS_ANSWERS
+    return ProfileItemDeletion.DELETED
 
 
 def seed_requirements(requirements: Iterable[Requirement], *, deadline: float | None = None) -> int:

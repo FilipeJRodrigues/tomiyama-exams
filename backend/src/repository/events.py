@@ -39,13 +39,13 @@ from domain.errors import (
 from domain.events import (
     MSG_EVENT_HAS_EXAMS,
     MSG_EVENT_NOT_FOUND,
-    MSG_EVENT_PROFILE_COPYING,
     MSG_EVENT_PROFILE_LOCKED,
     MSG_EVENT_TRY_AGAIN,
     EventStatus,
     ExamEvent,
+    check_profile_usable,
 )
-from domain.requirement_profiles import MAIN_PROFILE_ID, MSG_PROFILE_NOT_FOUND, ProfileStatus
+from domain.requirement_profiles import MAIN_PROFILE_ID, MSG_PROFILE_NOT_FOUND
 from repository import requirement_profiles as profile_repo
 from repository.tables import (
     EVENTS_TABLE_ENV,
@@ -118,6 +118,28 @@ def get_events(event_ids: Iterable[str]) -> dict[str, ExamEvent]:
 def list_all() -> list[ExamEvent]:
     """Return every event (unordered; a few per year)."""
     return [_from_item(item) for item in paginate(table(EVENTS_TABLE_ENV).scan)]
+
+
+def any_event_uses_profile(profile_id: str) -> bool:
+    """Return whether some event, open or closed, uses the stored profile ``profile_id``.
+
+    A strongly consistent ``Scan`` of every page of the table (a few events
+    per year), unlike ``list_all``: the deletion of a profile depends on it.
+    Run **after** the profile left ``READY``, it finds every event that uses
+    the profile, because no event starts using a profile that is not
+    ``READY`` (see the module docstring). An event without ``profile_id``
+    (or with a blank one) is an event of the main profile and never matches.
+
+    Raises:
+        ServiceUnavailableError: If a page kept throttling (503).
+    """
+    items = paginate(
+        table(EVENTS_TABLE_ENV).scan,
+        ConsistentRead=True,
+        ProjectionExpression="#id, #profile",
+        ExpressionAttributeNames={"#id": "id", "#profile": _PROFILE_ID},
+    )
+    return any(item.get(_PROFILE_ID) == profile_id for item in items)
 
 
 def create_event(event: ExamEvent) -> None:
@@ -230,8 +252,11 @@ def _profile_error(profile_id: str) -> DomainError:
     profile = profile_repo.get_profile(profile_id)
     if profile is None:
         return NotFoundError(MSG_PROFILE_NOT_FOUND)
-    if profile.status is not ProfileStatus.READY:
-        return ConflictError(MSG_EVENT_PROFILE_COPYING)
+    try:
+        check_profile_usable(profile)
+    except ConflictError as error:
+        # Still copying, or being deleted: the message of its status.
+        return error
     # Ready by the time of the re-read: the request may simply be repeated.
     return ConflictError(MSG_EVENT_TRY_AGAIN)
 

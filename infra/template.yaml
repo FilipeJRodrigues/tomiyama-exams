@@ -47,12 +47,17 @@ Mappings:
     # (#144). In dev each copied item costs 1 WCU in Requirements and in each
     # of its 2 GSIs (4 WCU each): 2 items/s leaves half to the exam marking,
     # and ~700 items take ~6 min. Prod is on-demand.
+    # DeleteItemsPerSecond: pace of the background deletion of a requirement
+    # profile's items (#144). A deleted item costs the same as a copied one
+    # (1 WCU in Requirements and in each of its 2 GSIs), so the same pace.
     dev:
       LogRetentionDays: 7
       CopyItemsPerSecond: "2"
+      DeleteItemsPerSecond: "2"
     prod:
       LogRetentionDays: 30
       CopyItemsPerSecond: "10"
+      DeleteItemsPerSecond: "10"
   # Provisioned capacity used only in dev (prod is PAY_PER_REQUEST). The free
   # tier covers 25 RCU and 25 WCU summed over every table and GSI of the
   # account in the Region; these add up to 25 RCU and 25 WCU (none spare).
@@ -1009,6 +1014,86 @@ Resources:
                 - !Sub ${RequirementsTable.Arn}/index/by_profile_belt
             - Effect: Allow
               Action: dynamodb:PutItem
+              Resource: !GetAtt RequirementsTable.Arn
+
+  # Deletes a profile other than the main one that no event uses (RN017,
+  # #144, step 3b-2). Stores the profile DELETING (conditional UpdateItem on
+  # the profiles item), then reads every event (strongly consistent Scan of
+  # Events, the only function of the profiles that reads another table) and
+  # starts the deletion of the items with an asynchronous Invoke of the
+  # function below, the only function it may invoke. It never touches
+  # Requirements.
+  DeleteRequirementProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profiles.delete_profile
+      Environment:
+        Variables:
+          REQUIREMENT_PROFILE_DELETE_FUNCTION: !Ref DeleteRequirementProfileItemsFunction
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt DeleteRequirementProfileItemsFunction.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /requirement-profiles/{id}
+            Method: DELETE
+
+  # Background deletion of the items of a profile being deleted (no route;
+  # invoked only by the function above, InvocationType=Event). A function of
+  # its own, not an action of the copy function: the copy never deletes an
+  # item and this one never writes one. Reads the belts (Scan) and the ids of
+  # the profile's items (Query on by_profile_belt only, never by_belt nor the
+  # table), deletes each one (conditional DeleteItem: of this profile, with no
+  # answers) and writes its sign of life and, at the end, the removal of the
+  # profile (UpdateItem on the profiles item of Settings). ~700 items at
+  # DeleteItemsPerSecond take ~6 min in dev; a run stops 60 s before the
+  # timeout and fails, and Lambda retries it (2 retries), going on from what
+  # is left. Repeating the DELETE of a stalled profile covers the rest.
+  DeleteRequirementProfileItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.requirement_profile_delete.handler
+      Timeout: 900
+      Environment:
+        Variables:
+          DELETE_ITEMS_PER_SECOND: !FindInMap [EnvConfig, !Ref Environment, DeleteItemsPerSecond]
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        MaximumEventAgeInSeconds: 3600
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt BeltsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${RequirementsTable.Arn}/index/by_profile_belt
+            - Effect: Allow
+              Action: dynamodb:DeleteItem
               Resource: !GetAtt RequirementsTable.Arn
 
   # Exam events (examiners only, RN016). An event chooses its requirement

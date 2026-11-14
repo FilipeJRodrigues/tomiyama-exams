@@ -194,7 +194,9 @@ def test_rn017_only_create_and_resume_start_the_copy(template: dict[str, Any], n
 
 
 def test_rn017_no_other_function_invokes_lambda(template: dict[str, Any]) -> None:
-    invokers = set()
+    # Step 3b-2: the route that deletes a profile invokes the background
+    # deletion, and only it; the copy is still started by create and resume only.
+    invokers: dict[str, Any] = {}
     for name, properties in _functions(template).items():
         for policy in properties.get("Policies", []):
             for statement in policy.get("Statement", []) if isinstance(policy, dict) else []:
@@ -202,13 +204,19 @@ def test_rn017_no_other_function_invokes_lambda(template: dict[str, Any]) -> Non
                 actions = [actions] if isinstance(actions, str) else actions
                 if any(action.startswith("lambda:") for action in actions):
                     assert actions == ["lambda:InvokeFunction"], (name, actions)
-                    assert statement["Resource"] == COPY_ARN, name
-                    invokers.add(name)
+                    assert name not in invokers, name
+                    invokers[name] = statement["Resource"]
         variables = properties.get("Environment", {}).get("Variables", {})
-        if name not in invokers:
+        if invokers.get(name) != COPY_ARN:
             assert COPY_FUNCTION_ENV not in variables, name
 
-    assert invokers == {"CreateRequirementProfileFunction", "ResumeRequirementProfileCopyFunction"}
+    assert invokers == {
+        "CreateRequirementProfileFunction": COPY_ARN,
+        "ResumeRequirementProfileCopyFunction": COPY_ARN,
+        "DeleteRequirementProfileFunction": {
+            "Fn::GetAtt": ["DeleteRequirementProfileItemsFunction", "Arn"]
+        },
+    }
     assert COPY_FUNCTION_ENV not in template["Globals"]["Function"]["Environment"]["Variables"]
 
 

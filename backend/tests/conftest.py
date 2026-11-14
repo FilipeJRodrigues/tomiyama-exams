@@ -25,6 +25,7 @@ os.environ["EVENTS_TABLE"] = "test-events"
 os.environ["ANSWERS_TABLE"] = "test-answers"
 os.environ["IMAGES_BUCKET"] = "test-academy-images"
 os.environ["REQUIREMENT_PROFILE_COPY_FUNCTION"] = "test-copy-requirement-profile"
+os.environ["REQUIREMENT_PROFILE_DELETE_FUNCTION"] = "test-delete-requirement-profile"
 
 from domain import dates  # noqa: E402
 from domain.belts import SEED_BELTS, Belt, seed_belt_id  # noqa: E402
