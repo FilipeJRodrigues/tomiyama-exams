@@ -17,3 +17,8 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Skills pessoais instaladas pelo `npx skills` (a grilling); fora do projeto
+.agents/
+skills-lock.json
+.claude/skills/grilling
