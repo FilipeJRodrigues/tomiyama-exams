@@ -32,7 +32,7 @@ O site abre no **tema escuro** na primeira visita (`defaultColorScheme="dark"`).
 | Hover de item do menu | `gray.0` do Mantine | por volta de `#3B3B3B` (`dark.5`), diferente do menu (o padrão do `NavLink` é `dark.6`) |
 | Hover de linha de tabela (`highlightOnHover`) | `gray.1` (padrão do `Table`) | por volta de `#3B3B3B` (`dark.5`, padrão do `Table`) |
 | Borda de campo em repouso | `gray.6` (como hoje) | por volta de `#828282` (4,4:1 no fundo, 3,7:1 no cartão) |
-| Erro e perigo | vermelho `#D62211` | vermelho mais claro, por volta de `#FF6B5B` |
+| Erro e perigo | vermelho `#D62211` | vermelho mais claro, por volta de `#FF8577` (≥ 4,5:1 também na linha de tabela em hover) |
 | Sucesso (Certo, Aprovado, Elegível) | verde (veja abaixo) | verde |
 | Aviso (Dados simulados, avisos de evento) | `orange` do Mantine | `orange` do Mantine |
 | Neutro (Inativo, Não marcado) | `gray` do Mantine | `gray` do Mantine |
@@ -47,7 +47,7 @@ O site abre no **tema escuro** na primeira visita (`defaultColorScheme="dark"`).
 
 **Outros controles sobre o amarelo** calculam a cor em JS ou têm branco fixo no CSS, sem tratar cor virtual. Defina a cor explicitamente, em azul, no tema escuro:
 - o texto do item escolhido do `SegmentedControl`, se ele levar a cor principal;
-- o polegar do `Switch` (`--switch-thumb-bg`, branco por padrão: 1,22:1 no trilho amarelo), como em "Ativo" e "Só não marcados";
+- o polegar do `Switch` **ligado** (`--switch-thumb-bg`, branco por padrão: 1,22:1 no trilho amarelo), como em "Ativo" e "Só não marcados". A regra do Mantine vale para ligado e desligado: aplique o azul só no estado ligado (`input:checked`). **Desligado, o polegar continua claro** (branco, 11,20:1 sobre o trilho `dark.5`): azul ali daria 1,29:1 e o estado ficaria só na cor do trilho;
 - o ponto do `Radio` e o ícone do `Checkbox` (`iconColor`), que saem brancos pelo `getContrastColor`.
 
 **Informação usa a cor principal**, não `blue` fixo: um `color="blue"` no código vira `primary` (ou some) quando a paleta Tomiyama entrar.
@@ -70,7 +70,10 @@ O site abre no **tema escuro** na primeira visita (`defaultColorScheme="dark"`).
 | azul sobre o fundo carvão | **1,18:1** (por isso a principal vira amarelo no escuro) |
 | vermelho `#D62211` sobre branco / branco sobre vermelho | 5,13:1 |
 | vermelho `#D62211` sobre o fundo carvão / sobre o cartão | 3,32:1 / 2,80:1 (só como fundo de botão) |
-| vermelho claro `#FF6B5B` sobre o fundo carvão / sobre o cartão | 6,09:1 / 5,13:1 |
+| vermelho claro `#FF8577` sobre o fundo carvão / cartão / linha de tabela em hover `#3B3B3B` | 7,20:1 / 6,06:1 / 4,73:1 |
+| `#FF6B5B` (mais escuro) sobre a linha de tabela em hover | 4,00:1 (não passa; por isso o `#FF8577`) |
+| polegar branco do `Switch` desligado sobre o trilho `dark.5` | 11,20:1 |
+| borda `gray.6` (claro) / `#828282` (escuro) de controle desmarcado e de botão `default` | 3,32:1 sobre branco / 3,74:1 sobre o cartão, 4,43:1 sobre o fundo |
 | vermelho `#D62211` sobre azul | **2,81:1** (nada vermelho nas telas de entrada fora do cartão) |
 | laranja `#FF7A15` sobre branco | 2,61:1 |
 | branco sobre verde `#237A36` | 5,37:1 |

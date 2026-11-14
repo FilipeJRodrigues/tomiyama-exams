@@ -9,7 +9,7 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
 - **Formato:** pílula (raio total; no Mantine, `radius="xl"` como padrão do `Button` e do `ActionIcon` pelo `extend` do tema). Texto em **negrito** (700).
 - **Variantes:**
   - **principal:** `filled` na cor principal (azul no claro, amarelo com texto azul no escuro). Uma ação principal por área da tela; a exceção é a decisão do exame (veja "Decisão").
-  - **secundária:** `default` ou `outline`.
+  - **secundária:** `default` ou `outline`. O botão `default` tem fundo igual ao da superfície (branco no claro, `dark.6` no escuro) e borda padrão fraca (`gray.4` 1,49:1; `dark.4` 1,43:1): dê a ele uma borda `gray.6` no claro (3,32:1) e por volta de `#828282` no escuro (3,74:1 sobre o cartão), pelo `Button.extend`, sem mudar a `--mantine-color-default-border` global.
   - **perigo:** `filled` vermelho no botão do diálogo que confirma algo que não se desfaz (por exemplo, o "Excluir" da confirmação); `light` ou `outline` vermelho no botão que só abre a confirmação (o "Excluir" da lista). A decisão do exame é exceção (veja "Decisão").
   - **suave:** `light` ou `subtle`, para ações de apoio.
 - **Tamanho:** os botões Certo/Errado têm alvo ≥ 44 px (§ 6.4). No celular, prefira 44 px também nos outros botões de ação (card #149).
@@ -18,19 +18,26 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
   - **aceito** quando a ação está momentaneamente ou logicamente indisponível:
     - **durante um envio:** o botão que envia mostra o carregamento (`loading`) e os outros controles do formulário ou do diálogo ficam desabilitados até a resposta, como hoje;
     - **ação indisponível com o motivo escrito ao lado**, legível (≥ 4,5:1): "Baixar certificado" sem assinatura completa (§ 6.4), o botão que confirma a decisão enquanto as marcações ainda salvam;
-    - **navegação nas pontas:** "Anterior" no primeiro aluno presente e "Próximo" no último, como hoje.
+    - **navegação nas pontas:** "Anterior" no primeiro aluno presente e "Próximo" no último, como hoje;
+    - **campo que só outro perfil altera**, com o motivo escrito e o valor legível (≥ 4,5:1): o seletor de sensei da Academia para quem não é master (§ 6.6), como hoje (`READ_ONLY_SELECT_STYLES` em `AcademyForm.tsx`).
 
 ### Selos, seletores, campos e cartões
 
 - **Selos (`Badge`):** pílula, caixa de frase, cor pelo significado (sucesso, erro, aviso, neutro), sempre com texto.
 - **Seletores segmentados (`SegmentedControl`):** pílula, caixa de frase, **neutros**, com o **item escolhido bem visível**: o indicador padrão do Mantine dá só 1,11:1 contra o trilho no claro e 1,47:1 no escuro, e o rótulo escolhido só muda de cor (o filtro do Dia do exame está assim hoje, abaixo do § 6.7).
   - **claro:** indicador `gray.7` com texto branco em negrito (7,35:1 contra o trilho `gray.1`; texto 8,18:1);
-  - **escuro:** indicador por volta de `#C9C9C9` com texto `#1C1C1C` em negrito (9,95:1 contra o trilho `dark.8`; texto 10,29:1).
+  - **escuro:** indicador por volta de `#C9C9C9` com texto `#1C1C1C` em negrito (≥ 9,9:1 contra o trilho `dark.8`, que fica ainda mais escuro com a paleta ajustada; texto 10,29:1).
+  - **foco:** o anel com `outline-offset` de 2 px, para não colar no indicador do item escolhido (contra o indicador, o anel daria 1,76:1 no claro e 1,35:1 no escuro; contra o trilho, passa com folga).
 
   Se um dia levarem a cor principal, defina a cor do texto do item escolhido explicitamente (veja `colors.md`: ele não trata cor virtual).
 - **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências. No escuro, todos em `#2A2A2A`: só o `Card` e o `Popover` pegam isso da paleta; os outros precisam do fundo definido no tema (veja `colors.md`).
 - **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...): raio **`md`**, como hoje. Uma caixa de texto em pílula ou muito arredondada fica estranha.
 - **Bordas e foco:** os de `a11y.css` (`--app-input-border`, `--app-focus-ring`), refeitos com a paleta nova.
+
+### Caixas de seleção, rádios e interruptores
+
+- **Desmarcados:** borda do `Checkbox` e do `Radio` e trilho do `Switch` desligado ≥ 3:1: `gray.6` no claro (3,32:1 sobre branco) e por volta de `#828282` no escuro (3,74:1 sobre o cartão). Os padrões do Mantine ficam abaixo (`gray.4` 1,49:1, `gray.3` 1,30:1, `dark.4` 1,43:1); hoje "Ativo", "Só não marcados" e "Perfil simulado" estão assim (card #173).
+- **Marcados, no escuro:** a cor principal (amarelo) com o ícone, o ponto ou o polegar em azul (veja `colors.md`). O polegar do `Switch` desligado continua claro.
 
 ### Ícones
 
@@ -58,7 +65,7 @@ O modelo é a moldura da POS TECH (veja o `SKILL.md`), em caixa de frase:
   - **"Tomiyama"** em Barlow Condensed;
   - **"Área de exames"** menor, em texto secundário. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama";
   - o selo **"Dados simulados"** (só com os dados de teste), logo depois, como hoje: some abaixo do `xs` e continua em caixa de frase.
-- **Lado direito do cabeçalho:** o e-mail e os botões Tema e Sair (variante `default`). No escuro, o fundo do botão `default` (`dark.6`) é a cor do próprio cabeçalho, e a borda padrão (`dark.4`) dá 1,43:1: dê aos botões `default` uma borda por volta de `#828282` (3,74:1 sobre `#2A2A2A`), sem mudar a `--mantine-color-default-border` global.
+- **Lado direito do cabeçalho:** o e-mail e os botões Tema e Sair (variante `default`, com a borda da regra de "secundária": o fundo deles é a cor do próprio cabeçalho).
 - **Sem linha amarela** sob o cabeçalho: no tema claro ela ficaria quase invisível (1,22:1), e a marca já vem do logo e da cor principal.
 - **Itens do menu:** ícone e texto na cor normal do texto. Hover num fundo diferente da superfície: `gray.0` no claro e por volta de `#3B3B3B` (`dark.5`) no escuro. O hover padrão do `NavLink` no escuro é `dark.6`, a mesma cor do menu, e não apareceria.
 - **Item ativo:**

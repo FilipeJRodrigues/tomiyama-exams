@@ -72,8 +72,9 @@ O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e tr
 - [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`; campos com `md`.
 - [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor); sem fundo próprio (no hover, o mesmo dos outros itens).
 - [ ] No escuro, `Paper`, `Modal`, `Drawer` e o cabeçalho e o menu do `AppShell` em `#2A2A2A`, não no fundo da página.
-- [ ] Texto e ícones sobre o amarelo em azul, não branco nem preto: botão cheio (`--mantine-color-primary-contrast`), hover, polegar do `Switch`, ponto do `Radio`, ícone do `Checkbox`.
-- [ ] Nada desabilitado para mostrar o estado de algo somente leitura (§ 6.4); desabilitado só durante um envio, por ação indisponível com motivo escrito, ou nas pontas da navegação.
+- [ ] Texto e ícones sobre o amarelo em azul, não branco nem preto: botão cheio (`--mantine-color-primary-contrast`), hover, polegar do `Switch` ligado (desligado continua claro), ponto do `Radio`, ícone do `Checkbox`.
+- [ ] Borda de `Checkbox` e `Radio` desmarcados, trilho do `Switch` desligado e borda do botão `default` ≥ 3:1 (`gray.6` / `#828282`).
+- [ ] Marcações somente leitura como texto com ícone, nunca como Certo/Errado desabilitados (§ 6.4); outro controle desabilitado só nos casos aceitos em `components.md` (envio, ação indisponível com motivo, pontas da navegação, campo que só outro perfil altera com motivo e valor legível).
 - [ ] Item escolhido do `SegmentedControl` com indicador ≥ 3:1 contra o trilho e rótulo em negrito.
 - [ ] Barlow Condensed só nos títulos de página (`h1` da tela e `h2` de seção) e no nome "Tomiyama", nunca em título de cartão de lista; sem caixa alta.
 - [ ] Estado com ícone e texto, nunca só por cor; faixa sempre com o nome escrito.
