@@ -15,17 +15,25 @@ Guia de referência da aparência do site. Decisões do responsável de 2026-11-
 
 ## Personalidade
 
-**Esportiva e vibrante**, com as cores fortes do logo: azul-marinho, amarelo e vermelho. Vibrante não é poluída: os dados do exame vêm primeiro, e cada cor tem um papel fixo (veja `colors.md`). Quem usa é o examinador no celular, no tatame, e os pais em casa: tudo precisa ser lido de relance.
+**Esportiva e vibrante**, com as cores fortes do logo: azul-marinho, amarelo e vermelho. **Escura por padrão**: fundo carvão com **um** destaque forte, o amarelo do logo. Vibrante não é poluída: os dados do exame vêm primeiro, e cada cor tem um papel fixo (veja `colors.md`). Quem usa é o examinador no celular, no tatame, e os pais em casa: tudo precisa ser lido de relance.
+
+## Referências
+
+O responsável trouxe duas referências (2026-11-14). As imagens ficam só na máquina dele (a pasta `logo/` está fora do git: uma é design de terceiros, a outra tem dados pessoais); o que vale é o texto abaixo.
+
+- **"Titan", landing de academia:** serve sobretudo para a landing page (card #168). Base escura quase preta com **um** destaque forte (lá, verde-limão; aqui, o amarelo do logo), títulos grandes em caixa de frase, cartões grandes bem arredondados, botões em pílula com seta num círculo, etiquetas em pílula com contorno, grade de cartões com fotos. O que é geral (escuro com um destaque, cantos grandes, pílulas) vale também para a Área de exames.
+- **"POS TECH", área logada de um curso:** serve para a moldura da Área de exames. Menu lateral e cabeçalho na cor de superfície, item ativo na cor de destaque com uma barra vertical na borda, cartões planos sobre um fundo um pouco mais escuro.
+- **O que não se copia:** a caixa alta da POS TECH (o § 6 pede caixa de frase), o rosa da POS TECH e o verde-limão da Titan (o destaque é o amarelo do logo), e blocos como saudação e calendário (seriam telas novas, fora do § 6).
 
 ## Regras que nunca se quebram
 
 1. **Contraste** (§ 6.7): texto ≥ 4,5:1 e indicadores (borda de campo, anel de foco, contorno de selo, estado de botão) ≥ 3:1, **nos dois temas** e nos estados de hover, foco e selecionado.
 2. **Estado nunca só por cor:** ícone e texto acompanham a cor (Certo/Errado, Bloqueado, faixa sempre com o nome escrito).
 3. **Caixa de frase** (§ 6): nada de caixa alta decorativa, nem em títulos, selos ou botões. Por isso não há fonte só de maiúsculas.
-4. **Tema claro e escuro** sempre; nenhuma cor fixa que só funcione num deles.
+4. **Tema claro e escuro** sempre (o escuro é o padrão da primeira visita); nenhuma cor fixa que só funcione num deles.
 5. **Amarelo nunca sobre branco** (1,22:1): no tema claro ele só aparece sobre o azul.
 6. **Vermelho só para erro e perigo**, nunca como enfeite.
-7. **Dentro das áreas azuis** (cabeçalho, menu, telas de entrada) o texto é branco ou amarelo e o **anel de foco é amarelo**; o azul do foco some ali.
+7. **Sobre o fundo azul das telas de entrada** o texto é branco ou amarelo e o **anel de foco é amarelo**; o azul do foco some ali.
 8. **Mantine com tema próprio**, sem outra biblioteca de interface nem CSS-in-JS novo. Dependência nova só com o master.
 
 ## Como aplicar
@@ -60,8 +68,9 @@ O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e tr
 - [ ] Contraste conferido nos **dois temas**, em repouso, hover, foco e selecionado (texto 4,5:1, indicadores 3:1).
 - [ ] Amarelo só sobre azul (claro) ou como cor principal (escuro); nunca sobre branco.
 - [ ] Vermelho só em erro e perigo; laranja do logo fora da interface.
-- [ ] Anel de foco visível em fundo branco, no fundo escuro e dentro das áreas azuis.
-- [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; campos e cartões com `md`.
+- [ ] Anel de foco visível em fundo branco, no fundo carvão e sobre o azul das telas de entrada.
+- [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`; campos com `md`.
+- [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor).
 - [ ] Barlow Condensed só nos títulos h1 e h2 e no nome "Tomiyama"; sem caixa alta.
 - [ ] Estado com ícone e texto, nunca só por cor; faixa sempre com o nome escrito.
 - [ ] Logo pelos arquivos de `frontend/src/assets/brand/`, sem distorcer, sem recolorir, com texto alternativo.

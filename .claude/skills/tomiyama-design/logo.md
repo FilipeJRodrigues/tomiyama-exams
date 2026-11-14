@@ -34,7 +34,7 @@ As duas versões menores são **recortadas em círculo, com fundo transparente**
   - cabeçalho: uns 40 px;
   - telas de entrada: 160 px, ou 96 px abaixo do `sm` e em telas baixas;
   - mínimo: 32 px.
-- **Fundos:** branco, azul `#0A265F` e o fundo escuro. O anel preto separa o logo de qualquer um deles.
+- **Fundos:** branco, azul `#0A265F` (telas de entrada) e o carvão do tema escuro (fundo e cartões). O anel preto separa o logo de qualquer um deles.
 - **Formato:** sempre redondo e com proporção 1:1 (`width` = `height`, `object-fit: contain`).
 
 ## Não faça

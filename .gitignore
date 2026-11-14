@@ -22,3 +22,7 @@ dist/
 .agents/
 skills-lock.json
 .claude/skills/grilling
+
+# Referências de design locais (imagens de terceiros e capturas pessoais); o logo versionado
+# fica em frontend/src/assets/brand/
+logo/

@@ -18,7 +18,8 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
 ### Selos, seletores, campos e cartões
 
 - **Selos (`Badge`)** e **seletores segmentados (`SegmentedControl`):** pílula, caixa de frase, cor pelo significado (sucesso, erro, aviso, neutro), sempre com texto.
-- **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...), **cartões** (`Paper`, `Card`) e **diálogos** (`Modal`): raio `md`, como hoje. Uma caixa de texto em pílula fica estranha.
+- **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências.
+- **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...): raio **`md`**, como hoje. Uma caixa de texto em pílula ou muito arredondada fica estranha.
 - **Bordas e foco:** os de `a11y.css` (`--app-input-border`, `--app-focus-ring`), refeitos com a paleta nova.
 
 ### Ícones
@@ -27,28 +28,32 @@ Tabler (`@tabler/icons-react`), tamanho 18 a 20 nos controles. Ícone decorativo
 
 ### Áreas de marca (azul)
 
-Cabeçalho, menu lateral e telas de entrada usam o azul `#0A265F` **nos dois temas**. Dentro delas:
+As telas de entrada usam o fundo azul `#0A265F` **nos dois temas**. Fora do cartão, sobre o azul:
 
 - texto em **branco** (14,4:1) ou **amarelo** (11,8:1); texto secundário num azul bem claro, por volta de `#C5CEE6` (9,2:1);
-- **anel de foco amarelo**;
-- **nada vermelho** (2,8:1 sobre o azul): um erro ali vai num cartão ou num alerta com fundo próprio;
+- **anel de foco amarelo** (o azul do foco some ali);
+- **nada vermelho** (2,8:1 sobre o azul): erro vai dentro do cartão;
 - qualquer selo (por exemplo, "Dados simulados") tem o contraste medido contra o azul, não contra o branco.
 
 ## Área de exames
 
 ### Cabeçalho e menu lateral
 
-- **Formato:** cabeçalho e menu lateral azuis formam um bloco em "L". No celular, a gaveta do menu é azul também.
+O modelo é a moldura da POS TECH (veja o `SKILL.md`), em caixa de frase:
+
+- **Fundo:** cabeçalho e menu lateral na cor de **superfície** (branco no claro, o cartão `#2A2A2A` no escuro), com uma borda sutil que os separa do conteúdo. No celular, a gaveta do menu segue o mesmo visual.
 - **Cabeçalho**, da esquerda para a direita:
   - botão do menu (só no celular);
   - **logo redondo** de uns 40 px, com texto alternativo "Academia Tomiyama" (veja [logo.md](logo.md));
-  - **"Tomiyama"** em Barlow Condensed branca;
-  - **"Área de exames"** menor, no texto secundário claro. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama".
-- **Lado direito do cabeçalho:** o e-mail em branco e os botões Tema e Sair com **contorno branco** e texto branco.
-- **Linha amarela** de uns 3 px, na largura toda, embaixo do cabeçalho.
-- **Itens do menu:** texto e ícone brancos; hover com um véu branco leve, mantendo o texto ≥ 4,5:1.
-- **Item ativo:** **pílula amarela com texto azul** (11,8:1) e em negrito. O `aria-current="page"` do React Router continua.
-- **Rodapé do menu** (e-mail e perfil): branco e texto secundário claro.
+  - **"Tomiyama"** em Barlow Condensed;
+  - **"Área de exames"** menor, em texto secundário. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama".
+- **Lado direito do cabeçalho:** o e-mail e os botões Tema e Sair (variante `default`).
+- **Sem linha amarela** sob o cabeçalho: no tema claro ela ficaria quase invisível (1,22:1), e a marca já vem do logo e da cor principal.
+- **Itens do menu:** ícone e texto na cor normal do texto; hover com o véu padrão do Mantine.
+- **Item ativo:**
+  - texto e ícone na **cor principal** e em **negrito** (azul no claro, 14,4:1; amarelo no escuro, 11,7:1 sobre o cartão);
+  - uma **barra vertical** de 3 a 4 px na cor principal, na borda esquerda do item. Assim, o item ativo não depende só da cor: tem barra, negrito e o `aria-current="page"` do React Router.
+- **Rodapé do menu** (e-mail e perfil): texto normal e texto secundário.
 - **Título da aba do navegador:** "Área de exames · Tomiyama".
 
 ### Telas de entrada (login, cadastro, esqueci a senha)
@@ -62,7 +67,8 @@ Todas usam o `AuthCard`.
   - **"Área de exames"** no texto secundário claro.
 
   Nenhum dos dois textos é título (`h1`): o `h1` é o título do cartão ("Entrar", "Criar conta"...).
-- **Cartão:** branco no claro e `#16213F` no escuro, com borda. O botão principal fica na cor principal.
+- **Cartão:** branco no claro e `#2A2A2A` no escuro, raio `lg`, com borda visível. No escuro, o cartão carvão sobre o azul dá só 1,01:1, e é a borda que o separa do fundo.
+- **Botão principal:** na cor principal.
 - O texto "Tomiyama Exams" que hoje está dentro do cartão sai.
 
 ### Selo de faixa
@@ -71,7 +77,7 @@ Ele substitui o `BeltSwatch` de `frontend/src/features/students/studentCells.tsx
 
 - **Corpo:** na cor principal da faixa (`color_primary` da API).
 - **Faixas de duas cores:** as **pontas**, um quarto da largura de cada lado, ficam na cor secundária (`color_secondary`), como no certificado (§ 7, item 5). A faixa de uma cor só não tem pontas.
-- **Contorno:** 1 px em `gray.6` nos dois temas (3,3:1 sobre branco, 5,6:1 sobre o fundo escuro e 4,8:1 sobre o cartão escuro). Assim, a faixa branca aparece no claro e a preta no escuro.
+- **Contorno:** 1 px em `gray.6` nos dois temas (3,3:1 sobre branco, 5,1:1 sobre o fundo carvão e 4,3:1 sobre o cartão). Assim, a faixa branca aparece no claro e a preta no escuro.
 - **Tamanho:** 32×12 px nas listas e maior no cabeçalho do exame do aluno (por volta de 48×16 px). Cantos quase retos (2 a 3 px), porque é uma faixa, não um selo.
 - **Cores inline:** as cores da faixa vêm da API, então é o único lugar com cor inline vinda de dado. Isso não abre exceção para hex fixo no código.
 
@@ -81,8 +87,8 @@ Ele substitui o `BeltSwatch` de `frontend/src/features/students/studentCells.tsx
 - **Escolhido:** **cheio**:
   - Certo em verde escuro (por volta de `#237A36`) com texto branco;
   - Errado no vermelho do logo `#D62211` com texto branco.
-  
-  No tema escuro, o escolhido ganha borda clara de 2 px para ter ≥ 3:1 contra o cartão.
+
+  No tema escuro, o escolhido ganha borda clara de 2 px, porque o verde dá 2,67:1 e o vermelho 2,80:1 contra o cartão, e o estado selecionado precisa de ≥ 3:1.
 - **O que não muda:** o ícone preenchido no escolhido, o `aria-pressed`, a altura ≥ 44 px, a largura mínima e o nome acessível ("Certo: Osoto gari").
 - **Exame decidido ou evento encerrado:** texto com ícone ("Certo", "Errado", "Não marcado"), nunca botão desabilitado.
 
