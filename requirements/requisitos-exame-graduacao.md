@@ -129,9 +129,9 @@ cópia dos itens é feita em segundo plano: o perfil nasce `COPYING` e passa a `
 fim; enquanto copia, os itens dele não são alterados (*"O perfil ainda está sendo copiado.
 Aguarde o fim da cópia para alterar os itens."*), e uma cópia parada (sem sinal de vida há
 15 minutos) pode ser retomada por qualquer examinador. A cópia não leva respostas de exames.
-Em etapas seguintes: o evento escolhe o perfil (padrão: principal), que não muda depois que
-o evento tem exames; perfil não principal só é excluído se nenhum evento o usar. Até lá, a
-ficha de todo exame usa só os itens do principal (RN006, RN007).
+O evento escolhe o perfil (padrão: principal; § 3.4, RN016), que não muda depois que o evento
+tem exames; a ficha de cada exame usa só os itens da faixa-alvo no perfil do seu evento
+(RN006, RN007). Em etapa seguinte: perfil não principal só é excluído se nenhum evento o usar.
 
 ### 3.3 Aluno (`Student`) — pertence ao responsável que o cadastrou
 | Campo | Tipo | Regras |
@@ -153,6 +153,7 @@ A **elegibilidade é calculada** (nunca gravada) — ver § 5.
 | `name` | texto ≤ 80 | ex.: "Exame março/2027" |
 | `exam_date` | data | a data de referência de idade e carência |
 | `status` | enum `OPEN` / `CLOSED` | "Aberto" / "Encerrado"; padrão `OPEN` |
+| `profile_id` | FK → Perfil de requisitos | perfil da ficha dos exames do evento; padrão: o **principal**; precisa existir e estar `READY`; não muda depois que o evento tem exames; evento gravado antes dos perfis vale como do principal *(decisão do responsável, 2026-11-12)* |
 
 ### 3.5 Exame do aluno (`Exam`) — nasce na confirmação de presença
 | Campo | Tipo | Regras |
@@ -262,11 +263,12 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   **substitui** (correção antes da decisão); registra quem marcou. O item precisa ser da
   faixa-alvo (*"Item não pertence à faixa do exame"*) e do perfil de requisitos do exame
   (*"Item não pertence ao perfil de requisitos do exame"*, 400): a ficha, o percentual
-  (RN007) e a marcação usam só os itens da faixa-alvo nesse perfil; enquanto o evento ainda
-  não escolhe o perfil (§ 3.2.1), é sempre o **principal**. Bloqueado com exame decidido ou
+  (RN007) e a marcação usam só os itens da faixa-alvo nesse perfil, que é o **perfil do evento**
+  (§ 3.4; padrão: o principal); item de outro perfil, inclusive do principal quando o evento
+  usa outro, é recusado. Bloqueado com exame decidido ou
   evento encerrado. Duas marcações simultâneas no mesmo item não podem gerar erro 500.
 - **RN007 — Percentual de acertos.** Por tipo (teórico e prático, separados):
-  `acertos ÷ total de itens do tipo na faixa-alvo (no perfil do exame) × 100`, 1 casa decimal, exibido em pt-BR
+  `acertos ÷ total de itens do tipo na faixa-alvo (no perfil do evento do exame) × 100`, 1 casa decimal, exibido em pt-BR
   ("72,5%"). Item não marcado conta como não acertado. Mostrar junto "marcados X de N".
   Faixa sem itens de um tipo → percentual "—". **Sempre recalculado** (nunca gravado).
 - **RN008 — Decisão do sensei.** Só o usuário configurado como sensei aprova/reprova,
@@ -312,6 +314,12 @@ Cada regra deve ter **teste automatizado** nomeado pelo id (ex.: `test_rn001_...
   cores da faixa"* (403); reenviar o mesmo valor é aceito *(decisão do responsável, 2026-11-12)*.
 - **RN016 — Evento.** Só examinador gerencia. Encerrado bloqueia presença e marcação.
   Evento com exames não pode ser excluído (*"Evento possui exames registrados"*).
+  O evento escolhe o perfil de requisitos (§ 3.2.1; padrão: o principal): o perfil precisa
+  existir (*"Perfil de requisitos não encontrado"*, 404) e estar pronto (*"O perfil ainda está
+  sendo copiado. Aguarde o fim da cópia para usá-lo em um evento."*, 409). O perfil só muda
+  enquanto o evento não tem exames (*"O perfil de requisitos do evento não pode ser alterado
+  depois que o evento tem exames"*, 409, também quando a presença é confirmada no mesmo
+  instante); reenviar o perfil atual é aceito *(decisão do responsável, 2026-11-12)*.
 - **RN017 — Requisitos.** Só examinador gerencia; faixa precisa existir; listagem filtrável
   por faixa e tipo, ordenada (sem limite que corte a Marrom, que tem 139 itens).
   Cada item pertence a um perfil de requisitos (§ 3.2.1); a listagem é por perfil (padrão:
@@ -387,7 +395,7 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
 
 ### 6.5 Faixas, Requisitos e Eventos (examinadores)
 CRUDs simples. Faixas na ordem da graduação (o examinador edita idade mínima e carência; nome,
-kyū, ordem, nível e cores, só o master); eventos do mais recente para o mais antigo. Requisitos com filtro por faixa (padrão: Branca/Cinza) e por tipo.
+kyū, ordem, nível e cores, só o master); eventos do mais recente para o mais antigo, cada um com o seu perfil de requisitos (seletor com os perfis prontos; padrão: o **principal**; só leitura depois que o evento tem exames) *(decisão do responsável, 2026-11-12)*. Requisitos com filtro por faixa (padrão: Branca/Cinza) e por tipo.
 Requisitos com seletor de perfil (padrão: o **principal**, com selo "Principal"; para quem
 não é master, o principal aparece com cadeado e só para leitura), botão "Novo perfil" (nome e
 perfil de origem, padrão: principal) e "Renomear" nos perfis que não são o principal. Um
@@ -497,7 +505,7 @@ acentuação do português.
 | Hospedagem | Tudo local |
 | Admin master e assinaturas (2026-11-02) | Grupo **master** (o primeiro examinador; outros só pelo console): único que escolhe o sensei, **não** decide exames. Certificado com 1–3 assinaturas (nome, graduação, imagem, posição), geridas pelo master e pelo sensei; ≥ 1 completa para emitir |
 | Edição de faixas (2026-11-12) | Só o **admin master** altera nome, kyū, ordem, nível e cores; os demais examinadores alteram idade mínima e carência |
-| Perfis de requisitos (2026-11-12) | Perfil **principal** fixo (Apêndice A), alterado só pelo **admin master**; os demais examinadores criam perfis próprios (cópia completa) e os editam; o evento escolhe o perfil (padrão: principal) |
+| Perfis de requisitos (2026-11-12) | Perfil **principal** fixo (Apêndice A), alterado só pelo **admin master**; os demais examinadores criam perfis próprios (cópia completa) e os editam; o evento escolhe o perfil (padrão: principal), que não muda depois que o evento tem exames |
 | Limite de perfis de requisitos (2026-11-13) | No máximo **3 perfis no total**: o principal + 2 criados pelos examinadores; perfil em cópia conta |
 
 ---

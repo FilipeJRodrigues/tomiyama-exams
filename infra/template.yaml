@@ -1011,7 +1011,12 @@ Resources:
               Action: dynamodb:PutItem
               Resource: !GetAtt RequirementsTable.Arn
 
-  # Exam events (examiners only, RN016)
+  # Exam events (examiners only, RN016). An event chooses its requirement
+  # profile (#144): the create and update functions read the profiles item of
+  # Settings (GetItem) and, when the event starts using a profile other than
+  # the main one, write the event in a TransactWriteItems with a
+  # ConditionCheck that the profile is READY in that item. Only that item
+  # (dynamodb:LeadingKeys), never the settings record nor the signatures.
   ListEventsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -1034,6 +1039,15 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref EventsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
       Events:
         Api:
           Type: HttpApi
@@ -1064,6 +1078,20 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref EventsTable
+        # A change of profile is refused once the event has exams: Query in
+        # Exams for the early answer (the write is conditioned on exam_count).
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !GetAtt ExamsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt SettingsTable.Arn
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys: [requirement_profiles]
       Events:
         Api:
           Type: HttpApi
