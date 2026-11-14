@@ -70,8 +70,11 @@ O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e tr
 - [ ] Vermelho só em erro e perigo; laranja do logo fora da interface.
 - [ ] Anel de foco visível em fundo branco, no fundo carvão e sobre o azul das telas de entrada.
 - [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`; campos com `md`.
-- [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor).
-- [ ] Barlow Condensed só nos títulos h1 e h2 e no nome "Tomiyama"; sem caixa alta.
+- [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor), sem fundo próprio, nem no hover.
+- [ ] No escuro, `Paper`, `Modal`, `Drawer` e o cabeçalho e o menu do `AppShell` em `#2A2A2A`, não no fundo da página.
+- [ ] Texto sobre o amarelo em azul, não branco nem preto (inclusive no `SegmentedControl` e no hover).
+- [ ] Botão desabilitado só para ação indisponível com o motivo escrito; nunca para mostrar estado.
+- [ ] Barlow Condensed só nos títulos de página (`h1` da tela e `h2` de seção) e no nome "Tomiyama", nunca em título de cartão de lista; sem caixa alta.
 - [ ] Estado com ícone e texto, nunca só por cor; faixa sempre com o nome escrito.
 - [ ] Logo pelos arquivos de `frontend/src/assets/brand/`, sem distorcer, sem recolorir, com texto alternativo.
 - [ ] Layout de 390 px e zoom de 200% sem perder ações (§ 6.7).

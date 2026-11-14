@@ -8,17 +8,20 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
 
 - **Formato:** pílula (raio total; no Mantine, `radius="xl"` como padrão do `Button` e do `ActionIcon` pelo `extend` do tema). Texto em **negrito** (700).
 - **Variantes:**
-  - **principal:** `filled` na cor principal (azul no claro, amarelo com texto azul no escuro). Uma ação principal por área da tela.
+  - **principal:** `filled` na cor principal (azul no claro, amarelo com texto azul no escuro). Uma ação principal por área da tela; a exceção é a decisão do exame (veja "Decisão").
   - **secundária:** `default` ou `outline`.
-  - **perigo:** `filled` vermelho na confirmação de algo que não se desfaz (Excluir, Reprovar); `light` ou `outline` vermelho para o botão que só abre a confirmação.
+  - **perigo:** `filled` vermelho no botão do diálogo que confirma algo que não se desfaz (por exemplo, o "Excluir" da confirmação); `light` ou `outline` vermelho no botão que só abre a confirmação (o "Excluir" da lista). A decisão do exame é exceção (veja "Decisão").
   - **suave:** `light` ou `subtle`, para ações de apoio.
 - **Tamanho:** os botões Certo/Errado têm alvo ≥ 44 px (§ 6.4). No celular, prefira 44 px também nos outros botões de ação (card #149).
-- **Somente leitura:** não use botão desabilitado para mostrar um estado (contraste ruim, § 6.4): mostre texto com ícone.
+- **Desabilitado:**
+  - **nunca para mostrar um estado** (contraste ruim, § 6.4): as marcações de um exame decidido aparecem como texto com ícone;
+  - **só para uma ação indisponível que traz o motivo escrito ao lado**, legível (≥ 4,5:1): por exemplo, "Baixar certificado" sem assinatura completa (§ 6.4) e o botão que confirma a decisão enquanto as marcações ainda salvam.
 
 ### Selos, seletores, campos e cartões
 
-- **Selos (`Badge`)** e **seletores segmentados (`SegmentedControl`):** pílula, caixa de frase, cor pelo significado (sucesso, erro, aviso, neutro), sempre com texto.
-- **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências.
+- **Selos (`Badge`):** pílula, caixa de frase, cor pelo significado (sucesso, erro, aviso, neutro), sempre com texto.
+- **Seletores segmentados (`SegmentedControl`):** pílula, caixa de frase, **neutros** por padrão (como o filtro do Dia do exame). Se um dia levarem a cor principal, defina a cor do texto do item escolhido explicitamente (veja `colors.md`: ele não trata cor virtual).
+- **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências. No escuro, todos em `#2A2A2A`: só o `Card` e o `Popover` pegam isso da paleta; os outros precisam do fundo definido no tema (veja `colors.md`).
 - **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...): raio **`md`**, como hoje. Uma caixa de texto em pílula ou muito arredondada fica estranha.
 - **Bordas e foco:** os de `a11y.css` (`--app-input-border`, `--app-focus-ring`), refeitos com a paleta nova.
 
@@ -41,17 +44,19 @@ As telas de entrada usam o fundo azul `#0A265F` **nos dois temas**. Fora do cart
 
 O modelo é a moldura da POS TECH (veja o `SKILL.md`), em caixa de frase:
 
-- **Fundo:** cabeçalho e menu lateral na cor de **superfície** (branco no claro, o cartão `#2A2A2A` no escuro), com uma borda sutil que os separa do conteúdo. No celular, a gaveta do menu segue o mesmo visual.
+- **Fundo:** cabeçalho e menu lateral na cor de **superfície** (branco no claro, o cartão `#2A2A2A` no escuro), com uma borda sutil que os separa do conteúdo. O `AppShell` usa o fundo da página por padrão: defina o fundo do `AppShell.Header` e do `AppShell.Navbar` no tema. No celular, a gaveta do menu segue o mesmo visual.
 - **Cabeçalho**, da esquerda para a direita:
   - botão do menu (só no celular);
   - **logo redondo** de uns 40 px, com texto alternativo "Academia Tomiyama" (veja [logo.md](logo.md));
   - **"Tomiyama"** em Barlow Condensed;
-  - **"Área de exames"** menor, em texto secundário. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama".
+  - **"Área de exames"** menor, em texto secundário. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama";
+  - o selo **"Dados simulados"** (só com os dados de teste), logo depois, como hoje: some abaixo do `xs` e continua em caixa de frase.
 - **Lado direito do cabeçalho:** o e-mail e os botões Tema e Sair (variante `default`).
 - **Sem linha amarela** sob o cabeçalho: no tema claro ela ficaria quase invisível (1,22:1), e a marca já vem do logo e da cor principal.
-- **Itens do menu:** ícone e texto na cor normal do texto; hover com o véu padrão do Mantine.
+- **Itens do menu:** ícone e texto na cor normal do texto. Hover num fundo diferente da superfície: `gray.0` no claro e por volta de `#3B3B3B` (`dark.5`) no escuro. O hover padrão do `NavLink` no escuro é `dark.6`, a mesma cor do menu, e não apareceria.
 - **Item ativo:**
-  - texto e ícone na **cor principal** e em **negrito** (azul no claro, 14,4:1; amarelo no escuro, 11,7:1 sobre o cartão);
+  - texto e ícone na **cor principal** e em **negrito**;
+  - **sem fundo próprio**, nem no hover. O `NavLink` ativo pinta por padrão o fundo `--nl-bg` (`--mantine-primary-color-light`) e o `--nl-hover`, e o amarelo cai para menos de 3:1 no hover. O ativo fica sobre a superfície (azul 14,4:1 no claro; amarelo 11,7:1 no escuro) e, no hover, sobre o mesmo hover dos outros itens (azul 13,7:1; amarelo 9,2:1);
   - uma **barra vertical** de 3 a 4 px na cor principal, na borda esquerda do item. Assim, o item ativo não depende só da cor: tem barra, negrito e o `aria-current="page"` do React Router.
 - **Rodapé do menu** (e-mail e perfil): texto normal e texto secundário.
 - **Título da aba do navegador:** "Área de exames · Tomiyama".
@@ -67,7 +72,7 @@ Todas usam o `AuthCard`.
   - **"Área de exames"** no texto secundário claro.
 
   Nenhum dos dois textos é título (`h1`): o `h1` é o título do cartão ("Entrar", "Criar conta"...).
-- **Cartão:** branco no claro e `#2A2A2A` no escuro, raio `lg`, com borda visível. No escuro, o cartão carvão sobre o azul dá só 1,01:1, e é a borda que o separa do fundo.
+- **Cartão:** branco no claro e `#2A2A2A` no escuro, raio `lg`, com borda visível. No escuro, o cartão carvão sobre o azul dá só 1,01:1, e é a borda que o separa do fundo: use por volta de `#828282` (3,75:1 sobre o azul). A borda padrão do `Paper` (`dark.4`) dá 1,44:1 e não serve.
 - **Botão principal:** na cor principal.
 - O texto "Tomiyama Exams" que hoje está dentro do cartão sai.
 
@@ -76,8 +81,8 @@ Todas usam o `AuthCard`.
 Ele substitui o `BeltSwatch` de `frontend/src/features/students/studentCells.tsx`. É uma **mini faixa**, sempre ao lado do nome da faixa escrito; ele é decorativo (`aria-hidden`).
 
 - **Corpo:** na cor principal da faixa (`color_primary` da API).
-- **Faixas de duas cores:** as **pontas**, um quarto da largura de cada lado, ficam na cor secundária (`color_secondary`), como no certificado (§ 7, item 5). A faixa de uma cor só não tem pontas.
-- **Contorno:** 1 px em `gray.6` nos dois temas (3,3:1 sobre branco, 5,1:1 sobre o fundo carvão e 4,3:1 sobre o cartão). Assim, a faixa branca aparece no claro e a preta no escuro.
+- **Faixas de duas cores:** as **pontas** ficam na cor secundária (`color_secondary`), como no certificado (§ 7, item 5), com a **mesma proporção do `BeltDrawing`** da tela Faixas (`frontend/src/features/belts/BeltFixedData.tsx`): 18% da largura de cada lado. O ideal é os dois saírem do mesmo código. A faixa de uma cor só não tem pontas.
+- **Contorno:** 1 px na cor do texto secundário (`var(--mantine-color-dimmed)`), como o `BeltSwatch` de hoje: `gray.7` no claro (8,2:1 sobre branco e 7,4:1 na linha em hover das tabelas) e por volta de `#B8B8B8` no escuro (8,6:1 no fundo, 7,2:1 no cartão, 5,65:1 no hover). Assim, a faixa branca aparece no claro e a preta no escuro, também nas linhas em hover. O `gray.6` não serve: dá 2,99:1 na linha em hover (`gray.1`).
 - **Tamanho:** 32×12 px nas listas e maior no cabeçalho do exame do aluno (por volta de 48×16 px). Cantos quase retos (2 a 3 px), porque é uma faixa, não um selo.
 - **Cores inline:** as cores da faixa vêm da API, então é o único lugar com cor inline vinda de dado. Isso não abre exceção para hex fixo no código.
 
@@ -88,16 +93,19 @@ Ele substitui o `BeltSwatch` de `frontend/src/features/students/studentCells.tsx
   - Certo em verde escuro (por volta de `#237A36`) com texto branco;
   - Errado no vermelho do logo `#D62211` com texto branco.
 
-  No tema escuro, o escolhido ganha borda clara de 2 px, porque o verde dá 2,67:1 e o vermelho 2,80:1 contra o cartão, e o estado selecionado precisa de ≥ 3:1.
+  No tema escuro, o escolhido ganha borda clara de 2 px (por volta de `#C9C9C9`, 8,7:1 sobre o cartão), porque o verde dá 2,67:1 e o vermelho 2,80:1 contra o cartão, e o estado selecionado precisa de ≥ 3:1.
 - **O que não muda:** o ícone preenchido no escolhido, o `aria-pressed`, a altura ≥ 44 px, a largura mínima e o nome acessível ("Certo: Osoto gari").
 - **Exame decidido ou evento encerrado:** texto com ícone ("Certo", "Errado", "Não marcado"), nunca botão desabilitado.
 
 ### Decisão
 
+A decisão é a exceção às regras de "principal" e "perigo" dos botões: são duas ações de mesmo peso, lado a lado, e as duas são cheias, embora só abram a confirmação.
+
 - **Aprovar:** verde cheio.
 - **Reprovar:** vermelho do logo cheio.
+- **No escuro:** os dois com a borda clara de 2 px de Certo e Errado.
 - **Confirmação:** o diálogo repete as mesmas cores no botão que confirma.
-- **"Baixar certificado":** botão principal.
+- **"Baixar certificado":** botão principal; desabilitado só com o motivo escrito (§ 6.4).
 
 ### Selos de situação e de resultado
 
