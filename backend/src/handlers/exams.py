@@ -16,7 +16,7 @@
   updating the student's graduation on approval (RN008–RN010).
 
 The sheet's items are the target belt's items of one requirement profile
-(``domain.exams.sheet_profile_id``, for now the main profile), read only by
+(``domain.exams.sheet_profile_id``: the profile of the event), read only by
 ``_sheet_items``: the sheet and the score after a mark or unmark never
 include the copies of the belt in other profiles, and ``ensure_can_mark``
 refuses marking or unmarking them.
@@ -140,9 +140,9 @@ def _correct_by_item(answers: dict[str, ExamAnswer]) -> dict[str, bool]:
 def _sheet_items(exam_event: ExamEvent, exam: Exam) -> list[Requirement]:
     """Return the items of the exam's sheet, in sheet order (RN006, RN007).
 
-    The target belt's items of the sheet profile only (today the main profile;
-    step 3b of #144 makes ``exam_rules.sheet_profile_id`` return the event's
-    profile). Every reader of the sheet's items goes through here: the sheet
+    The target belt's items of the sheet profile only: the profile of the
+    event (``exam_rules.sheet_profile_id``), the main one by default. Every
+    reader of the sheet's items goes through here: the sheet
     and the score after a mark or unmark. One query on ``by_profile_belt``,
     which reads only that profile's items of the belt (until the v2
     migration finished, the main profile comes from ``by_belt``, filtered).

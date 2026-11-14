@@ -117,6 +117,27 @@ def _names(profile_id: str, **fields: str) -> dict[str, str]:
     return {"#profiles": _PROFILES, "#id": profile_id, **fields}
 
 
+def ready_condition_check(profile_id: str) -> dict[str, Any]:
+    """Return the ``ConditionCheck`` of a transaction: the stored profile exists and is ``READY``.
+
+    For a write elsewhere that starts using a stored profile (an event that
+    chooses it, ``repository.events``): inside the same transaction, the
+    write happens only if, at that instant, ``profiles.<id>.status`` is
+    ``READY``. A profile that is missing (or the whole item), still copying
+    or in any other status fails the check. Never used for the main profile,
+    which is not stored.
+    """
+    return {
+        "ConditionCheck": {
+            "TableName": table(SETTINGS_TABLE_ENV).name,
+            "Key": {"id": REQUIREMENT_PROFILES_ID},
+            "ConditionExpression": "#profiles.#id.#status = :ready",
+            "ExpressionAttributeNames": _names(profile_id, **{"#status": "status"}),
+            "ExpressionAttributeValues": {":ready": ProfileStatus.READY.value},
+        }
+    }
+
+
 def _update(arguments: dict[str, Any], label: str) -> dict[str, Any]:
     """Run an ``UpdateItem`` on the profiles item, answering 503 on persistent throttling.
 

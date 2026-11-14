@@ -2,8 +2,8 @@
 
 One answer per (exam, item); marking again replaces the previous answer while
 the exam is in progress (RN010) and the event is open (RN016). Only the items
-of the exam's sheet are marked: target belt and sheet profile
-(``domain.exams.sheet_profile_id``). An item without an answer is "not marked"
+of the exam's sheet are marked: target belt and sheet profile, the profile of
+the event (``domain.exams.sheet_profile_id``). An item without an answer is "not marked"
 and counts as not correct (RN007).
 """
 
@@ -60,8 +60,10 @@ def ensure_can_mark(exam: Exam, event: ExamEvent, requirement: Requirement) -> N
     The item must be on the exam's sheet: of the target belt and of the sheet
     profile. The belt is checked first, so an item of another belt answers
     the belt message whatever its profile. A requirement's profile never
-    changes (``check_profile_unchanged``), so this read-time check needs no
-    condition in the answer transaction, unlike the belt.
+    changes (``check_profile_unchanged``), and neither does the profile of an
+    event that has exams (``repository.events.change_event_profile``), so this
+    read-time check needs no condition in the answer transaction, unlike the
+    belt.
 
     Raises:
         ConflictError: If the exam is decided (RN010).

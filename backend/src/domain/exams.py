@@ -7,7 +7,7 @@ graduation at that moment (belt, belt date, stripes) is stored too, so the
 sensei's decision (RN008, RN009) can tell whether it changed since then.
 
 The exam sheet (RN006, RN007) holds the items of the target belt in one
-requirement profile only (``sheet_profile_id``): for now the main profile.
+requirement profile only (``sheet_profile_id``): the profile of the exam's event.
 """
 
 import uuid
@@ -22,7 +22,6 @@ from domain.eligibility import ExamKind, evaluate
 from domain.errors import ValidationError
 from domain.events import MSG_EVENT_NOT_FOUND as MSG_EVENT_NOT_FOUND
 from domain.events import ExamEvent
-from domain.requirement_profiles import MAIN_PROFILE_ID
 from domain.students import MSG_STUDENT_CHANGED as MSG_STUDENT_CHANGED
 from domain.students import MSG_STUDENT_NOT_FOUND as MSG_STUDENT_NOT_FOUND
 from domain.students import Student
@@ -107,11 +106,12 @@ def sheet_profile_id(event: ExamEvent) -> str:
     unmarked are the target belt's items in this profile only; the copies of
     the same belt in other profiles are left out.
 
-    Until the event chooses its profile (step 3b of #144), every exam uses the
-    main profile; step 3b returns the event's profile here, and every reader of
-    the sheet follows.
+    It is the profile the event chose (``main`` by default, and for events
+    stored before the profiles existed). The event's profile never changes
+    once the event has exams (``repository.events.change_event_profile``), so
+    every exam keeps one sheet from the attendance to the decision.
     """
-    return MAIN_PROFILE_ID
+    return event.profile_id
 
 
 def confirm_attendance(
