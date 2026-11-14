@@ -10,6 +10,7 @@ from conftest import (
     api_event,
     before_dynamodb_call,
     belt_id,
+    fake_seed_time,
     response_json,
     throttle_dynamodb,
 )
@@ -94,6 +95,10 @@ def test_rn017_handler_failed_in_pt_br_when_conflict_outlasts_the_deadline(
     requirement_repo.seed_requirements(seed_requirements())
     _put_legacy()
     monkeypatch.setattr(tables.random, "uniform", lambda low, high: 0.05)
+    # The 1 s left (61 s minus the safety margin) passes on an injected clock,
+    # moved only by the backoff waits: on the real one a slow machine spent it
+    # before the first conflict, and the test failed now and then.
+    fake_seed_time(monkeypatch)
     stub = throttle_dynamodb(
         monkeypatch,
         "UpdateItem",

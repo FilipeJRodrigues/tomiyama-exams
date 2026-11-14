@@ -12,19 +12,23 @@ With low provisioned capacity (dev, free tier) the writes are throttled and
 retried, so the load can take minutes. It stops ``SAFETY_MARGIN_SECONDS``
 before the Lambda timeout and answers FAILED, so CloudFormation never waits
 for a response that will not come. On an Update, the next deploy resumes the
-missing items (the marker is written only at the end).
+missing items (the marker is written only at the end). When the deadline comes
+while the v2 migration waits for ``by_profile_belt`` to be built, the FAILED
+answer says so (``INDEX_DEADLINE_REASON``) instead of blaming the capacity.
 """
 
 import json
 import logging
 import time
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 
 from domain.belts import SEED_BELTS
 from domain.requirements import seed_requirements
 from repository import belts as belt_repo
 from repository import requirements as requirement_repo
+from repository.requirements import ProfileIndexNotActiveError
 from repository.tables import DeadlineExceededError
 
 logger = logging.getLogger(__name__)
@@ -37,6 +41,12 @@ SAFETY_MARGIN_SECONDS = 60
 DEADLINE_REASON = (
     "Carga inicial interrompida pelo limite de tempo da Lambda (capacidade do DynamoDB "
     "baixa). Aumente a WCU de Requirements ou o Timeout da SeedFunction e faça o deploy de novo."
+)
+# The deadline came while the v2 migration waited for the new GSI: no capacity to raise.
+INDEX_DEADLINE_REASON = (
+    "Carga inicial interrompida pelo limite de tempo da Lambda: o índice by_profile_belt da "
+    "tabela Requirements ainda está sendo criado pelo DynamoDB. Os requisitos já foram "
+    "conferidos e nada se perdeu; faça o deploy de novo para concluir a migração."
 )
 
 
@@ -63,12 +73,16 @@ def seed_all(deadline: float | None = None) -> dict[str, int]:
     return {"belts": belts, "requirements": requirements, "requirement_profiles": moved + fixed}
 
 
-def _deadline(context: Any) -> float | None:
-    """Return the monotonic time at which the load must stop, from the Lambda context."""
+def _deadline(context: Any, clock: Callable[[], float] = time.monotonic) -> float | None:
+    """Return the ``clock()`` time at which the load must stop, from the Lambda context.
+
+    ``clock`` is injected for tests; the retries compare the deadline with
+    ``time.monotonic()``.
+    """
     remaining_ms = getattr(context, "get_remaining_time_in_millis", None)
     if remaining_ms is None:
         return None
-    return time.monotonic() + remaining_ms() / 1000 - SAFETY_MARGIN_SECONDS
+    return clock() + remaining_ms() / 1000 - SAFETY_MARGIN_SECONDS
 
 
 def _send_response(event: dict[str, Any], context: Any, status: str, reason: str) -> None:
@@ -101,6 +115,9 @@ def handler(event: dict[str, Any], context: Any) -> None:
             result = seed_all(_deadline(context))
             logger.info("Seed result: %s", result)
         _send_response(event, context, "SUCCESS", "OK")
+    except ProfileIndexNotActiveError:
+        logger.exception("Seed stopped at the deadline, waiting for the index")
+        _send_response(event, context, "FAILED", INDEX_DEADLINE_REASON)
     except DeadlineExceededError:
         logger.exception("Seed stopped at the deadline")
         _send_response(event, context, "FAILED", DEADLINE_REASON)

@@ -18,6 +18,7 @@ belt, filtered) or a ``Scan``, because items written before profiles (no
 import os
 from dataclasses import replace
 from datetime import date
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -32,6 +33,7 @@ from conftest import (
     before_dynamodb_call,
     belt_id,
     dynamodb_snapshot,
+    fake_seed_time,
     lag_eventual_reads,
     make_student,
     response_json,
@@ -578,6 +580,99 @@ def test_rn017_v2_index_still_building_at_the_deadline_writes_no_marker(
         requirement_repo.wait_for_profile_index(deadline=35.0, sleep=sleep, clock=lambda: now[0])
 
     assert 0 < now[0] < 35.0
+    assert not _marker()
+
+
+def test_rn017_v2_index_wait_at_the_deadline_raises_its_own_error(
+    seeded: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _index_status(monkeypatch, ["CREATING"] * 100)
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    with pytest.raises(requirement_repo.ProfileIndexNotActiveError, match="still CREATING"):
+        requirement_repo.wait_for_profile_index(deadline=35.0, sleep=sleep, clock=lambda: now[0])
+
+    # Three waits of 10 s; a fourth would end past the deadline (35 s).
+    assert now[0] == 3 * requirement_repo.INDEX_POLL_SECONDS
+
+
+def test_rn017_v2_index_wait_whose_sleep_ran_over_the_deadline_raises_its_own_error(
+    seeded: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reported = _index_status(monkeypatch, ["CREATING"] * 100)
+    now = [0.0]
+
+    def slow_sleep(seconds: float) -> None:
+        now[0] += seconds + 30.0  # the Lambda was frozen or the sleep overshot
+
+    with pytest.raises(requirement_repo.ProfileIndexNotActiveError):
+        requirement_repo.wait_for_profile_index(
+            deadline=35.0, sleep=slow_sleep, clock=lambda: now[0]
+        )
+
+    assert reported == ["CREATING"]  # no DescribeTable after the deadline
+
+
+def _seed_event() -> dict[str, Any]:
+    return {
+        "RequestType": "Update",
+        "ResponseURL": "https://example.invalid/r",
+        "StackId": "s",
+        "RequestId": "r",
+        "LogicalResourceId": "InitialData",
+        "PhysicalResourceId": "initial-data",
+    }
+
+
+def test_rn017_seed_handler_failed_with_its_own_message_when_the_index_outlasts_the_deadline(
+    seeded: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    requirement_repo.seed_requirements(seed_requirements())
+    _put_raw("legacy", OTHER_BELT, 900)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(seed, "_send_response", lambda e, c, s, r: sent.append((s, r)))
+    context = SimpleNamespace(get_remaining_time_in_millis=lambda: 900_000)
+
+    with monkeypatch.context() as patch:
+        reported = _index_status(patch, ["CREATING"] * 1_000)
+        clock = fake_seed_time(patch)
+        seed.handler(_seed_event(), context)
+
+    assert sent == [("FAILED", seed.INDEX_DEADLINE_REASON)]
+    assert seed.INDEX_DEADLINE_REASON != seed.DEADLINE_REASON
+    assert "by_profile_belt" in seed.INDEX_DEADLINE_REASON
+    assert "faça o deploy de novo" in seed.INDEX_DEADLINE_REASON
+    # It waited for the index, one check every INDEX_POLL_SECONDS, up to the deadline.
+    assert len(reported) > 1
+    assert clock.sleeps == [requirement_repo.INDEX_POLL_SECONDS] * (len(reported) - 1)
+    assert not _marker()
+    # The items were fixed before the wait: the next deploy only checks again.
+    assert _raw("legacy")["profile_belt"] == _key(MAIN_PROFILE_ID, OTHER_BELT)
+
+    # Next deploy, with the index built: the migration ends and writes the marker.
+    seed.handler(_seed_event(), context)
+    assert sent[-1] == ("SUCCESS", "OK")
+    assert _marker()
+
+
+def test_rn017_seed_handler_keeps_the_capacity_message_when_describe_table_is_throttled(
+    seeded: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Throttling while checking the index is lack of capacity, not the index being built.
+    requirement_repo.seed_requirements(seed_requirements())
+    monkeypatch.setattr(tables.random, "uniform", lambda low, high: high)
+    fake_seed_time(monkeypatch)
+    stub = throttle_dynamodb(monkeypatch, "DescribeTable", REQUIREMENTS_TABLE_ENV, max_calls=10_000)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(seed, "_send_response", lambda e, c, s, r: sent.append((s, r)))
+
+    seed.handler(_seed_event(), SimpleNamespace(get_remaining_time_in_millis=lambda: 900_000))
+
+    assert sent == [("FAILED", seed.DEADLINE_REASON)]
+    assert len(stub.calls) > 1
     assert not _marker()
 
 
