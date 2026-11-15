@@ -1,13 +1,16 @@
 /**
  * Cobertura do #65 (§ 6.7: 3:1 para indicadores): o anel de foco e a borda dos campos têm
- * cor própria (`--app-focus-ring` e `--app-input-border`, do `cssVariablesResolver`), que o
- * `a11y.css` aplica. `theme-contrast-usage.test.ts` mede o anel pela cor primária
+ * cor própria (`--app-focus-ring` e `--app-control-border`, do `cssVariablesResolver`), que o
+ * `a11y.css` aplica (a borda de controle, nome dado na paleta Tomiyama do #166, vale também
+ * para os botões `default`). `theme-contrast-usage.test.ts` mede o anel pela cor primária
  * preenchida, que deixou de ser a cor do anel; aqui a medida é a das variáveis que o app
  * usa de fato, contra cada fundo em que o anel e a borda são desenhados: a página, o
  * cartão, o diálogo, o campo e os avisos coloridos.
  *
- * Os valores medidos em Chromium (2026-11-11) são os mesmos: anel 5,02:1 (claro) e de
- * 5,49:1 a 6,27:1 (escuro); borda em repouso 3,32:1 (claro) e de 3,53:1 a 4,04:1 (escuro).
+ * Os valores medidos em Chromium (2026-11-11), antes da paleta Tomiyama: anel 5,02:1 (claro) e
+ * de 5,49:1 a 6,27:1 (escuro); borda em repouso 3,32:1 (claro) e de 3,53:1 a 4,04:1 (escuro).
+ * Com a paleta (#166, calculados pelo tema): anel 14,42:1 (claro) e 11,73:1 a 13,93:1
+ * (escuro); borda em repouso 4,29:1 (claro) e 4,43:1 a 5,26:1 (escuro).
  */
 import {
   DEFAULT_THEME,
@@ -17,7 +20,7 @@ import {
 } from '@mantine/core';
 import { describe, expect, it } from 'vitest';
 
-import { contrastRatio, cssVariablesResolver, theme } from '../../src/app/theme';
+import { BRAND_COLORS, contrastRatio, cssVariablesResolver, theme } from '../../src/app/theme';
 import main from '../../src/main.tsx?raw';
 
 type Scheme = 'light' | 'dark';
@@ -73,20 +76,22 @@ describe.each<Scheme>(['light', 'dark'])(
     const vars = variables(scheme);
     const r = (value: string) => resolve(value, vars);
     const body = r('var(--mantine-color-body)');
-    // Card and Paper: white in the light scheme, dark.6 in the dark one (Mantine's CSS).
-    const card = scheme === 'light' ? r('var(--mantine-color-white)') : appTheme.colors.dark[6];
+    // Card, Paper and dialogs: the surface of the theme (#166), white / dark.6.
+    const card = r('var(--app-surface)');
     // Default-variant field: `--input-bg` is white / dark.6 (Mantine's CSS).
-    const field = card;
+    const field = r(
+      scheme === 'light' ? 'var(--mantine-color-white)' : 'var(--mantine-color-dark-6)',
+    );
 
     /** Where a ring or a field border is drawn in the app. */
     const surfaces: [string, string][] = [
-      ['a página e o diálogo', body],
-      ['o cartão', card],
+      ['a página', body],
+      ['o cartão e o diálogo', card],
     ];
 
     it('o tema define as duas variáveis', () => {
       expect(vars['--app-focus-ring']).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(vars['--app-input-border']).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(vars['--app-control-border']).toMatch(/^#[0-9a-f]{6}$/i);
     });
 
     it.each(surfaces)('anel de foco sobre %s com pelo menos 3:1', (_name, background) => {
@@ -107,7 +112,9 @@ describe.each<Scheme>(['light', 'dark'])(
     );
 
     it.each(surfaces)('borda do campo em repouso sobre %s com pelo menos 3:1', (_name, bg) => {
-      expect(contrastRatio(r('var(--app-input-border)'), bg)).toBeGreaterThanOrEqual(MIN_INDICATOR);
+      expect(contrastRatio(r('var(--app-control-border)'), bg)).toBeGreaterThanOrEqual(
+        MIN_INDICATOR,
+      );
     });
 
     it('borda do campo com foco (a cor do anel) sobre o campo e em volta dele', () => {
@@ -122,11 +129,14 @@ describe.each<Scheme>(['light', 'dark'])(
       expect(contrastRatio(error, body)).toBeGreaterThanOrEqual(MIN_INDICATOR);
     });
 
-    it('a cor primária preenchida não mudou: texto branco dos botões com 4,5:1', () => {
-      expect(r('var(--mantine-primary-color-filled)')).toBe(appTheme.colors.blue[8]);
-      expect(
-        contrastRatio(r('var(--mantine-color-white)'), r('var(--mantine-primary-color-filled)')),
-      ).toBeGreaterThanOrEqual(MIN_TEXT);
+    // #166: the filled primary is the color of the logo of each scheme (blue / yellow), with
+    // its own text color (white / blue), instead of blue.8 with white text.
+    it('a cor primária preenchida é a do logo, com o texto dos botões a 4,5:1', () => {
+      const filled = r('var(--mantine-primary-color-filled)');
+      const text = r('var(--mantine-color-primary-contrast)');
+      expect(filled).toBe(scheme === 'light' ? BRAND_COLORS.blue : BRAND_COLORS.yellow);
+      expect(text).toBe(scheme === 'light' ? r('var(--mantine-color-white)') : BRAND_COLORS.blue);
+      expect(contrastRatio(text, filled)).toBeGreaterThanOrEqual(MIN_TEXT);
     });
   },
 );

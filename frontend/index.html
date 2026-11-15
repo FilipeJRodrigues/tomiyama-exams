@@ -1,10 +1,49 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-mantine-color-scheme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Tomiyama Exams</title>
+    <!--
+      Color scheme before React, so the dark page never flashes white. Same rule as Mantine's
+      ColorSchemeScript with defaultColorScheme="dark" (AppProviders.tsx) and the key of
+      colorSchemeManager (COLOR_SCHEME_KEY in src/app/theme.ts): dark with no saved choice or
+      an invalid one, "auto" by the system preference. Tested by
+      tests/app/color-scheme-boot.test.ts.
+      There is no Content-Security-Policy today; a future one needs the hash of this script in
+      script-src and of the style below in style-src.
+    -->
+    <script>
+      (function () {
+        var scheme = 'dark';
+        try {
+          var saved = window.localStorage.getItem('tomiyama.color-scheme');
+          if (saved === 'light' || saved === 'dark') {
+            scheme = saved;
+          } else if (saved === 'auto') {
+            scheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+        } catch (error) {
+          // Storage blocked: keep the default.
+        }
+        document.documentElement.setAttribute('data-mantine-color-scheme', scheme);
+      })();
+    </script>
+    <style>
+      /*
+       * Page background before Mantine's CSS and variables load; then the page color of the
+       * theme (--mantine-color-body). The fallbacks are dark.7 and white of src/app/theme.ts.
+       */
+      :root {
+        color-scheme: dark;
+        background-color: var(--mantine-color-body, #1c1c1c);
+      }
+      :root[data-mantine-color-scheme='light'] {
+        color-scheme: light;
+        background-color: var(--mantine-color-body, #ffffff);
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -20,7 +20,8 @@ export function AppProviders({ auth, apiUrl, queryClient, children }: Props) {
       theme={theme}
       colorSchemeManager={colorSchemeManager}
       cssVariablesResolver={cssVariablesResolver}
-      defaultColorScheme="light"
+      // Dark on the first visit; a saved choice wins. `index.html` sets it before React.
+      defaultColorScheme="dark"
     >
       <QueryClientProvider client={queryClient}>
         <AuthProvider service={auth}>

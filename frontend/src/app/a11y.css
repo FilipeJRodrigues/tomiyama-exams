@@ -5,9 +5,10 @@
  */
 
 /*
- * Focus ring. Mantine draws it in the filled primary color, which is too dark on a dark
- * card; only the color changes here, the ring itself (width, offset, when it shows) is
- * Mantine's. The fallback is Mantine's color, for a screen outside the theme variables.
+ * Focus ring in the real primary color of each scheme (blue / yellow), which Mantine would
+ * take from the virtual color; only the color changes here, the ring itself (width, offset,
+ * when it shows) is Mantine's. The fallback is Mantine's color, for a screen outside the
+ * theme variables.
  */
 .mantine-focus-auto:focus-visible,
 .mantine-focus-always:focus {
@@ -21,11 +22,22 @@
 }
 
 /*
- * Fields (TextInput, NativeSelect, Textarea, PasswordInput...): border at rest, and the
- * focused border in the color of the focus ring. Same specificity as Mantine's rule for the
- * default variant, so the error border (a more specific rule) still wins.
+ * Fields (TextInput, NativeSelect, Textarea, PasswordInput...): the control border at rest,
+ * and the focused border in the color of the focus ring. Same specificity as Mantine's rule
+ * for the default variant, so the error border (a more specific rule) still wins. Buttons
+ * and action icons get the same border from `theme.ts`.
  */
 [data-mantine-color-scheme] .mantine-Input-wrapper[data-variant='default'] {
-  --input-bd: var(--app-input-border, var(--mantine-color-gray-6));
+  --input-bd: var(--app-control-border, var(--mantine-color-gray-6));
   --input-bd-focus: var(--app-focus-ring, var(--mantine-primary-color-filled));
+}
+
+/*
+ * Thumb of a switch that is on: the contrast color of the primary (white on the blue, blue
+ * on the yellow, where Mantine's white is 1.22:1). Mantine's variable is the same for on and
+ * off, so the rule only takes the checked input: off, the thumb stays white. Every switch of
+ * the app uses the primary color; one of another color needs its own thumb color.
+ */
+.mantine-Switch-input:checked:not(:disabled):not([data-disabled]) + * > .mantine-Switch-thumb {
+  --switch-thumb-bg: var(--mantine-color-primary-contrast, var(--mantine-color-white));
 }

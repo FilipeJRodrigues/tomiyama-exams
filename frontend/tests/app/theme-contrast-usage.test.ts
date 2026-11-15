@@ -19,6 +19,9 @@ type Scheme = 'light' | 'dark';
 
 const appTheme: MantineTheme = mergeMantineTheme(DEFAULT_THEME, theme);
 
+/** The primary color (#166: virtual, blue in the light scheme and yellow in the dark one). */
+const primary = appTheme.primaryColor;
+
 function variables(scheme: Scheme): Record<string, string> {
   const base = defaultCssVariablesResolver(appTheme);
   const app = cssVariablesResolver(appTheme);
@@ -70,7 +73,7 @@ describe.each<Scheme>(['light', 'dark'])(
     it.each(['filled', 'outline', 'subtle'] as const)(
       'botão %s da cor primária, com hover',
       (variant) => {
-        const v = appTheme.variantColorResolver({ color: 'blue', theme: appTheme, variant });
+        const v = appTheme.variantColorResolver({ color: primary, theme: appTheme, variant });
         const bg = v.background === 'transparent' ? body : over(r(v.background), body);
         const hover = v.hover === 'transparent' ? body : over(r(v.hover), body);
         expect(contrastRatio(r(v.color), bg)).toBeGreaterThanOrEqual(4.5);
@@ -80,7 +83,7 @@ describe.each<Scheme>(['light', 'dark'])(
 
     it('botão default (Sair, tema), com hover', () => {
       const v = appTheme.variantColorResolver({
-        color: 'blue',
+        color: primary,
         theme: appTheme,
         variant: 'default',
       });

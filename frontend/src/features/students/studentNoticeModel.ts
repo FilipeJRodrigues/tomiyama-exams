@@ -37,4 +37,4 @@ export function examNoticeDetail(
  * Colors of a notice (`tests/features/students/student-notice-contrast.test.ts`): Mantine's
  * `light` variant of the primary color, which the theme keeps at 4.5:1 or more in both schemes.
  */
-export const NOTICE_COLOR = 'blue';
+export const NOTICE_COLOR = 'primary';

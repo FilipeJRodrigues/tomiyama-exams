@@ -386,7 +386,8 @@ export function DecisionDialog({ flow, sheet, belts, settled }: DecisionDialogPr
           >
             Cancelar
           </Button>
-          {/* blue.8 (primary) and red.9: white text at 4.5:1 or more (§ 6.7). */}
+          {/* Primary (white on the blue, blue on the yellow) and red.9 (white): text at 4.5:1
+              or more (§ 6.7). */}
           <Button
             color={approve ? undefined : 'red.9'}
             style={TOUCH_TARGET}
