@@ -7,8 +7,8 @@
     <title>Tomiyama Exams</title>
     <!--
       Color scheme before React, so the dark page never flashes white. Same rule as Mantine's
-      ColorSchemeScript with defaultColorScheme="dark" (AppProviders.tsx) and the key of
-      colorSchemeManager (COLOR_SCHEME_KEY in src/app/theme.ts): dark with no saved choice or
+      ColorSchemeScript with defaultColorScheme="dark" (mantineProviderProps in src/app/theme.ts)
+      and the key of colorSchemeManager (COLOR_SCHEME_KEY, same file): dark with no saved choice or
       an invalid one, "auto" by the system preference. Tested by
       tests/app/color-scheme-boot.test.ts.
       There is no Content-Security-Policy today; a future one needs the hash of this script in

@@ -214,7 +214,6 @@ function ConfirmForm({ email, simulated, onConfirmed, onChangeEmail }: ConfirmFo
                   component={Link}
                   c="inherit"
                   fw={700}
-                  underline="always"
                   to={paths.login}
                   state={{ confirmedEmail: email } satisfies LoginPageState}
                 >

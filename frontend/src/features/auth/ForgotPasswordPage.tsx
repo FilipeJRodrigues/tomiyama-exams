@@ -141,7 +141,6 @@ function RequestCodeForm({ initialEmail, onSent }: RequestCodeFormProps) {
                   component={Link}
                   c="inherit"
                   fw={700}
-                  underline="always"
                   to={paths.signUp}
                   state={{ confirmEmail: unconfirmedEmail } satisfies SignUpPageState}
                 >

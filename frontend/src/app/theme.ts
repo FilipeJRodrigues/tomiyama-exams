@@ -1,9 +1,11 @@
 import {
   ActionIcon,
+  Anchor,
   AppShell,
   Badge,
   Button,
   Checkbox,
+  ComboboxChevron,
   Drawer,
   Modal,
   Paper,
@@ -19,6 +21,7 @@ import {
   type CSSVariablesResolver,
   type MantineColor,
   type MantineColorsTuple,
+  type MantineProviderProps,
 } from '@mantine/core';
 
 /**
@@ -124,9 +127,10 @@ const dark: MantineColorsTuple = [
 ];
 
 /**
- * Border of every control at rest (fields, `default` buttons and action icons): 3:1 or
- * more on everything around them, also on a hovered table row and on a red `light` alert.
- * Mantine's `--mantine-color-default-border` stays as it is for the other borders.
+ * Border of every control at rest (fields, `default` buttons and action icons) and the arrow
+ * of the selects: 3:1 or more on everything around them, also on a hovered table row and on
+ * a red `light` alert. Mantine's `--mantine-color-default-border` stays as it is for the
+ * other borders.
  */
 const CONTROL_BORDER = { light: '#737B83', dark: '#8F8F8F' } as const;
 
@@ -208,6 +212,24 @@ export const theme = createTheme({
             ? { '--ai-bd': `${rem(1)} solid var(--app-control-border)` }
             : {},
       }),
+    }),
+    // § 6.7: the arrow of every select (NativeSelect, Select, MultiSelect) is part of the
+    // control, so it takes the control border (4.43:1 on a dark field, 4.29:1 on white).
+    // Mantine draws it in dark.3, the placeholder tone (2.61:1 on a dark field). With an
+    // error, or a color of its own, Mantine's color stays: the error red or that color.
+    ComboboxChevron: ComboboxChevron.extend({
+      vars: (_theme, props) => ({
+        chevron:
+          props.color === undefined && !props.error
+            ? { '--combobox-chevron-color': 'var(--app-control-border)' }
+            : {},
+      }),
+    }),
+    // § 6.7, state never by color alone: in a sentence the link color is close to the text
+    // around it (1.46:1 in the light scheme, 1.44:1 in the dark one), so every link is
+    // underlined at rest, not only on hover. The side menu is NavLink, not Anchor.
+    Anchor: Anchor.extend({
+      defaultProps: { underline: 'always' },
     }),
     // The dot and the check mark on the primary color: Mantine works their color out in JS
     // and gets white on the yellow too (1.22:1). The contrast color of the primary is white
@@ -344,3 +366,21 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
 export const COLOR_SCHEME_KEY = 'tomiyama.color-scheme';
 
 export const colorSchemeManager = localStorageColorSchemeManager({ key: COLOR_SCHEME_KEY });
+
+/**
+ * Everything a `MantineProvider` of the app takes, in one place: `AppProviders` and the
+ * startup error screen (`ConfigErrorScreen`) spread it, so both show the same theme. Dark on
+ * the first visit and a saved choice wins, as the script of `index.html` sets the page before
+ * React (`tests/app/color-scheme-boot.test.ts`).
+ */
+export const mantineProviderProps: Required<
+  Pick<
+    MantineProviderProps,
+    'theme' | 'colorSchemeManager' | 'cssVariablesResolver' | 'defaultColorScheme'
+  >
+> = {
+  theme,
+  colorSchemeManager,
+  cssVariablesResolver,
+  defaultColorScheme: 'dark',
+};
