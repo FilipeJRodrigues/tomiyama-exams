@@ -37,7 +37,7 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
 
 ### Links
 
-- **Sempre sublinhados** (`underline="always"`, como padrão pelo `Anchor.extend`), na cor principal: sem o sublinhado, o link no meio de uma frase só se distingue do texto pela cor (azul sobre o texto preto dá 1,46:1; amarelo sobre o texto claro, 1,35:1), o que fere "estado nunca só por cor" (§ 6.7). Vale para todo `Anchor`: "Cadastre-se", "Entrar", "Trocar e-mail", o "Dia do exame" da trilha do exame do aluno, o nome do aluno nas listas. Alguns já estão assim hoje (`underline="always"` nas telas de entrada).
+- **Sempre sublinhados** (`underline="always"`, como padrão pelo `Anchor.extend`), na cor principal: sem o sublinhado, o link no meio de uma frase só se distingue do texto pela cor (azul sobre o texto preto dá 1,46:1; no escuro, o link usa o tom `primary.4` (`#FEF37B`), que dá 1,44:1 sobre o texto claro), o que fere "estado nunca só por cor" (§ 6.7). Vale para todo `Anchor`: "Cadastre-se", "Entrar", "Trocar e-mail", o "Dia do exame" da trilha do exame do aluno, o nome do aluno nas listas. O padrão vem do tema; não repita `underline="always"` no componente.
 - **Não vale para o menu lateral** (`NavLink`), que tem a barra e o negrito do item ativo.
 
 ### Caixas de seleção, rádios e interruptores
