@@ -31,7 +31,7 @@ O site abre no **tema escuro** na primeira visita (`defaultColorScheme="dark"`).
 | Fundo das telas de entrada | azul `#0A265F` | azul `#0A265F` |
 | Hover de item do menu | `gray.0` do Mantine | por volta de `#3B3B3B` (`dark.5`), diferente do menu (o padrão do `NavLink` é `dark.6`) |
 | Hover de linha de tabela (`highlightOnHover`) | `gray.1` (padrão do `Table`) | por volta de `#3B3B3B` (`dark.5`, padrão do `Table`) |
-| **Borda de controle** (uma variável só, por exemplo `--app-control-border`): campos, botões `default` e `ActionIcon` `default`, `Checkbox` e `Radio` desmarcados, trilho do `Switch` desligado, Certo/Errado não escolhido | `#737B83` | `#8F8F8F` |
+| **Borda de controle** (uma variável só, por exemplo `--app-control-border`): campos e a seta dos seletores (`NativeSelect`, `Select`), botões `default` e `ActionIcon` `default`, `Checkbox` e `Radio` desmarcados, trilho do `Switch` desligado, Certo/Errado não escolhido | `#737B83` | `#8F8F8F` |
 | Erro e perigo | vermelho `#D62211` | vermelho mais claro, por volta de `#FF8577` (≥ 4,5:1 também na linha de tabela em hover) |
 | Sucesso (Certo, Aprovado, Elegível) | verde (veja abaixo) | verde |
 | Aviso (Dados simulados, avisos de evento) | `orange` do Mantine | `orange` do Mantine |
