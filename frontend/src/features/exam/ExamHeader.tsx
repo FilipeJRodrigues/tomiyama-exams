@@ -87,7 +87,7 @@ export function ExamNav({ eventId, studentId, studentName }: ExamNavProps) {
 }
 
 const STATUS_COLORS: Record<ExamStatus, string> = {
-  IN_PROGRESS: 'blue',
+  IN_PROGRESS: 'primary',
   APPROVED: 'green',
   FAILED: 'red',
 };

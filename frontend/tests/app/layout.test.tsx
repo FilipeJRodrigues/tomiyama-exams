@@ -86,21 +86,39 @@ describe('layout (§ 6.7)', () => {
     expect(await menu()).not.toHaveAttribute('inert');
   });
 
-  it('switches to the dark theme and remembers it', async () => {
+  // #166: the dark theme is the default of the first visit; a saved choice still wins.
+  it('starts in the dark theme on the first visit', async () => {
+    await renderApp({ route: '/alunos', signedInAs: 'examiner' });
+    expect(await screen.findByRole('button', { name: 'Usar tema claro' })).toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'dark');
+    // Nothing is saved until the user chooses.
+    expect(window.localStorage.getItem(COLOR_SCHEME_KEY)).toBeNull();
+  });
+
+  it('switches to the light theme and remembers it', async () => {
+    const { user } = await renderApp({ route: '/alunos', signedInAs: 'examiner' });
+    await user.click(await screen.findByRole('button', { name: 'Usar tema claro' }));
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'light');
+    expect(window.localStorage.getItem(COLOR_SCHEME_KEY)).toBe('light');
+
+    await user.click(screen.getByRole('button', { name: 'Usar tema escuro' }));
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'dark');
+    expect(window.localStorage.getItem(COLOR_SCHEME_KEY)).toBe('dark');
+  });
+
+  it('switches from a saved light theme to the dark theme and remembers it', async () => {
+    window.localStorage.setItem(COLOR_SCHEME_KEY, 'light');
     const { user } = await renderApp({ route: '/alunos', signedInAs: 'examiner' });
     await user.click(await screen.findByRole('button', { name: 'Usar tema escuro' }));
     expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'dark');
     expect(window.localStorage.getItem(COLOR_SCHEME_KEY)).toBe('dark');
-
-    await user.click(screen.getByRole('button', { name: 'Usar tema claro' }));
-    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'light');
-    expect(window.localStorage.getItem(COLOR_SCHEME_KEY)).toBe('light');
   });
 
   it('starts with the saved theme', async () => {
-    window.localStorage.setItem(COLOR_SCHEME_KEY, 'dark');
+    window.localStorage.setItem(COLOR_SCHEME_KEY, 'light');
     await renderApp({ route: '/alunos', signedInAs: 'examiner' });
-    expect(await screen.findByRole('button', { name: 'Usar tema claro' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Usar tema escuro' })).toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'light');
   });
 
   it('signs out and goes back to the login', async () => {

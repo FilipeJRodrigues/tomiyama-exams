@@ -141,7 +141,6 @@ function RequestCodeForm({ initialEmail, onSent }: RequestCodeFormProps) {
                   component={Link}
                   c="inherit"
                   fw={700}
-                  underline="always"
                   to={paths.signUp}
                   state={{ confirmEmail: unconfirmedEmail } satisfies SignUpPageState}
                 >
@@ -260,7 +259,7 @@ function ResetForm({ email, resetRequired, simulated, onDone, onChangeEmail }: R
     <AuthCard title="Crie uma nova senha" focusTitle>
       {resetRequired ? (
         <Alert
-          color="blue"
+          color="primary"
           variant="light"
           icon={<IconInfoCircle aria-hidden />}
           title="A academia redefiniu sua senha"
