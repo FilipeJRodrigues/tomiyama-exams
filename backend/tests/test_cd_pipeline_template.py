@@ -4,18 +4,34 @@ The deploy runs inside AWS (CodePipeline V2 + CodeBuild + CodeConnections) becau
 the managed SCP of the project denies ``iam:*Provider*`` (no GitHub OIDC; see #177).
 These tests read both templates with ``cfnlint.decode`` and never call AWS. ARNs are
 resolved with fake values (account ``123456789012``, Region ``us-east-2``) and
-compared with the IAM patterns of the policies.
+compared with the IAM patterns of the policies. The app template is also transformed
+offline, as CloudFormation does it (``AWS::LanguageExtensions`` from cfn-lint, then
+the SAM transform from aws-sam-translator), so the guards see every resource and
+managed policy SAM generates. The commit check of the build runs for real, with bash
+and git against local repositories (no network).
 """
 
 import fnmatch
+import functools
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
+import boto3
 import pytest
 import yaml
 from cfnlint.decode import decode
+from cfnlint.template import Template
+from cfnlint.template.transforms._language_extensions import language_extension
+from samtranslator.metrics.metrics import Metrics
+from samtranslator.parser.parser import Parser
+from samtranslator.public.exceptions import InvalidDocumentException
+from samtranslator.translator.translator import Translator
 
 ROOT = Path(__file__).resolve().parents[2]
 CD_TEMPLATE = ROOT / "infra" / "cd-pipeline.yaml"
@@ -276,6 +292,56 @@ def test_change_set_parameters_cover_the_app_template(
     assert len(json.dumps(overrides)) < 1024  # 1 KB limit of ParameterOverrides
 
 
+# The four values at their longest (see the MaxLength comment of AllowedOrigin).
+# A Number parameter has no MaxLength: the template reserves 32 characters for it.
+LONGEST_BUDGET = "9" * 32
+
+
+def _longest(cd: dict[str, Any], parameter: str, unit: str) -> str:
+    size = int(cd["Parameters"][parameter]["MaxLength"])
+    return (unit * size)[:size]
+
+
+def test_parameter_overrides_fit_codepipeline_with_the_longest_values(cd: dict[str, Any]) -> None:
+    """CodePipeline takes at most 1,000 characters in an action configuration value
+    (quotas) and 1 KB in the ParameterOverrides JSON (CloudFormation action
+    reference). MaxLength on AdminEmail (254, the longest address SMTP carries) and
+    on AllowedOrigin keep the resolved JSON under both, whatever the stack gets."""
+    email_pattern = cd["Parameters"]["AdminEmail"]["AllowedPattern"]
+    origin_pattern = cd["Parameters"]["AllowedOrigin"]["AllowedPattern"]
+    domain = "@example.com"
+    email = _longest(cd, "AdminEmail", "a")[: -len(domain)] + domain
+    origins = _longest(cd, "AllowedOrigin", "http://localhost:5173,")
+    resolver = Resolver(cd)
+    resolver.values.update(
+        {
+            "Environment": max(cd["Parameters"]["Environment"]["AllowedValues"], key=len),
+            "AdminEmail": email,
+            "AllowedOrigin": origins,
+            "BudgetLimitUsd": LONGEST_BUDGET,
+        }
+    )
+    text = resolver.resolve(_flat_actions(cd)[2]["Configuration"]["ParameterOverrides"])
+
+    assert int(cd["Parameters"]["AdminEmail"]["MaxLength"]) == 254
+    assert len(email) == 254 and re.fullmatch(email_pattern, email)
+    assert len(origins) == int(cd["Parameters"]["AllowedOrigin"]["MaxLength"])
+    assert re.fullmatch(origin_pattern, origins)
+    assert json.loads(text)["AllowedOrigin"] == origins
+    assert len(text) <= 1000, len(text)
+    assert len(text.encode("utf-8")) <= 1024
+
+
+def test_allowed_origin_is_ascii_so_its_length_is_its_size(cd: dict[str, Any]) -> None:
+    """Only AdminEmail may be non-ASCII in ParameterOverrides, and no real address
+    passes 254 octets: an origin with accents would cost two bytes per character."""
+    pattern = cd["Parameters"]["AllowedOrigin"]["AllowedPattern"]
+
+    assert re.fullmatch(pattern, "http://localhost:5173,https://main.d1a2b3c4.amplifyapp.com")
+    for value in ("https://ação.example.com", "HTTP://LOCALHOST", "http://a b", 'http://"x"'):
+        assert not re.fullmatch(pattern, value), value
+
+
 def test_build_output_is_the_template_the_change_set_reads(cd: dict[str, Any]) -> None:
     build, replace = _flat_actions(cd)[1:3]
     spec = yaml.safe_load(cd["Resources"]["BuildProject"]["Properties"]["Source"]["BuildSpec"])
@@ -298,17 +364,38 @@ def test_buildspec_is_inline_and_only_builds_commits_of_main(cd: dict[str, Any])
     assert 'git fetch --quiet --no-tags origin "+refs/heads/$MAIN_BRANCH' in pre_build
     assert 'git merge-base --is-ancestor "$COMMIT" "origin/$MAIN_BRANCH"' in pre_build
     assert "não está no histórico do $MAIN_BRANCH" in pre_build
+    assert 'git rev-list --first-parent "origin/$MAIN_BRANCH"' in pre_build
+    assert "veio de dentro de uma branch mesclada" in pre_build
     assert "exit 1" in pre_build
+
+
+def test_buildspec_checks_the_commit_before_installing_the_sam_cli(cd: dict[str, Any]) -> None:
+    """CodeBuild runs install, pre_build and build in this order, and a failed
+    pre_build skips build. The check stays in pre_build and the SAM CLI is installed
+    only in build: a refused run spends no build minutes on pip."""
+    spec = yaml.safe_load(cd["Resources"]["BuildProject"]["Properties"]["Source"]["BuildSpec"])
+    phases = spec["phases"]
+    early = "\n".join(
+        command
+        for phase in ("install", "pre_build")
+        for command in phases[phase].get("commands", [])
+    )
+    build = phases["build"]["commands"]
+    pip = [index for index, command in enumerate(build) if "pip install" in command]
+    sam_build = [index for index, command in enumerate(build) if "sam build" in command]
+
+    assert "git merge-base --is-ancestor" in early and "--first-parent" in early
+    assert "pip install" not in early and "/tmp/sam-cli" not in early
+    assert pip and sam_build and pip[0] < sam_build[0]
 
 
 def test_buildspec_runs_pinned_sam_build_and_package(cd: dict[str, Any]) -> None:
     project = cd["Resources"]["BuildProject"]["Properties"]
     spec = yaml.safe_load(project["Source"]["BuildSpec"])
-    install = "\n".join(spec["phases"]["install"]["commands"])
     build = "\n".join(spec["phases"]["build"]["commands"])
 
     assert str(spec["phases"]["install"]["runtime-versions"]["python"]) == "3.12"
-    assert '"aws-sam-cli==$SAM_CLI_VERSION"' in install
+    assert '"aws-sam-cli==$SAM_CLI_VERSION"' in build  # installed in build, after the check
     assert re.fullmatch(r"\d+\.\d+\.\d+", cd["Parameters"]["SamCliVersion"]["Default"])
     assert "sam build --template-file template.yaml" in build
     assert '--s3-bucket "$PACKAGES_BUCKET"' in build
@@ -321,6 +408,143 @@ def test_build_runs_on_the_smallest_machine_with_a_timeout(cd: dict[str, Any]) -
     assert project["Environment"]["ComputeType"] == "BUILD_GENERAL1_SMALL"
     assert 5 <= project["TimeoutInMinutes"] <= 30
     assert project["LogsConfig"]["CloudWatchLogs"]["GroupName"] == {"Ref": "BuildLogGroup"}
+
+
+# ------------------------------------------------------------------ main check, run with git
+def _bash() -> str | None:
+    """bash, or on Windows the Git Bash next to git (never the WSL bash.exe)."""
+    if sys.platform != "win32":
+        return shutil.which("bash")
+    git = shutil.which("git")
+    if not git:
+        return None
+    for parent in list(Path(git).resolve().parents)[:3]:
+        for candidate in (parent / "bin" / "bash.exe", parent / "usr" / "bin" / "bash.exe"):
+            if candidate.exists():
+                return str(candidate)
+    return None
+
+
+BASH = _bash()
+needs_bash_and_git = pytest.mark.skipif(
+    BASH is None or shutil.which("git") is None, reason="sem bash ou git no ambiente"
+)
+
+
+def _git(env: dict[str, str], *args: str, cwd: Path | None = None) -> str:
+    done = subprocess.run(
+        ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=60
+    )
+    assert done.returncode == 0, (args, done.stderr)
+    return done.stdout.strip()
+
+
+def _commit(env: dict[str, str], repo: Path, name: str) -> str:
+    (repo / f"{name}.txt").write_text(name, encoding="utf-8")
+    _git(env, "add", ".", cwd=repo)
+    _git(env, "commit", "-q", "-m", name, cwd=repo)
+    return _git(env, "rev-parse", "HEAD", cwd=repo)
+
+
+@pytest.fixture(scope="module")
+def merged_main(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """A bare "GitHub" whose main is: a direct commit (a), then the merge commit of a
+    PR (merge) whose branch has two commits (f1, f2). f1 and f2 are in the history
+    of main, but not on its first-parent line (a <- merge)."""
+    if BASH is None or shutil.which("git") is None:
+        pytest.skip("sem bash ou git no ambiente")
+    base = tmp_path_factory.mktemp("cd-first-parent")
+    config = base / "gitconfig"
+    config.write_text("", encoding="utf-8")
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(config),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "cd",
+        "GIT_AUTHOR_EMAIL": "cd@example.com",
+        "GIT_COMMITTER_NAME": "cd",
+        "GIT_COMMITTER_EMAIL": "cd@example.com",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    bare, seed = base / "origin.git", base / "seed"
+    _git(env, "init", "-q", "--bare", "-b", "main", str(bare))
+    _git(env, "init", "-q", "-b", "main", str(seed))
+    _git(env, "remote", "add", "origin", str(bare), cwd=seed)
+    a = _commit(env, seed, "a")
+    _git(env, "checkout", "-q", "-b", "feature", cwd=seed)
+    f1 = _commit(env, seed, "f1")
+    f2 = _commit(env, seed, "f2")
+    _git(env, "checkout", "-q", "main", cwd=seed)
+    _git(env, "merge", "-q", "--no-ff", "-m", "Merge pull request #1", "feature", cwd=seed)
+    merge = _git(env, "rev-parse", "HEAD", cwd=seed)
+    _git(env, "push", "-q", "origin", "main", cwd=seed)
+    return {"base": base, "env": env, "bare": bare, "a": a, "f1": f1, "f2": f2, "merge": merge}
+
+
+def _run_main_check(
+    cd: dict[str, Any], origin: dict[str, Any], commit: str, source_commit: str
+) -> subprocess.CompletedProcess[str]:
+    """Clones the origin at the commit and runs the pre_build of the buildspec."""
+    repo = origin["base"] / f"clone-{commit[:12]}-{len(source_commit)}"
+    if not repo.exists():
+        _git(origin["env"], "clone", "-q", str(origin["bare"]), str(repo))
+    _git(origin["env"], "checkout", "-q", "--detach", commit, cwd=repo)
+    spec = yaml.safe_load(cd["Resources"]["BuildProject"]["Properties"]["Source"]["BuildSpec"])
+    env = {
+        **origin["env"],
+        "MAIN_BRANCH": cd["Parameters"]["BranchName"]["Default"],
+        "SOURCE_COMMIT": source_commit,
+    }
+    return subprocess.run(
+        [BASH, "-c", "\n".join(spec["phases"]["pre_build"]["commands"])],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+
+
+@needs_bash_and_git
+@pytest.mark.parametrize("name", ["a", "merge"], ids=["commit-direto-no-main", "merge-de-pr"])
+def test_main_check_accepts_the_first_parent_line_of_main(
+    cd: dict[str, Any], merged_main: dict[str, Any], name: str
+) -> None:
+    done = _run_main_check(cd, merged_main, merged_main[name], merged_main[name])
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "OK: o commit" in done.stdout and "linha principal" in done.stdout
+
+
+@needs_bash_and_git
+@pytest.mark.parametrize("name", ["f1", "f2"])
+def test_main_check_refuses_a_commit_from_inside_a_merged_branch(
+    cd: dict[str, Any], merged_main: dict[str, Any], name: str
+) -> None:
+    """In the history of main, but never reviewed on its own (a "wip" step of a PR)."""
+    done = _run_main_check(cd, merged_main, merged_main[name], merged_main[name])
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "veio de dentro de uma branch mesclada" in done.stdout
+    assert "commit de merge" in done.stdout and "--first-parent" in done.stdout
+    assert "OK:" not in done.stdout
+
+
+@needs_bash_and_git
+@pytest.mark.parametrize("length", [7, 39], ids=["sha-curto", "sha-sem-um-caractere"])
+def test_main_check_asks_for_the_full_sha(
+    cd: dict[str, Any], merged_main: dict[str, Any], length: int
+) -> None:
+    """A short SHA can never equal the clone's commit: "run it again" would not help."""
+    requested = merged_main["merge"][:length]
+    done = _run_main_check(cd, merged_main, merged_main["merge"], requested)
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "não é o SHA completo" in done.stdout
+    assert f"git rev-parse {requested}" in done.stdout
+    assert "Rode a esteira de novo" not in done.stdout
 
 
 # ------------------------------------------------------------------ buckets and logs
@@ -445,6 +669,28 @@ def test_pipeline_passes_only_the_execution_role_to_cloudformation(cd: dict[str,
     }
 
 
+def test_pipeline_creates_change_sets_only_with_the_execution_role(cd: dict[str, Any]) -> None:
+    """cloudformation:RoleArn (type ARN) is a condition key of CreateChangeSet: every
+    statement that lets the pipeline create a change set in the app stack demands
+    the execution role, so it never runs the stack with another role."""
+    statements = _statements(cd, PIPELINE_ROLE)
+    stack = f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/{APP}/0a1b2c3d"
+    execution_role = Resolver(cd).get_att(EXECUTION_ROLE, "Arn")
+    create = [
+        s
+        for s in statements
+        if s["Effect"] == "Allow"
+        and _matches(s["Action"], "cloudformation:CreateChangeSet")
+        and _matches(s["Resource"], stack)
+    ]
+
+    assert create
+    for statement in create:
+        assert statement.get("Condition") == {
+            "ArnEquals": {"cloudformation:RoleArn": execution_role}
+        }, statement.get("Sid")
+
+
 def test_pipeline_only_handles_change_sets_of_the_app_stack(cd: dict[str, Any]) -> None:
     statements = _statements(cd, PIPELINE_ROLE)
     actions = _actions(statements)
@@ -529,16 +775,89 @@ LOG_GROUP = f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:/aws/lambda/{APP}"
 BUDGET = f"arn:aws:budgets::{ACCOUNT}:budget/{APP}-mensal"
 CODE = f"arn:aws:s3:::{CD_STACK}-packagesbucket-abc123def456/{APP}/0123456789abcdef"
 
-# What SAM expands each of its types into.
-SAM_EXPANSION = {
-    "AWS::Serverless::Function": (
-        "AWS::Lambda::Function",
-        "AWS::IAM::Role",
-        "AWS::Lambda::Permission",
-        "AWS::Lambda::EventInvokeConfig",
-    ),
-    "AWS::Serverless::HttpApi": ("AWS::ApiGatewayV2::Api", "AWS::ApiGatewayV2::Stage"),
+# ------------------------------------------------------------------ what SAM generates
+# The guards of the app read the template as CloudFormation deploys it: first
+# AWS::LanguageExtensions (cfn-lint's implementation), then the SAM transform
+# (aws-sam-translator, the library behind AWS::Serverless-2016-10-31), both offline.
+# They see what SAM generates from each function (an event rule, a function URL,
+# an alias and a version, an event source mapping...) and the managed policies it
+# attaches to the function roles (Tracing, an SQS event, a policy name...).
+
+# Local paths SAM only takes from S3: "sam package" uploads them and writes the S3
+# URI in their place (Globals sections are named after the type).
+LOCAL_ARTIFACTS = {
+    "Function": "CodeUri",
+    "LayerVersion": "ContentUri",
+    "Api": "DefinitionUri",
+    "HttpApi": "DefinitionUri",
+    "StateMachine": "DefinitionUri",
 }
+PACKAGED = f"s3://{CD_STACK}-packagesbucket-abc123def456/{APP}/0123456789abcdef"
+PSEUDO_PARAMETERS = {"AWS::Partition": "aws", "AWS::Region": REGION, "AWS::AccountId": ACCOUNT}
+
+
+def _as_packaged(template: dict[str, Any]) -> None:
+    places = [(kind, template.get("Globals", {}).get(kind, {})) for kind in LOCAL_ARTIFACTS]
+    places += [
+        (resource.get("Type", "").removeprefix("AWS::Serverless::"), resource.get("Properties", {}))
+        for resource in template["Resources"].values()
+    ]
+    for kind, props in places:
+        key = LOCAL_ARTIFACTS.get(kind)
+        if key and isinstance(props.get(key), str) and not props[key].startswith("s3://"):
+            props[key] = PACKAGED
+
+
+@functools.lru_cache(maxsize=16)
+def _transformed(text: str) -> str:
+    template = json.loads(text)
+    if "AWS::LanguageExtensions" in _as_list(template.get("Transform", [])):
+        matches, template = language_extension(Template(str(APP_TEMPLATE), template, [REGION]))
+        assert not matches, [str(match) for match in matches]
+        template = json.loads(json.dumps(template))
+    applications = [
+        name
+        for name, resource in template["Resources"].items()
+        if resource.get("Type") == "AWS::Serverless::Application"
+    ]
+    assert not applications, (
+        f"infra/template.yaml passou a usar AWS::Serverless::Application ({applications}): "
+        "o SAM consultaria o Serverless Application Repository, e estes testes não chamam a "
+        "AWS. Amplie a guarda (e o papel de execução da esteira) antes de usar o tipo."
+    )
+    _as_packaged(template)
+    metrics = Metrics()
+    translator = Translator(
+        None, Parser(), boto_session=boto3.session.Session(region_name=REGION), metrics=metrics
+    )
+    try:
+        output = translator.translate(template, parameter_values={})
+    except InvalidDocumentException as error:
+        causes = "; ".join(cause.message for cause in error.causes)
+        raise AssertionError(f"O SAM não transforma o infra/template.yaml: {causes}") from error
+    finally:
+        metrics.publish()
+    return json.dumps(output)
+
+
+def _sam_resources(app: dict[str, Any]) -> dict[str, Any]:
+    """The resources of the app as CloudFormation creates them (both transforms)."""
+    return json.loads(_transformed(json.dumps(app)))["Resources"]
+
+
+def _static(value: Any) -> str:
+    """A plain string, or a Fn::Sub of pseudo parameters only; anything else as JSON
+    (an ARN this test cannot resolve never counts as allowed)."""
+    if isinstance(value, dict) and list(value) == ["Fn::Sub"] and isinstance(value["Fn::Sub"], str):
+        text = re.sub(
+            r"\$\{(AWS::\w+)\}",
+            lambda match: PSEUDO_PARAMETERS.get(match.group(1), match.group(0)),
+            value["Fn::Sub"],
+        )
+        if "${" not in text:
+            return text
+    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+
 
 # For each resource type of the app: the actions its CloudFormation handler needs
 # to create, update and delete it, on a resource shaped like the dev stack's.
@@ -658,17 +977,17 @@ REQUIRED_ACTIONS: dict[str, list[tuple[str, str]]] = {
 
 
 def _app_resource_types(app: dict[str, Any]) -> set[str]:
-    types: set[str] = set()
-    for resource in app["Resources"].values():
-        types.update(SAM_EXPANSION.get(resource["Type"], (resource["Type"],)))
-    return types
+    return {resource["Type"] for resource in _sam_resources(app).values()}
 
 
 def test_execution_role_covers_every_resource_type_of_the_app(
     cd: dict[str, Any], app: dict[str, Any]
 ) -> None:
+    """Every type in the transformed template, the ones SAM generates included."""
     statements = _statements(cd, EXECUTION_ROLE)
-    for kind in sorted(_app_resource_types(app)):
+    kinds = _app_resource_types(app)
+    assert {"AWS::Lambda::Function", "AWS::IAM::Role"} <= kinds  # the transform ran
+    for kind in sorted(kinds):
         if kind.startswith("Custom::"):
             continue  # see test_execution_role_invokes_only_the_custom_resource_functions
         assert kind in REQUIRED_ACTIONS, (
@@ -722,6 +1041,50 @@ def test_app_functions_attach_no_other_managed_policy(app: dict[str, Any]) -> No
             "inclua o ARN na condição iam:PolicyARN do CloudFormationExecutionRole "
             "(infra/cd-pipeline.yaml)."
         )
+
+
+def _attachable_policies(cd: dict[str, Any]) -> set[str]:
+    """The managed policies the execution role may attach (its iam:PolicyARN condition)."""
+    allowed: set[str] = set()
+    for statement in _statements(cd, EXECUTION_ROLE):
+        if statement["Effect"] == "Allow" and "iam:AttachRolePolicy" in _as_list(
+            statement["Action"]
+        ):
+            condition = statement.get("Condition", {}).get("ArnEquals", {})
+            allowed.update(_as_list(condition.get("iam:PolicyARN", [])))
+    return allowed
+
+
+def test_execution_role_attaches_every_managed_policy_sam_generates(
+    cd: dict[str, Any], app: dict[str, Any]
+) -> None:
+    """SAM attaches managed policies on its own: AWSLambdaBasicExecutionRole always,
+    AWSXrayWriteOnlyAccess with Tracing (in the function or in Globals),
+    AWSLambdaSQSQueueExecutionRole with an SQS event, any policy named in Policies.
+    The execution role attaches only the ARNs of its iam:PolicyARN condition: any
+    other one fails the deploy with AccessDenied."""
+    allowed = _attachable_policies(cd)
+    roles = {
+        name: resource["Properties"]
+        for name, resource in _sam_resources(app).items()
+        if resource["Type"] == "AWS::IAM::Role"
+    }
+    missing = sorted(
+        {
+            (name, _static(arn))
+            for name, props in roles.items()
+            for arn in props.get("ManagedPolicyArns", [])
+            if _static(arn) not in allowed
+        }
+    )
+
+    assert roles and allowed
+    assert not missing, (
+        f"O SAM anexa aos papéis das funções políticas gerenciadas que o papel de execução da "
+        f"esteira não pode anexar: {missing}. Inclua o ARN na condição iam:PolicyARN do "
+        "CloudFormationExecutionRole (infra/cd-pipeline.yaml), ou tire do infra/template.yaml "
+        "o que a gera (Tracing, evento SQS, nome de política em Policies)."
+    )
 
 
 def test_execution_role_cannot_read_student_data(cd: dict[str, Any]) -> None:
