@@ -1,195 +1,194 @@
-"""Um deploy do app alcança os papéis e os buckets da esteira pelo papel de uma função.
+"""O repositório promete que um deploy do app não alcança a esteira, e ele alcança.
 
-Erro observado: o `CloudFormationExecutionRole` de `infra/cd-pipeline.yaml` mexe em
-IAM só em `role/<AppStackName>-*`, e os papéis da esteira ficam em `role/cd/`. Mesmo
-assim, nada limita **o que** ele pode dar a esses papéis. `iam:CreateRole` e
-`iam:PutRolePolicy` aceitam qualquer política inline, sem permissions boundary, e
-`iam:PassRole` entrega o papel à Lambda. Um commit do `main` que dê à `SeedFunction`
-(`Policies` no `infra/template.yaml`) a política `iam:*` em `*` passa pela esteira assim:
+Erro observado (QA do #68): o `CloudFormationExecutionRole` de `infra/cd-pipeline.yaml`
+mexe em IAM só em `role/<AppStackName>-*`, e os papéis da esteira ficam em `role/cd/`.
+Mesmo assim, ele grava qualquer política inline nos papéis das funções
+(`iam:CreateRole` e `iam:PutRolePolicy`, sem permissions boundary) e entrega esses
+papéis à Lambda (`iam:PassRole`). Um commit do `main` que dê à `SeedFunction` a política
+`iam:*` em `*` passa pela esteira assim: o papel de execução grava a política no papel
+da função, o CloudFormation invoca a função no `Custom::InitialData` do mesmo deploy, e
+o código dela altera os papéis da esteira (o próprio `cd-<AppStackName>-cfn-exec`
+incluído) ou apaga os buckets dela. Uma função invocada depois, pela API, faz o mesmo.
+Ainda assim, o `backend/README.md` afirma que "um deploy do app não consegue alterar os
+papéis da esteira, nem o próprio papel de execução", e o docstring de
+`test_cd_roles_stay_outside_the_execution_role_scope` promete o mesmo. As duas frases
+só valem para o padrão do ARN.
 
-1. o papel de execução grava essa política no papel da função;
-2. o CloudFormation invoca a `SeedFunction` no `Custom::InitialData` do mesmo deploy;
-3. o código da função grava `*` em `*` no próprio `cd-<AppStackName>-cfn-exec`, ou no
-   papel do pipeline, ou apaga os buckets da esteira.
+Reescrito em 2026-11-18 pela decisão B do responsável. A primeira versão deste teste
+exigia um permissions boundary nos papéis das funções. O responsável decidiu não criar
+o boundary agora: o risco fica aceito, porque é o mesmo do `sam deploy` manual com
+credencial de administrador, e a proteção é a revisão do PR e do change set. O boundary
+foi para o card #179, e a versão anterior deste arquivo (commit 3821d03) serve de ponto
+de partida para o teste de lá. O erro que continua é o repositório prometer um
+isolamento que não existe e não dizer a quem aprova o change set o que conferir.
 
-A negação `NeverManageTheCdBuckets` vale só para o papel de execução, não para os papéis
-que ele cria. Assim, a afirmação do README ("um deploy do app não consegue alterar os
-papéis da esteira, nem o próprio papel de execução") e o critério 5 do card ("os papéis
-e os buckets do CD fora do alcance dele") não valem. O
-`test_cd_roles_stay_outside_the_execution_role_scope` só confere o padrão do ARN.
+Esperado:
+- nenhuma frase do README e nenhuma do docstring promete que um deploy do app (ou o
+  papel de execução) não alcança os papéis ou os buckets da esteira sem a ressalva logo
+  ali, no mesmo parágrafo ou no seguinte: o card #179 ou o caminho indireto;
+- a seção da esteira no README descreve o risco: o papel de execução grava políticas
+  nos papéis das funções (`role/<AppStackName>-*`), e uma função invocada no mesmo
+  deploy (o `Custom::InitialData`) ou depois poderia usá-las contra a esteira;
+- a mesma seção orienta quem aprova o change set a conferir as mudanças de IAM (papéis
+  e políticas das funções) e cita o card #179.
 
-Esperado: quando o papel de execução pode criar papéis ou mudar as políticas deles
-(`CreateRole`, `PutRolePolicy`, `PutRolePermissionsBoundary` e o `AttachRolePolicy` que
-não estiver preso a uma lista fixa por `iam:PolicyARN`), a permissão exige a condição
-`iam:PermissionsBoundary`. A boundary é uma política
-gerenciada da stack de CD que não deixa o papel da função mexer em IAM, nos papéis ou
-nas políticas da esteira, nem nos buckets da esteira. O papel de execução não pode tirar
-a boundary (`iam:DeleteRolePermissionsBoundary`), e as funções do app declaram
-`PermissionsBoundary`. Outra saída aceita é o papel de execução não gravar política
-nenhuma em papel.
-Issue: #68
+As asserções procuram marcadores, não a redação exata: a promessa é uma frase que fala
+dos papéis ou dos buckets da esteira (ou do próprio papel de execução) e diz que não dá
+para alcançá-los; a ressalva é o `#179` ou "indiretamente".
+Issue: #68 (boundary: #179)
 """
 
+import re
 from pathlib import Path
-from typing import Any
 
 import test_cd_pipeline_template as cd_tests
-from cfnlint.decode import decode
 
 ROOT = Path(__file__).resolve().parents[3]
-ACCOUNT = cd_tests.ACCOUNT
-APP = cd_tests.APP
-FUNCTION_ROLE = f"arn:aws:iam::{ACCOUNT}:role/{APP}-SeedFunctionRole-AbC123dEf456"
-ROLE_WRITES = (
-    "iam:CreateRole",
-    "iam:PutRolePolicy",
-    "iam:AttachRolePolicy",
-    "iam:PutRolePermissionsBoundary",
+README = ROOT / "backend" / "README.md"
+CARD = "#179"
+
+# --- the promise, in pt-BR (README) and in English (docstrings)
+CD_TARGET_PT = re.compile(
+    r"\bpap(?:el|éis)\s+d[aeo]\s+(?:esteira|cd)\b"
+    r"|\bbuckets?\s+d[aeo]\s+(?:esteira|cd)\b"
+    r"|\bpróprio\s+papel\s+de\s+execução\b",
+    re.IGNORECASE,
 )
-IAM_ON_ROLES = (
-    "iam:PutRolePolicy",
-    "iam:AttachRolePolicy",
-    "iam:UpdateAssumeRolePolicy",
-    "iam:DeleteRolePermissionsBoundary",
-    "iam:DeleteRole",
+CANNOT_PT = re.compile(
+    r"\bnão\s+(?:consegue|pode|alcança|altera|mexe|chega|tem\s+como)\b"
+    r"|\bnunca\s+(?:consegue|pode|alcança|altera|mexe|chega)\b"
+    r"|\bfora\s+do\s+alcance\b",
+    re.IGNORECASE,
 )
-S3_WRITES = ("s3:PutObject", "s3:DeleteObject", "s3:DeleteBucket", "s3:PutBucketPolicy")
+CAVEAT_PT = re.compile(r"#179\b|\bindiretamente\b", re.IGNORECASE)
+
+CD_TARGET_EN = re.compile(
+    r"\b(?:cd|pipeline)\s+(?:roles?|buckets?)\b"
+    r"|\b(?:roles?|buckets?)\s+of\s+the\s+(?:cd|pipeline)\b"
+    r"|\bits\s+own\s+role\b",
+    re.IGNORECASE,
+)
+CANNOT_EN = re.compile(
+    r"\b(?:must|can|could|will|may)\s+never\b"
+    r"|\bnever\s+(?:changes?|reach(?:es)?|touch(?:es)?|alters?|modif(?:y|ies))\b"
+    r"|\bcan(?:not|'t|\s+not)\b"
+    r"|\bout\s+of\s+(?:its\s+)?reach\b",
+    re.IGNORECASE,
+)
+CAVEAT_EN = re.compile(r"#179\b|\bindirect(?:ly)?\b", re.IGNORECASE)
+
+# --- what the README must say about the risk and the review
+FUNCTION_ROLES = re.compile(
+    r"role/<[^>`\s]+>-\*|\bpap(?:el|éis)\s+d(?:e\s+uma|a|as)\s+funç(?:ão|ões)\b", re.IGNORECASE
+)
+POLICIES = re.compile(r"polític|PutRolePolicy|\bPolicies\b", re.IGNORECASE)
+RISK = re.compile(r"\brisco\b|\bpoderia\b|\bpoderiam\b|\bindiretamente\b", re.IGNORECASE)
+REVIEW = re.compile(r"\baprov|\bconfer|\bconfir|\brevis", re.IGNORECASE)
+IAM_ROLES = re.compile(r"\bpap(?:el|éis)\b|AWS::IAM::Role", re.IGNORECASE)
 
 
-def _load(path: Path) -> dict[str, Any]:
-    parsed, errors = decode(str(path))
-    assert not errors, errors
-    return parsed
+def _sentences(text: str) -> list[str]:
+    flat = " ".join(text.split())
+    return [s for s in re.split(r"(?<=[.!?])\s+(?=[^a-zà-ÿ])", flat) if s]
 
 
-class Resolver(cd_tests.Resolver):
-    """Also resolves managed policy ARNs and Fn::If (conditions with parameter defaults)."""
-
-    def __init__(self, template: dict[str, Any]) -> None:
-        super().__init__(template)
-        self.conditions = template.get("Conditions", {})
-
-    def ref(self, name: str) -> str:
-        resource = self.resources.get(name)
-        if resource and resource["Type"] == "AWS::IAM::ManagedPolicy":
-            props = resource["Properties"]
-            path = self.resolve(props.get("Path", "/"))
-            return f"arn:aws:iam::{ACCOUNT}:policy{path}{self.resolve(props['ManagedPolicyName'])}"
-        return super().ref(name)
-
-    def condition(self, node: Any) -> bool:
-        if isinstance(node, dict) and len(node) == 1:
-            ((key, value),) = node.items()
-            if key == "Condition":
-                return self.condition(self.conditions[value])
-            if key == "Fn::Equals":
-                left, right = (self.resolve(v) for v in value)
-                return str(left) == str(right)
-            if key == "Fn::Not":
-                return not self.condition(value[0])
-            if key == "Fn::And":
-                return all(self.condition(v) for v in value)
-            if key == "Fn::Or":
-                return any(self.condition(v) for v in value)
-        raise KeyError(f"condição sem avaliação: {node}")
-
-    def resolve(self, node: Any) -> Any:
-        if isinstance(node, dict) and set(node) == {"Fn::If"}:
-            name, when_true, when_false = node["Fn::If"]
-            return self.resolve(when_true if self.condition(self.conditions[name]) else when_false)
-        return super().resolve(node)
+def _promises(sentence: str, target: re.Pattern[str], cannot: re.Pattern[str]) -> bool:
+    return bool(target.search(sentence) and cannot.search(sentence))
 
 
-def _statements(resolver: Resolver, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [resolver.resolve(statement) for doc in documents for statement in doc["Statement"]]
+def _blocks(markdown: str) -> list[str]:
+    """Paragraphs (a list without blank lines between its items is one block),
+    with the fenced code removed."""
+    prose = re.sub(r"```.*?```", "", markdown, flags=re.DOTALL)
+    return [block.strip() for block in re.split(r"\n\s*\n", prose) if block.strip()]
 
 
-def _grants(statement: dict[str, Any], action: str, resource: str) -> bool:
-    if statement["Effect"] != "Allow":
-        return False
-    if "Action" in statement:
-        action_ok = cd_tests._matches(statement["Action"], action)
-    else:
-        action_ok = not cd_tests._matches(statement["NotAction"], action)
-    return action_ok and cd_tests._matches(statement["Resource"], resource)
+def _cd_section() -> str:
+    text = README.read_text(encoding="utf-8")
+    start = re.search(r"^## .*esteira.*$", text, flags=re.MULTILINE | re.IGNORECASE)
+    assert start, 'o README deveria ter a seção "## Deploy pela esteira (CodePipeline)"'
+    end = re.search(r"^## ", text[start.end() :], flags=re.MULTILINE)
+    return text[start.start() : start.end() + end.start()] if end else text[start.start() :]
 
 
-def _fixed_managed_policies(statement: dict[str, Any]) -> bool:
-    """AttachRolePolicy limited to a fixed list of policies (iam:PolicyARN equality)."""
-    for operator, keys in statement.get("Condition", {}).items():
-        if operator in ("ArnEquals", "StringEquals"):
-            if any(key.lower() == "iam:policyarn" for key in keys):
-                return True
-    return False
-
-
-def _boundary(statement: dict[str, Any]) -> list[str]:
-    values = []
-    for operator, keys in statement.get("Condition", {}).items():
-        if operator.startswith(("StringEquals", "ArnEquals", "ArnLike", "StringLike")):
-            for key, value in keys.items():
-                if key.lower() == "iam:permissionsboundary":
-                    values.extend(cd_tests._as_list(value))
-    return values
-
-
-def test_function_roles_created_by_a_deploy_cannot_reach_the_cd() -> None:
-    cd = _load(ROOT / "infra" / "cd-pipeline.yaml")
-    app = _load(ROOT / "infra" / "template.yaml")
-    resolver = Resolver(cd)
-    statements = _statements(resolver, cd_tests._policy_documents(cd, cd_tests.EXECUTION_ROLE))
-
-    writes = [
-        (action, statement)
-        for action in ROLE_WRITES
-        for statement in statements
-        if _grants(statement, action, FUNCTION_ROLE)
-    ]
-    # Attaching only a fixed list of managed policies (AWSLambdaBasicExecutionRole,
-    # checked by test_execution_role_iam_actions_stay_in_the_app_prefix) is no way up.
-    unbounded = sorted(
-        {
-            (action, s.get("Sid"))
-            for action, s in writes
-            if not _boundary(s)
-            and not (action == "iam:AttachRolePolicy" and _fixed_managed_policies(s))
-        }
+def test_readme_does_not_promise_that_a_deploy_cannot_reach_the_cd() -> None:
+    # The detector itself: the wording of the round that failed, and two neutral ones.
+    promise = (
+        "Um ARN `role/cd/...` nunca casa com `role/<stack>-*`, então um deploy do app não "
+        "consegue alterar os papéis da esteira, nem o próprio papel de execução."
     )
-    assert not unbounded, (
-        "O papel de execução grava papéis do app sem permissions boundary "
-        f"({unbounded}): um commit do main que dê iam:* a uma função alcança os papéis e os "
-        "buckets da esteira pelo papel dela."
-    )
-    assert not cd_tests._allows(statements, "iam:DeleteRolePermissionsBoundary", FUNCTION_ROLE)
+    assert _promises(promise, CD_TARGET_PT, CANNOT_PT)
+    assert not _promises("Ele não pode começar com `tomiyama-dev-`.", CD_TARGET_PT, CANNOT_PT)
+    assert not _promises("Os papéis da esteira ficam no caminho `/cd/`.", CD_TARGET_PT, CANNOT_PT)
 
-    boundaries = {arn for _, statement in writes for arn in _boundary(statement)}
-    if not boundaries:
-        return  # the execution role writes no policy on any role
-    policies = {
-        resolver.ref(name): resource
-        for name, resource in cd["Resources"].items()
-        if resource["Type"] == "AWS::IAM::ManagedPolicy"
-    }
-    cd_roles = [resolver.get_att(role, "Arn") for role in cd_tests.ROLE_SERVICES]
-    cd_buckets = [resolver.get_att(b, "Arn") for b in ("ArtifactsBucket", "PackagesBucket")]
-    for arn in boundaries:
-        assert arn in policies, f"a boundary {arn} deveria ser uma política da stack de CD"
-        limits = _statements(resolver, [policies[arn]["Properties"]["PolicyDocument"]])
-        for role in cd_roles:
-            for action in IAM_ON_ROLES:
-                assert not cd_tests._allows(limits, action, role), (arn, action, role)
-        for policy in policies:
-            assert not cd_tests._allows(limits, "iam:CreatePolicyVersion", policy), (arn, policy)
-        for bucket in cd_buckets:
-            for action in S3_WRITES:
-                assert not cd_tests._allows(limits, action, bucket), (arn, action, bucket)
-                assert not cd_tests._allows(limits, action, f"{bucket}/{APP}/x"), (arn, action)
-
-    globals_boundary = app.get("Globals", {}).get("Function", {}).get("PermissionsBoundary")
-    without = [
-        name
-        for name, resource in app["Resources"].items()
-        if resource["Type"] == "AWS::Serverless::Function"
-        and not (globals_boundary or resource["Properties"].get("PermissionsBoundary"))
+    blocks = _blocks(README.read_text(encoding="utf-8"))
+    unqualified = [
+        sentence
+        for index, block in enumerate(blocks)
+        for sentence in _sentences(block)
+        if _promises(sentence, CD_TARGET_PT, CANNOT_PT)
+        and not CAVEAT_PT.search(" ".join(blocks[index : index + 2]))
     ]
-    assert not without, f"funções sem PermissionsBoundary no infra/template.yaml: {without}"
+
+    assert not unqualified, (
+        "O backend/README.md promete que um deploy do app não alcança a esteira, mas o papel "
+        "de execução grava qualquer política nos papéis das funções, e uma função alcança os "
+        "papéis e os buckets da esteira (risco aceito na decisão B; boundary no card #179). "
+        "Ponha a ressalva no mesmo parágrafo ou no seguinte (o card #179, ou o caminho "
+        f"'indiretamente'): {unqualified}"
+    )
+
+
+def test_execution_role_scope_test_does_not_promise_isolation() -> None:
+    doc = cd_tests.test_cd_roles_stay_outside_the_execution_role_scope.__doc__ or ""
+    assert _promises(
+        "An app deploy must never change the roles of the CD.", CD_TARGET_EN, CANNOT_EN
+    )
+    promises = [s for s in _sentences(doc) if _promises(s, CD_TARGET_EN, CANNOT_EN)]
+
+    assert not promises or CAVEAT_EN.search(doc), (
+        "O docstring de test_cd_roles_stay_outside_the_execution_role_scope promete que um "
+        "deploy do app não alcança os papéis da esteira, e o teste só confere o padrão do "
+        "ARN. Diga que é só o alcance direto e cite o caminho indireto ('indirectly') ou o "
+        f"card #179: {promises}"
+    )
+
+
+def test_readme_describes_the_function_role_risk() -> None:
+    described = [
+        block
+        for block in _blocks(_cd_section())
+        if FUNCTION_ROLES.search(block)
+        and POLICIES.search(block)
+        and "InitialData" in block
+        and re.search(r"\besteira\b", block, flags=re.IGNORECASE)
+        and RISK.search(block)
+    ]
+
+    assert described, (
+        "A seção da esteira no backend/README.md não descreve o risco aceito na decisão B. "
+        "Um parágrafo (ou uma lista) deveria dizer que o papel de execução grava políticas "
+        "nos papéis das funções (role/<AppStackName>-*) e que uma função invocada no mesmo "
+        "deploy (o Custom::InitialData) ou depois poderia usá-las contra a esteira (seus "
+        "papéis e buckets)."
+    )
+
+
+def test_readme_tells_the_change_set_approver_to_check_iam_changes() -> None:
+    guided = [
+        block
+        for block in _blocks(_cd_section())
+        if CARD in block
+        and re.search(r"\bchange sets?\b", block, flags=re.IGNORECASE)
+        and REVIEW.search(block)
+        and re.search(r"\bIAM\b", block)
+        and IAM_ROLES.search(block)
+        and POLICIES.search(block)
+    ]
+
+    assert guided, (
+        "A seção da esteira no backend/README.md não orienta quem aprova o change set a "
+        "conferir as mudanças de IAM (papéis e políticas das funções, como os Policies do "
+        "infra/template.yaml), a única proteção contra o risco aceito na decisão B, nem cita "
+        f"o card {CARD}, onde ficou o permissions boundary."
+    )
