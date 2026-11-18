@@ -46,7 +46,6 @@ export function BeltFixedData({ belt }: { belt: Belt }) {
       component="section"
       withBorder
       p="sm"
-      radius="sm"
       aria-labelledby={titleId}
       aria-describedby={noteId}
     >

@@ -1,9 +1,10 @@
-import { Alert, Stack, Text, Title } from '@mantine/core';
+import { Alert, Stack, Text } from '@mantine/core';
 import { IconCircleCheck } from '@tabler/icons-react';
 import { useRef, useState, type ReactNode } from 'react';
 
 import { useExaminers, useSettings, useUpdateSettings } from '../../api/queries';
 import type { AcademySettings, AcademySettingsInput } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { useAuth } from '../../auth/useAuth';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
@@ -107,13 +108,13 @@ export function AcademyPage() {
 
   return (
     <Stack gap="md" maw={640}>
-      <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Academia
-      </Title>
+      </PageTitle>
       <Stack component="section" gap="md" aria-labelledby={DATA_TITLE_ID}>
-        <Title order={2} size="h3" id={DATA_TITLE_ID}>
+        <PageTitle order={2} size="h3" id={DATA_TITLE_ID}>
           Dados da academia
-        </Title>
+        </PageTitle>
         {saved && (
           <Alert
             color="green"

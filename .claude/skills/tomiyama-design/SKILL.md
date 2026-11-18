@@ -69,7 +69,7 @@ O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e tr
 - [ ] Amarelo só sobre azul (claro) ou como cor principal (escuro); nunca sobre branco.
 - [ ] Vermelho só em erro e perigo; laranja do logo fora da interface.
 - [ ] Anel de foco visível em fundo branco, no fundo carvão e sobre o azul das telas de entrada.
-- [ ] Botões, selos e seletores segmentados em pílula, com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`; campos com `md`.
+- [ ] Botões, selos e seletores segmentados em pílula (o segmentado vertical em `lg`), com texto em negrito nos botões; cartões, diálogos, gavetas e painéis com `lg`, com o lado preso à borda da tela reto; campos com `md`.
 - [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor); sem fundo próprio (no hover, o mesmo dos outros itens).
 - [ ] No escuro, `Paper`, `Modal`, `Drawer` e o cabeçalho e o menu do `AppShell` em `#2A2A2A`, não no fundo da página.
 - [ ] Texto e ícones sobre o amarelo em azul, não branco nem preto: botão cheio (`--mantine-color-primary-contrast`), hover, polegar do `Switch` ligado (desligado continua claro), ponto do `Radio`, ícone do `Checkbox`.

@@ -1,6 +1,7 @@
-import { SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { SimpleGrid, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { LogoSlotPanel } from './LogoSlotPanel';
 import { LOGO_SLOTS } from './logoModel';
@@ -17,9 +18,9 @@ export function LogosSection() {
   const isMobile = useMediaQuery(MOBILE_QUERY, false, { getInitialValueInEffect: false });
   return (
     <Stack component="section" gap="md" mt="lg" aria-labelledby={LOGOS_TITLE_ID}>
-      <Title order={2} size="h3" id={LOGOS_TITLE_ID}>
+      <PageTitle order={2} size="h3" id={LOGOS_TITLE_ID}>
         Logos
-      </Title>
+      </PageTitle>
       <Text size="sm">
         O logo principal vai no canto superior esquerdo do certificado e o secundário no direito.
       </Text>

@@ -1,9 +1,10 @@
-import { Stack, Title } from '@mantine/core';
+import { Stack } from '@mantine/core';
 import { useRef } from 'react';
 import { useNavigate } from 'react-router';
 
 import { useBelts, useCreateStudent } from '../../api/queries';
 import type { StudentInput } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { paths } from '../../app/navigation';
 import { StudentForm } from './StudentForm';
 import type { StudentsPageState } from './routeState';
@@ -57,9 +58,9 @@ export function StudentCreatePage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Novo aluno
-      </Title>
+      </PageTitle>
       {content}
     </Stack>
   );

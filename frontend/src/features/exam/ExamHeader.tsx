@@ -1,10 +1,11 @@
-import { Anchor, Badge, Breadcrumbs, Button, Group, Stack, Text, Title } from '@mantine/core';
+import { Anchor, Badge, Breadcrumbs, Button, Group, Stack, Text } from '@mantine/core';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import type { Ref } from 'react';
 import { Link } from 'react-router';
 
 import { useEventExams } from '../../api/queries';
 import type { Belt, ExamSheet, ExamStatus, ExamView } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { examPath } from '../../app/navigation';
 import { EVENT_STATUS_LABELS, EXAM_STATUS_LABELS } from '../../lib/labels';
 import { dateLabel } from '../students/studentText';
@@ -116,9 +117,9 @@ export function ExamHeader({ sheet, belts, titleRef }: ExamHeaderProps) {
   return (
     <Stack gap={4}>
       <Group gap="sm" align="center">
-        <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
+        <PageTitle order={1} size="h2" ref={titleRef} tabIndex={-1}>
           {name}
-        </Title>
+        </PageTitle>
         <ResultBadge status={sheet.exam.status} />
       </Group>
       <Text data-testid="exam-meta">
