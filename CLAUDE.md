@@ -15,10 +15,13 @@ uv run pytest -q                             # testes
 uv run ruff check src tests scripts          # lint
 uv run ruff format src tests scripts         # formatação
 uv run cfn-lint ../infra/template.yaml       # template SAM
+uv run cfn-lint ../infra/cd-pipeline.yaml    # template da esteira de deploy
 uv run python scripts/build_requirements_seed.py  # regenera os itens do Apêndice A
 ```
 
 A esteira em `.github/workflows/ci.yml` roda lint, formatação, testes e cfn-lint em todo push e PR.
+
+**Deploy do backend (desvio aprovado do documento de arquitetura, 2026-11-18):** não é pelo GitHub Actions, porque a SCP gerenciada do novo AWS nega `iam:*Provider*` e a conta não cria o provedor OIDC do GitHub (alternativa no card #177). O deploy roda dentro da AWS, pela stack de CD em `infra/cd-pipeline.yaml` (CodePipeline V2 + CodeBuild + CodeConnections): disparo manual com o commit escolhido (só commits do `main`), change set, aprovação manual e execução. O passo a passo está em `backend/README.md`, seção "Deploy pela esteira (CodePipeline)". Nada roda na AWS sem o ok do responsável.
 
 ## Quadro do projeto
 

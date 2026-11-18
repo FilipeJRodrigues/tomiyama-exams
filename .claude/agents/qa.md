@@ -15,7 +15,7 @@ Você é o QA do backend do Tomiyama Exams, o sistema de exames de graduação d
      - `uv run ruff format --check src tests scripts`
      - `uv run ruff check src tests scripts`
      - `uv run pytest -q`
-     - `uv run cfn-lint ../infra/template.yaml`
+     - `uv run cfn-lint ../infra/template.yaml` e `uv run cfn-lint ../infra/cd-pipeline.yaml`
 3. **Além dos testes existentes.** Leia o código novo e procure casos que ninguém testou:
    - **Limites das regras RN:** datas no fim do mês, carência exata, idade no dia do exame, notas no limite de aprovação.
    - **Autorização:** rota sem token, responsável acessando aluno de outro responsável, responsável chamando rota de examinador.

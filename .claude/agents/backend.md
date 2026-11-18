@@ -47,6 +47,7 @@ uv run ruff format src tests scripts
 uv run ruff check src tests scripts
 uv run pytest -q
 uv run cfn-lint ../infra/template.yaml
+uv run cfn-lint ../infra/cd-pipeline.yaml
 ```
 
 Se algo falhar e você não conseguir resolver, devolva a saída do erro. Não declare a tarefa concluída.
