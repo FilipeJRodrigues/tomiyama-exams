@@ -148,7 +148,7 @@ Também não aumentamos o `SeedVersion`: o `InitialData` rodaria em todo deploy 
 
 ## Deploy pela esteira (CodePipeline)
 
-O deploy do backend também roda dentro da AWS, pela stack de CD em [`../infra/cd-pipeline.yaml`](../infra/cd-pipeline.yaml): CodePipeline V2 no modo `QUEUED`, CodeBuild e uma conexão do CodeConnections com o GitHub. A esteira nunca começa sozinha. Cada execução é disparada à mão, com o commit escolhido, e nada muda na stack do app sem a aprovação manual do change set. O deploy manual da seção "Deploy" continua valendo (veja "Papel guardado na stack" abaixo).
+O deploy do backend também roda dentro da AWS, pela stack de CD em [`../infra/cd-pipeline.yaml`](../infra/cd-pipeline.yaml): CodePipeline V2 no modo `QUEUED`, CodeBuild e uma conexão do CodeConnections com o GitHub. A esteira nunca começa sozinha. Cada execução é disparada à mão, com o commit escolhido, e nada muda na stack do app sem a aprovação manual do change set. O deploy manual da seção "Deploy" continua valendo (veja "Papel guardado na stack" abaixo). Os limites que esta seção descreve, da esteira e dos papéis dela, são os do alcance direto. Indiretamente, pelo papel de uma função, um deploy aprovado pode alcançar a esteira (veja "Risco aceito: os papéis das funções", card #179).
 
 ### Por que não pelo GitHub Actions
 
@@ -164,7 +164,7 @@ O desenho original fazia o deploy pelo GitHub Actions com OIDC. Esta conta é do
 | `Deploy` (2) | aprovação manual | Mostra o commit e um link para a stack no console do CloudFormation. |
 | `Deploy` (3) | `CHANGE_SET_EXECUTE` | Executa o mesmo change set. |
 
-- **O buildspec fica dentro do template, não no repositório.** O primeiro deploy constrói um commit antigo, que não tem buildspec. Além disso, o build não lê buildspec do commit: mudar o que ele faz exige mudar a stack de CD. A exceção é o caminho indireto de "Risco aceito: os papéis das funções", abaixo (card #179).
+- **O buildspec fica dentro do template, não no repositório.** O primeiro deploy constrói um commit antigo, que não tem buildspec. Além disso, o build não lê buildspec do commit, e a conferência do commit roda antes de qualquer código dele (só depois o `sam build` roda com o template e as dependências do commit): mudar a conferência exige mudar a stack de CD. A exceção é o caminho indireto de "Risco aceito: os papéis das funções", abaixo (card #179).
 - **A conferência do `main` é obrigatória.** A troca de revisão `COMMIT_ID` aceita qualquer commit do repositório, de qualquer branch ([source revision override](https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-trigger-source-overrides.html)). Só sai deploy de commit da **linha de primeiro pai** do `main`: o commit de merge de um PR, ou um commit feito direto no `main`. Os commits de dentro de uma branch mesclada também estão no histórico do `main`, mas nunca passaram sozinhos pelo QA (os passos "wip … ainda sem o veredito", por exemplo), então são recusados. Para ver os commits que a esteira aceita: `git log --first-parent --oneline origin/main`.
 - **As três ações do `Deploy` ficam no mesmo estágio, de propósito.** No modo `QUEUED`, um estágio fica travado enquanto há uma execução nele, e as outras esperam na entrada ([execuções em QUEUED](https://docs.aws.amazon.com/codepipeline/latest/userguide/concepts-how-it-works.html)). Com a aprovação num estágio separado, uma segunda execução poderia trocar o change set (o nome é o mesmo) enquanto a primeira espera, e a aprovação executaria um change set que ninguém conferiu.
 
@@ -192,7 +192,7 @@ Em 2026-11-18, o responsável aceitou esse risco (decisão B). Ele é o mesmo do
 
 ### Criar a stack de CD
 
-Nome sugerido: `tomiyama-cd-dev`. Ele **não pode** começar com `tomiyama-dev-`, o prefixo da stack do app: os buckets da stack de CD ganham nomes derivados dele e cairiam no escopo do papel de execução. A política nega mesmo assim, mas não conte com isso. Perto do limite de gastos (spend limit), a SCP da AWS também nega criar stacks, projetos do CodeBuild e pipelines.
+Nome sugerido: `tomiyama-cd-dev`. Ele **não pode** começar com `tomiyama-dev-`, o prefixo da stack do app: os buckets da stack de CD ganham nomes derivados dele e cairiam no escopo do papel de execução. A política do papel de execução nega mesmo assim (`NeverManageTheCdBuckets`), mas não conte com isso: a negação vale só para esse papel. Com esse nome, uma política inline com `s3:DeleteBucket` em `arn:aws:s3:::tomiyama-dev-*` no papel de uma função, que parece mexer só no app, alcançaria indiretamente os buckets da esteira (veja "Risco aceito: os papéis das funções", card #179). Perto do limite de gastos (spend limit), a SCP da AWS também nega criar stacks, projetos do CodeBuild e pipelines.
 
 1. Leia os parâmetros atuais da stack do app, para o primeiro change set não mudar nada no app:
 
@@ -268,12 +268,12 @@ aws cloudformation describe-change-set --stack-name tomiyama-dev --change-set-na
   --query "Changes[].ResourceChange.[Action,LogicalResourceId,Replacement]" --output table
 ```
 
-**Confira as mudanças de IAM.** Sem permissions boundary (card #179), a revisão do PR e a do change set são a única proteção contra o risco de "Risco aceito: os papéis das funções". Antes de aprovar, procure no change set os recursos `AWS::IAM::Role` (os papéis das funções, que o SAM gera com o nome `<Função>Role`) com Action `Modify` ou `Add`, e qualquer outro recurso `AWS::IAM::*`. Num papel com `Modify`, os detalhes dizem que propriedade mudou: `Policies` (as políticas inline, inclusive as que o SAM gera dos templates de política, como `DynamoDBReadPolicy`) ou `ManagedPolicyArns` (as políticas gerenciadas). O change set não mostra o texto das políticas: leia-o no diff do `infra/template.yaml` no PR ou no template processado do change set (segundo comando abaixo, nos recursos `AWS::IAM::Role`). Rejeite se aparecer permissão de IAM (`iam:*`, `iam:PassRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy` e afins) ou permissão sobre a esteira (os papéis `role/cd/...`, os buckets dela, o projeto do CodeBuild, o pipeline ou a conexão) que o PR não justifica, e também um `"*"` novo em `Action` ou `Resource`.
+**Confira as mudanças de IAM.** Sem permissions boundary (card #179), a revisão do PR e a do change set são a única proteção contra o risco de "Risco aceito: os papéis das funções". Antes de aprovar, procure no change set os recursos `AWS::IAM::Role` (os papéis das funções, que o SAM gera com o nome `<Função>Role`) com Action `Modify` ou `Add`, e qualquer outro recurso `AWS::IAM::*`. Num papel com `Modify`, os detalhes dizem que propriedade mudou: `Policies` (as políticas inline, inclusive as que o SAM gera dos templates de política, como `DynamoDBReadPolicy`) ou `ManagedPolicyArns` (as políticas gerenciadas). O change set também mostra o antes e o depois de cada propriedade que muda, inclusive o texto das políticas. No console, na página do change set, a coluna **Property-level changes** mostra os dois lados. Pela CLI, o `describe-change-set` com `--include-property-values` (primeiro comando abaixo) traz, em cada `Details[].Target`, o caminho da propriedade (`Path`), o `BeforeValue` e o `AfterValue`, e, em cada recurso, o `BeforeContext` e o `AfterContext`: o recurso antes e depois da mudança, num texto JSON. Um papel com `Add` não tem detalhes por propriedade: leia o `AfterContext` dele. Valores grandes podem vir truncados, então a leitura completa é o template processado do change set (segundo comando, nos recursos `AWS::IAM::Role`) ou o diff do `infra/template.yaml` no PR. Rejeite se aparecer permissão de IAM (`iam:*`, `iam:PassRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy` e afins) ou permissão sobre a esteira (os papéis `role/cd/...`, os buckets dela, o projeto do CodeBuild, o pipeline ou a conexão) que o PR não justifica, e também um `"*"` novo em `Action` ou `Resource`.
 
 ```bash
 aws cloudformation describe-change-set --stack-name tomiyama-dev --change-set-name codepipeline-changeset \
-  --region us-east-2 --profile tomiyama --output json \
-  --query "Changes[?starts_with(ResourceChange.ResourceType, 'AWS::IAM::')].ResourceChange.[Action,LogicalResourceId,ResourceType,Details[].Target.Name]"
+  --include-property-values --region us-east-2 --profile tomiyama --output json \
+  --query "Changes[?starts_with(ResourceChange.ResourceType, 'AWS::IAM::')].ResourceChange.{Action: Action, LogicalId: LogicalResourceId, Type: ResourceType, Properties: Details[].Target.{Name: Name, Path: Path, Change: AttributeChangeType, Before: BeforeValue, After: AfterValue}, BeforeContext: BeforeContext, AfterContext: AfterContext}"
 aws cloudformation get-template --stack-name tomiyama-dev --change-set-name codepipeline-changeset \
   --template-stage Processed --region us-east-2 --profile tomiyama --output json
 ```
@@ -291,7 +291,7 @@ O dev ainda roda código anterior aos perfis, sem o `by_profile_belt`. Pela este
 
 Depois do primeiro deploy pela esteira, a stack `tomiyama-dev` guarda o papel `cd-tomiyama-dev-cfn-exec`. O CloudFormation passa a usá-lo em toda operação da stack, inclusive num `sam deploy` manual sem `--role-arn`, e quem roda o deploy nem precisa de `iam:PassRole`. Não dá para tirar o papel da stack, só trocá-lo por outro num update ([papel de serviço](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)). Na prática:
 
-- O deploy manual fica limitado às permissões do papel, mesmo para um administrador. Um recurso de tipo que o papel não cobre falha com AccessDenied, e a stack volta. Amplie o papel na stack de CD antes.
+- No deploy manual, o CloudFormation também usa só as permissões do papel, mesmo quando quem roda é um administrador. Um recurso de tipo que o papel não cobre falha com AccessDenied, e a stack volta. Amplie o papel na stack de CD antes. Esse limite vale para o que o CloudFormation faz direto. O código de uma função roda com o papel dela, que o próprio deploy pode ampliar: é o caminho indireto de "Risco aceito: os papéis das funções" (card #179).
 - O papel lê o código das funções no bucket de pacotes da esteira e no bucket gerenciado do SAM CLI (`aws-sam-cli-managed-default-samclisourcebucket-…`), **só no prefixo `tomiyama-dev/`**. O `infra/samconfig.example.toml` já usa `s3_prefix = "tomiyama-dev"`. Na linha de comando, acrescente `--s3-prefix`:
 
   ```bash

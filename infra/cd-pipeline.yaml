@@ -19,11 +19,14 @@ Description: >-
 # any inline policy on "role/<AppStackName>-*" (no permissions boundary) and
 # passes those roles to Lambda, so a function given broad permissions by a
 # commit on main (the SeedFunction, invoked by Custom::InitialData in the same
-# deploy, or any other later) could change the roles and buckets of this
-# stack. Accepted risk (decision B, 2026-11-18): the same as a manual sam
-# deploy with administrator credentials, guarded by the review of the PR and
-# of the change set. The permissions boundary is card #179. See "Risco
-# aceito: os papéis das funções" in backend/README.md.
+# deploy, or any other later) could change any resource of this stack: its
+# roles and policies, its buckets, the build project (the buildspec and its
+# main check), the pipeline (the approval) and the use of the connection.
+# Every limit this file describes is a direct one. Accepted risk (decision
+# B, 2026-11-18): the same as a manual sam deploy with administrator
+# credentials, guarded by the review of the PR and of the change set. The
+# permissions boundary is card #179. See "Risco aceito: os papéis das
+# funções" in backend/README.md.
 
 Parameters:
   AppStackName:
@@ -321,8 +324,12 @@ Resources:
         Type: CODEPIPELINE
         # Inline on purpose: the first deploy builds an old commit (c603913)
         # that has no buildspec, and a buildspec in the repository would let
-        # any commit change what the build does. SOURCE_COMMIT comes from the
-        # pipeline (#{SourceVariables.CommitId}).
+        # any commit change what the build does, the commit check included.
+        # Here the check runs before any code of the commit; only then does
+        # "sam build" run with the commit's template and requirements. Changing
+        # the check takes a change to this stack, which a deploy could also make
+        # indirectly, through a function role (see the top of this file, #179).
+        # SOURCE_COMMIT comes from the pipeline (#{SourceVariables.CommitId}).
         #
         # The commit check runs in pre_build, before the SAM CLI is installed
         # (build): a refused run stops there and spends no build minutes on pip.
@@ -481,7 +488,8 @@ Resources:
               - iam:ListRolePolicies
               - iam:ListAttachedRolePolicies
             Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
-          # SAM attaches only AWSLambdaBasicExecutionRole; nothing else may be attached.
+          # SAM attaches only AWSLambdaBasicExecutionRole here; the execution role
+          # may attach no other managed policy (inline ones: see FunctionRoles).
           - Sid: FunctionRolesManagedPolicy
             Effect: Allow
             Action:
@@ -510,7 +518,11 @@ Resources:
               - !Sub ${PackagesBucket.Arn}/${AppStackName}/*
               - !Sub arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default-samclisourcebucket-*/${AppStackName}/*
           # Belt and braces: even if this stack's name started with
-          # "<AppStackName>-", an app deploy could only read packages here.
+          # "<AppStackName>-", the execution role could only read packages here.
+          # This Deny binds the execution role alone. With such a name, a function
+          # role given s3:DeleteBucket on "arn:aws:s3:::<AppStackName>-*" (a grant
+          # that looks app-only) would reach these buckets indirectly: accepted
+          # risk, see the top of this file and card #179.
           - Sid: NeverManageTheCdBuckets
             Effect: Deny
             NotAction:

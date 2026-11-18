@@ -1128,7 +1128,7 @@ def test_execution_role_attaches_every_managed_policy_sam_generates(
 
 
 def test_execution_role_cannot_read_student_data(cd: dict[str, Any]) -> None:
-    """LGPD: the deploy role manages tables and buckets, never their content."""
+    """LGPD: the execution role manages tables and buckets, never their content."""
     statements = _statements(cd, EXECUTION_ROLE)
     for action in ("dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:PutItem"):
         assert not _allows(statements, action, TABLE), action
