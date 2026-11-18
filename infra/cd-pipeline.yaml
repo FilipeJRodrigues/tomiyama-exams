@@ -13,6 +13,17 @@ Description: >-
 # this stack get names generated from this stack's name. The roles of this
 # stack live under the IAM path /cd/ (no hyphen), so no "role/<name>-*"
 # pattern can ever match them.
+#
+# That holds for the direct reach of the execution role only. Indirectly,
+# through the function roles, it is not isolated: the execution role writes
+# any inline policy on "role/<AppStackName>-*" (no permissions boundary) and
+# passes those roles to Lambda, so a function given broad permissions by a
+# commit on main (the SeedFunction, invoked by Custom::InitialData in the same
+# deploy, or any other later) could change the roles and buckets of this
+# stack. Accepted risk (decision B, 2026-11-18): the same as a manual sam
+# deploy with administrator credentials, guarded by the review of the PR and
+# of the change set. The permissions boundary is card #179. See "Risco
+# aceito: os papéis das funções" in backend/README.md.
 
 Parameters:
   AppStackName:
@@ -56,9 +67,10 @@ Parameters:
     #   AdminEmail     254 (MaxLength counts characters; the only value that
     #                       may be non-ASCII, but no real address passes 254
     #                       octets, so 254 bytes at most)
-    #   BudgetLimitUsd  32 (reserved: a Number parameter has no MaxLength)
+    #   BudgetLimitUsd  10 (its AllowedPattern: up to 7 integer digits, a point
+    #                       and 2 decimals; ASCII)
     #   AllowedOrigin  600 (this MaxLength; ASCII, one byte per character)
-    # 80 + 4 + 254 + 32 + 600 = 970 characters and 970 bytes: under 1,000 and
+    # 80 + 4 + 254 + 10 + 600 = 948 characters and 948 bytes: under 1,000 and
     # under 1,024. Two origins (localhost and Amplify) take about 66 characters.
     MaxLength: 600
     ConstraintDescription: >-
@@ -66,9 +78,15 @@ Parameters:
       números e os caracteres : / . , -
     Description: Parâmetro AllowedOrigin da stack do app (origens separadas por vírgula, sem espaços).
   BudgetLimitUsd:
-    Type: Number
-    Default: 1
-    MinValue: 0
+    # String, not Number: ParameterOverrides passes every value as text, and
+    # the pattern bounds the size (see the count in AllowedOrigin). A Number
+    # takes neither AllowedPattern nor MaxLength. No sign: no negative value.
+    Type: String
+    Default: "1"
+    AllowedPattern: '^[0-9]{1,7}(\.[0-9]{1,2})?$'
+    ConstraintDescription: >-
+      valor em dólares com até 7 dígitos inteiros e até 2 casas decimais, separadas por ponto
+      (exemplos: 1, 12.5), sem sinal nem notação científica.
     Description: Parâmetro BudgetLimitUsd da stack do app.
   RepositoryId:
     Type: String
@@ -443,6 +461,8 @@ Resources:
             Action: lambda:InvokeFunction
             Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AppStackName}-SeedFunction-*
           # The function roles SAM generates ("<AppStackName>-<Function>Role-<suffix>").
+          # No permissions boundary: iam:PutRolePolicy writes any inline policy
+          # on them (accepted risk, see the top of this file and card #179).
           - Sid: FunctionRoles
             Effect: Allow
             Action:

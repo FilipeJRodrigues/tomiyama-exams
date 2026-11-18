@@ -293,8 +293,9 @@ def test_change_set_parameters_cover_the_app_template(
 
 
 # The four values at their longest (see the MaxLength comment of AllowedOrigin).
-# A Number parameter has no MaxLength: the template reserves 32 characters for it.
-LONGEST_BUDGET = "9" * 32
+# BudgetLimitUsd is bounded by its AllowedPattern: 7 integer digits, a point and
+# 2 decimals, 10 characters.
+LONGEST_BUDGET = "9999999.99"
 
 
 def _longest(cd: dict[str, Any], parameter: str, unit: str) -> str:
@@ -306,9 +307,11 @@ def test_parameter_overrides_fit_codepipeline_with_the_longest_values(cd: dict[s
     """CodePipeline takes at most 1,000 characters in an action configuration value
     (quotas) and 1 KB in the ParameterOverrides JSON (CloudFormation action
     reference). MaxLength on AdminEmail (254, the longest address SMTP carries) and
-    on AllowedOrigin keep the resolved JSON under both, whatever the stack gets."""
+    on AllowedOrigin, and the AllowedPattern of BudgetLimitUsd (10 characters), keep
+    the resolved JSON under both, whatever the stack gets."""
     email_pattern = cd["Parameters"]["AdminEmail"]["AllowedPattern"]
     origin_pattern = cd["Parameters"]["AllowedOrigin"]["AllowedPattern"]
+    budget_pattern = cd["Parameters"]["BudgetLimitUsd"]["AllowedPattern"]
     domain = "@example.com"
     email = _longest(cd, "AdminEmail", "a")[: -len(domain)] + domain
     origins = _longest(cd, "AllowedOrigin", "http://localhost:5173,")
@@ -327,9 +330,40 @@ def test_parameter_overrides_fit_codepipeline_with_the_longest_values(cd: dict[s
     assert len(email) == 254 and re.fullmatch(email_pattern, email)
     assert len(origins) == int(cd["Parameters"]["AllowedOrigin"]["MaxLength"])
     assert re.fullmatch(origin_pattern, origins)
+    assert len(LONGEST_BUDGET) == 10 and re.fullmatch(budget_pattern, LONGEST_BUDGET)
     assert json.loads(text)["AllowedOrigin"] == origins
+    assert json.loads(text)["BudgetLimitUsd"] == LONGEST_BUDGET
     assert len(text) <= 1000, len(text)
     assert len(text.encode("utf-8")) <= 1024
+
+
+def test_budget_limit_is_a_decimal_of_at_most_10_characters(cd: dict[str, Any]) -> None:
+    """ParameterOverrides passes every value as text, so BudgetLimitUsd is a String
+    whose AllowedPattern bounds its size (a Number takes neither AllowedPattern nor
+    MaxLength): up to 7 integer digits and 2 decimals, no sign. The default stays
+    valid."""
+    parameter = cd["Parameters"]["BudgetLimitUsd"]
+    pattern = parameter["AllowedPattern"]
+
+    assert parameter["Type"] == "String"
+    assert re.fullmatch(pattern, str(parameter["Default"]))
+    for value in ("1", "10", "12.5", "1234567.99", "0", LONGEST_BUDGET):
+        assert re.fullmatch(pattern, value), value
+    for value in (
+        "1e9",
+        "-1",
+        "1.234",
+        "12345678",
+        "12345678.5",
+        "99999999.99",
+        "1.",
+        ".5",
+        "1,5",
+        "+1",
+        " 1",
+        "",
+    ):
+        assert not re.fullmatch(pattern, value), value
 
 
 def test_allowed_origin_is_ascii_so_its_length_is_its_size(cd: dict[str, Any]) -> None:
@@ -727,9 +761,14 @@ def test_connection_is_used_only_on_this_stack_connection(cd: dict[str, Any]) ->
 
 
 def test_cd_roles_stay_outside_the_execution_role_scope(cd: dict[str, Any]) -> None:
-    """An app deploy must never change the roles of the CD (its own role included).
-    The CD roles live under a path without hyphen: "role/<path>/..." can never
-    match "role/<stack name>-*", whatever the stack names."""
+    """The direct reach only: no IAM pattern of the execution role matches a CD
+    role (its own role included). The CD roles live under a path without hyphen:
+    "role/<path>/..." can never match "role/<stack name>-*", whatever the stack
+    names. The indirect path is not checked here and is not closed: the execution
+    role writes any inline policy on the function roles, and a function given broad
+    permissions could then change the CD roles. That is the risk accepted in
+    decision B, with the permissions boundary left for #179 (see "Risco aceito: os
+    papéis das funções" in backend/README.md)."""
     resolver = Resolver(cd)
     patterns = [
         resource
@@ -749,7 +788,8 @@ def test_cd_roles_stay_outside_the_execution_role_scope(cd: dict[str, Any]) -> N
 
 def test_execution_role_cannot_manage_the_cd_buckets(cd: dict[str, Any]) -> None:
     """Even with a CD stack named "<AppStackName>-..." (its buckets would then fall
-    in the app's S3 scope), the execution role only reads packages there."""
+    in the app's S3 scope), the execution role only reads packages there. Direct
+    reach only: indirectly, through a function role, see #179."""
     resolver = Resolver(cd, stack_name=f"{APP}-cd")
     statements = [
         resolver.resolve(statement)
