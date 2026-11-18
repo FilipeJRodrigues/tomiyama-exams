@@ -36,6 +36,7 @@ import {
   useStudents,
 } from '../../api/queries';
 import type { Belt, ExamEvent, ExamView, StudentView } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { examPath, paths } from '../../app/navigation';
 import { EVENT_STATUS_LABELS, EXAM_STATUS_LABELS } from '../../lib/labels';
@@ -792,9 +793,9 @@ export function ExamDayPage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" ref={titleRef} tabIndex={-1}>
         Dia do exame
-      </Title>
+      </PageTitle>
       {content}
       <ChangeEventStatusDialog
         ref={statusDialogRef}

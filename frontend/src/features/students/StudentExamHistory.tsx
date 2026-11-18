@@ -20,6 +20,7 @@ import { Link } from 'react-router';
 
 import { useBelts, useExaminers, useSettings, useStudentExams } from '../../api/queries';
 import type { Belt, ExamStatus, StudentHistoryEntry } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { examPath } from '../../app/navigation';
 import { EXAM_STATUS_LABELS } from '../../lib/labels';
@@ -287,9 +288,9 @@ export function StudentExamHistory({ studentId, visible }: StudentExamHistoryPro
 
   return (
     <Stack component="section" aria-labelledby={TITLE_ID} gap="sm" mt="lg">
-      <Title order={2} size="h3" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+      <PageTitle order={2} size="h3" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Histórico de exames
-      </Title>
+      </PageTitle>
       {content}
     </Stack>
   );

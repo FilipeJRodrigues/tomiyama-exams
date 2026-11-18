@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router';
 
 import { useBelts, useStudents } from '../../api/queries';
 import type { Belt, StudentView } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { paths, studentPath } from '../../app/navigation';
 import { focusIfLost } from '../exam/focus';
@@ -192,9 +193,9 @@ export function StudentsPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between" gap="sm">
-        <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+        <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
           Alunos
-        </Title>
+        </PageTitle>
         {/* A link (it opens another page), drawn as a button. */}
         <Button
           component={Link}

@@ -1,4 +1,7 @@
 import '@mantine/core/styles.css';
+// Font of the page titles (`--app-font-display`), served by the site itself: one weight (600)
+// and only the `latin` subset, which has the Portuguese accents. Never Google Fonts (LGPD).
+import '@fontsource/barlow-condensed/latin-600.css';
 // After Mantine's styles: the app's rules win at equal specificity.
 import './app/a11y.css';
 

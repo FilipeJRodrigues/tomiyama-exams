@@ -1,4 +1,4 @@
-import { Alert, Anchor, Button, Group, Modal, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Button, Group, Modal, Stack, Text } from '@mantine/core';
 import { IconAlertCircle, IconTrash } from '@tabler/icons-react';
 import { useRef, useState, type ReactNode, type Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -12,6 +12,7 @@ import {
   useUpdateStudent,
 } from '../../api/queries';
 import type { StudentInput, StudentView } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { paths } from '../../app/navigation';
 import { useAuth } from '../../auth/useAuth';
 import { StudentExamHistory } from './StudentExamHistory';
@@ -28,9 +29,9 @@ const TITLE_ID = 'student-edit-title';
 function NotFound({ titleRef }: { titleRef: Ref<HTMLHeadingElement> }) {
   return (
     <Stack gap="sm">
-      <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" ref={titleRef} tabIndex={-1}>
         Aluno não encontrado
-      </Title>
+      </PageTitle>
       <Text>O aluno não existe ou não está entre os que você acompanha.</Text>
       <Text>
         <Anchor component={Link} to={paths.students}>
@@ -210,9 +211,9 @@ export function StudentEditPage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Editar aluno
-      </Title>
+      </PageTitle>
       {/*
         Mounted while the student loads for the first time, so both are asked at once; shown
         with the form. Not mounted for a student that failed: mounting it again on each new read

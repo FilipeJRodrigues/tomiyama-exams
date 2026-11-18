@@ -6,13 +6,13 @@ import {
   SimpleGrid,
   Stack,
   Text,
-  Title,
   VisuallyHidden,
 } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ExamSummary as Summary, ExamView, Examiner, RequirementKind } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { REQUIREMENT_KIND_LABELS } from '../../lib/labels';
 import { DecisionArea, type DecisionLayout } from './ExamDecision';
 import { useScrollPadding } from './focus';
@@ -133,9 +133,9 @@ function SummaryContent({
   return (
     <Stack gap={compact ? 'xs' : 'md'}>
       {!panel && (
-        <Title order={2} size={compact ? 'h5' : 'h4'}>
+        <PageTitle order={2} size={compact ? 'h5' : 'h4'}>
           Resumo
-        </Title>
+        </PageTitle>
       )}
       <Text size="xs" c="dimmed">
         {PERCENT_HINT}
@@ -204,6 +204,7 @@ export function SummaryBar(props: ExamSummaryProps) {
         aria-label="Resumo do exame"
         withBorder
         shadow="md"
+        // Docked to the edges of the screen, like the header: square, not a card.
         radius={0}
         px="md"
         py="xs"

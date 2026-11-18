@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Modal, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconCircleCheck, IconPlus } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react';
@@ -11,6 +11,7 @@ import {
   useUpdateEvent,
 } from '../../api/queries';
 import type { ExamEvent } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { useSendLock } from '../../lib/sendLock';
 import { focusIfLost } from '../exam/focus';
@@ -250,9 +251,9 @@ export function EventsPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between" gap="sm">
-        <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+        <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
           Eventos
-        </Title>
+        </PageTitle>
         <Button
           ref={newButtonRef}
           leftSection={<IconPlus size={18} aria-hidden />}

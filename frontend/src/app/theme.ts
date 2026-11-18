@@ -4,6 +4,7 @@ import {
   AppShell,
   Badge,
   Button,
+  Card,
   Checkbox,
   ComboboxChevron,
   Drawer,
@@ -11,6 +12,7 @@ import {
   Paper,
   PasswordInput,
   Radio,
+  SegmentedControl,
   createTheme,
   darken,
   isVirtualColor,
@@ -137,6 +139,30 @@ const CONTROL_BORDER = { light: '#737B83', dark: '#8F8F8F' } as const;
 /** Surfaces: cards, dialogs, drawers, header and side menu (white / dark.6). */
 const SURFACE = 'var(--app-surface)';
 
+/*
+ * Shapes (skill `tomiyama-design`, `components.md`): buttons, action icons, badges and
+ * segmented controls are pills; cards, dialogs, drawers and panels have the large radius;
+ * fields keep `defaultRadius` (`md`), since a pill-shaped text box looks odd. Only the
+ * corners change: the height and the touch targets stay, and the focus ring follows the
+ * rounded border with Mantine's 2 px offset.
+ */
+const PILL_RADIUS = 'xl';
+const SURFACE_RADIUS = 'lg';
+
+/**
+ * Font of the page titles (`PageTitle`: the `h1` of a screen and its section `h2`) and, later,
+ * of the brand name. Barlow Condensed comes from the site itself (`main.tsx` imports only the
+ * `latin` subset of weight 600, never Google Fonts); Arial Narrow and sans-serif show while it
+ * loads (`font-display: swap`). Written as `--app-font-display` by `cssVariablesResolver`.
+ */
+export const DISPLAY_FONT_FAMILY = "'Barlow Condensed', 'Arial Narrow', sans-serif";
+
+/** The only weight shipped: asking for 700 would make the browser fake a bolder letter. */
+export const DISPLAY_FONT_WEIGHT = 600;
+
+/** Buttons in bold (typography.md); Mantine draws them in 600. */
+const BUTTON_FONT_WEIGHT = 700;
+
 /** The primary color in its filled variant (the default of the controls). */
 function onFilledPrimary(props: {
   color?: MantineColor | undefined;
@@ -165,12 +191,19 @@ export const theme = createTheme({
   autoContrast: true,
   // Focus ring on keyboard navigation (§ 6.7: visible focus).
   focusRing: 'auto',
+  // Fields (TextInput, NativeSelect, Select, Textarea, PasswordInput...) and everything not
+  // given a shape below.
   defaultRadius: 'md',
   components: {
     // § 6: sentence case everywhere. Mantine draws Badge in uppercase by default; turn it
     // off for every Badge (inline style, so it also wins over the class in the CSS).
     Badge: Badge.extend({
+      defaultProps: { radius: PILL_RADIUS },
       styles: { root: { textTransform: 'none' } },
+    }),
+    // Pill like the buttons. The indicator of the chosen item is #173.
+    SegmentedControl: SegmentedControl.extend({
+      defaultProps: { radius: PILL_RADIUS },
     }),
     // § 6.7: every control reachable by Tab, with a pt-BR name. The toggle announces its
     // state through `aria-pressed`, so the name stays the same when the password shows.
@@ -183,21 +216,32 @@ export const theme = createTheme({
     // Surfaces in the dark scheme are dark.6, not the page (`--mantine-color-body`, which
     // Mantine also gives these components). Card and Popover already use dark.6.
     Paper: Paper.extend({
+      defaultProps: { radius: SURFACE_RADIUS },
       styles: { root: { backgroundColor: SURFACE } },
     }),
-    // The sticky header of dialogs and drawers paints its own background too.
+    // Card hands its radius to the Paper it draws.
+    Card: Card.extend({
+      defaultProps: { radius: SURFACE_RADIUS },
+    }),
+    // The sticky header of dialogs and drawers paints its own background too. A full-screen
+    // dialog (the phone) keeps square corners: Mantine sets them to 0 there. A drawer has no
+    // radius at all by default (Mantine passes 0 to its Paper), so it needs its own.
     Modal: Modal.extend({
+      defaultProps: { radius: SURFACE_RADIUS },
       styles: { content: { backgroundColor: SURFACE }, header: { backgroundColor: SURFACE } },
     }),
     Drawer: Drawer.extend({
+      defaultProps: { radius: SURFACE_RADIUS },
       styles: { content: { backgroundColor: SURFACE }, header: { backgroundColor: SURFACE } },
     }),
     AppShell: AppShell.extend({
       styles: { header: { backgroundColor: SURFACE }, navbar: { backgroundColor: SURFACE } },
     }),
-    // § 6.7: the `default` variant (Sair, Tema, Editar...) draws the control border; the
-    // background is the surface and Mantine's border would be 1.5:1.
+    // Pill with a bold label. § 6.7: the `default` variant (Sair, Tema, Editar...) draws the
+    // control border; the background is the surface and Mantine's border would be 1.5:1.
     Button: Button.extend({
+      defaultProps: { radius: PILL_RADIUS },
+      styles: { root: { fontWeight: BUTTON_FONT_WEIGHT } },
       vars: (_theme, props) => ({
         root:
           props.variant === 'default'
@@ -205,7 +249,9 @@ export const theme = createTheme({
             : {},
       }),
     }),
+    // Round (the Tema button), with the same control border as the `default` buttons.
     ActionIcon: ActionIcon.extend({
+      defaultProps: { radius: PILL_RADIUS },
       vars: (_theme, props) => ({
         root:
           props.variant === 'default'
@@ -322,6 +368,8 @@ const VIRTUAL_LIGHT_VARIABLES = ['light', 'light-hover', 'light-color'] as const
  * - `--app-focus-ring`: the real primary color of each scheme (blue 14.4:1 on white;
  *   yellow 13.9:1 on the page and 11.7:1 on a card).
  * - `--app-control-border`: border of the controls at rest (see `CONTROL_BORDER`).
+ * - `--app-font-display`: font of the page titles, the same in both schemes (see
+ *   `DISPLAY_FONT_FAMILY`).
  */
 export const cssVariablesResolver: CSSVariablesResolver = (current) => {
   const blue = current.colors['tomiyama-blue'] ?? tomiyamaBlue;
@@ -359,7 +407,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     const darkColor = darkSchemeLightColor(shades);
     if (darkColor) dark[`--mantine-color-${name}-light-color`] = darkColor;
   }
-  return { variables: {}, light, dark };
+  return { variables: { '--app-font-display': DISPLAY_FONT_FAMILY }, light, dark };
 };
 
 /** Light/dark preference only; no personal data. Also read by the script in `index.html`. */

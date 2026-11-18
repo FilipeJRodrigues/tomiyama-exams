@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Modal, NativeSelect, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Group, Modal, NativeSelect, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconCircleCheck, IconPlus } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react';
@@ -12,6 +12,7 @@ import {
   useUpdateRequirement,
 } from '../../api/queries';
 import type { Belt, Requirement, RequirementInput, RequirementKind } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { useSendLock } from '../../lib/sendLock';
 import { sortBelts } from '../belts/beltText';
@@ -297,9 +298,9 @@ export function RequirementsPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between" gap="sm">
-        <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+        <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
           Requisitos
-        </Title>
+        </PageTitle>
         {beltId && belts.data && (
           <Button
             ref={newButtonRef}

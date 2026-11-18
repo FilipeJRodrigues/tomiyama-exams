@@ -6,6 +6,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/client';
 import { useBelts, useUpdateBelt } from '../../api/queries';
 import type { Belt, BeltInput } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { MOBILE_QUERY } from '../../app/breakpoints';
 import { useAuth } from '../../auth/useAuth';
 import { useSendLock } from '../../lib/sendLock';
@@ -292,9 +293,9 @@ export function BeltsPage() {
 
   return (
     <Stack gap="md">
-      <Title order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" id={TITLE_ID} ref={titleRef} tabIndex={-1}>
         Faixas
-      </Title>
+      </PageTitle>
       {savedName !== null && (
         <Alert
           color="green"

@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Stack, Text, Title, VisuallyHidden } from '@mantine/core';
+import { Alert, Box, Button, Stack, Text, VisuallyHidden } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconAlertCircle,
@@ -24,6 +24,7 @@ import { Link, useParams } from 'react-router';
 import { ApiError } from '../../api/client';
 import { useBelts, useExamSheet, useExaminers } from '../../api/queries';
 import type { ExamSheet, ExamSheetItem, RequirementKind } from '../../api/types';
+import { PageTitle } from '../../app/PageTitle';
 import { EXAM_SIDE_SUMMARY_QUERY } from '../../app/breakpoints';
 import { LoadError, LoadingState } from '../students/screenStates';
 import { useRetryFocus } from '../students/useRetryFocus';
@@ -61,11 +62,11 @@ interface TitleRefProps {
 }
 
 /** Title while there is no exam to name the page after. */
-function PageTitle({ titleRef }: TitleRefProps) {
+function GenericTitle({ titleRef }: TitleRefProps) {
   return (
-    <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
+    <PageTitle order={1} size="h2" ref={titleRef} tabIndex={-1}>
       Exame do aluno
-    </Title>
+    </PageTitle>
   );
 }
 
@@ -78,9 +79,9 @@ function NotFound({
   const eventMissing = error.message === MSG_EVENT_NOT_FOUND;
   return (
     <Stack gap="sm" align="flex-start">
-      <Title order={1} size="h2" ref={titleRef} tabIndex={-1}>
+      <PageTitle order={1} size="h2" ref={titleRef} tabIndex={-1}>
         {error.message}
-      </Title>
+      </PageTitle>
       <Text>
         {eventMissing
           ? 'O evento não existe ou foi excluído.'
@@ -569,7 +570,7 @@ export function ExamPage() {
         <NotFound error={error} eventId={eventId} titleRef={titleRef} />
       ) : (
         <>
-          <PageTitle titleRef={titleRef} />
+          <GenericTitle titleRef={titleRef} />
           <LoadError
             title="Não foi possível carregar o exame"
             error={error}
@@ -582,7 +583,7 @@ export function ExamPage() {
   } else if (data === undefined) {
     content = (
       <>
-        <PageTitle titleRef={titleRef} />
+        <GenericTitle titleRef={titleRef} />
         <LoadingState label="Carregando exame…" />
       </>
     );

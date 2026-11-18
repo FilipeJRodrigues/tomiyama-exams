@@ -1,7 +1,8 @@
-import { Anchor, Center, Loader, Stack, Text, Title } from '@mantine/core';
+import { Anchor, Center, Loader, Stack, Text } from '@mantine/core';
 import { Link, Navigate, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/useAuth';
+import { PageTitle } from './PageTitle';
 import { paths } from './navigation';
 
 /** Where the login sends the user back to; kept in router state, never in the URL. */
@@ -35,9 +36,9 @@ export function RequireExaminer() {
   if (user?.role === 'examiner') return <Outlet />;
   return (
     <Stack gap="sm" maw={560}>
-      <Title order={1} size="h2">
+      <PageTitle order={1} size="h2">
         Esta área é dos examinadores
-      </Title>
+      </PageTitle>
       <Text>
         <Anchor component={Link} to={paths.students}>
           Meus alunos

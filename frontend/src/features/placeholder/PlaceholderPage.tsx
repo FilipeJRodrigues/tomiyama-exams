@@ -1,11 +1,13 @@
-import { Stack, Text, Title } from '@mantine/core';
+import { Stack, Text } from '@mantine/core';
+
+import { PageTitle } from '../../app/PageTitle';
 
 export function NotFoundPage() {
   return (
     <Stack gap="sm">
-      <Title order={1} size="h2">
+      <PageTitle order={1} size="h2">
         Página não encontrada
-      </Title>
+      </PageTitle>
       <Text c="dimmed">O endereço não existe ou foi alterado.</Text>
     </Stack>
   );
