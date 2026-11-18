@@ -3,10 +3,15 @@
  * cascata que o navegador recebe (`tests/computedCss.ts`): o CSS do Mantine, o `a11y.css` e as
  * variáveis do tema.
  *
- * - Pílula (`xl`): `Button`, `ActionIcon`, `Badge` e `SegmentedControl`.
+ * - Pílula (`xl`): `Button`, `ActionIcon`, `Badge` e `SegmentedControl` horizontal. O
+ *   `SegmentedControl` vertical (o filtro do Dia do exame abaixo de 768 px) fica com `lg`: na
+ *   pílula, o trilho cortava o anel de foco do primeiro e do último item (§ 6.7; regressão
+ *   `tests/regression/166-anel-foco-segmentado-vertical-cortado.test.tsx`).
  * - `lg` (16 px): `Paper`, `Card`, `Modal` e `Drawer`, e os painéis das telas (o de "Dados da
  *   faixa" passava `radius="sm"`). O diálogo em tela cheia (celular) continua sem raio, e um
- *   raio explícito (a barra do resumo, presa às bordas da tela) continua valendo.
+ *   raio explícito (a barra do resumo, presa às bordas da tela) continua valendo. A gaveta
+ *   arredonda só os cantos do lado de fora; os do lado preso à borda da tela ficam retos (no
+ *   Edge, arredondados ali, mostravam a camada escura atrás).
  * - `md`: os campos.
  * - Botões em negrito (700), inclusive o rótulo.
  * - O anel de foco dos botões e dos `ActionIcon` continua com o afastamento do Mantine (2 px),
@@ -34,10 +39,14 @@ import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { paths } from '../../src/app/navigation';
 import { cssVariablesResolver, theme } from '../../src/app/theme';
 import { BeltFixedData } from '../../src/features/belts/BeltFixedData';
 import { mockBelts } from '../../src/mocks/data';
 import { Styles, loadStyles } from '../computedCss';
+import { installMockApi } from '../msw-server';
+import { renderApp } from '../render';
+import { setViewportWidth } from '../viewport';
 
 type Scheme = 'light' | 'dark';
 
@@ -85,6 +94,60 @@ function radiusOf(styles: Styles, target: Element): number {
 /** A size of the theme's radius scale, in px. */
 function themeRadius(styles: Styles, target: Element, size: MantineSize): number {
   return toPx(styles.resolve(target, `var(--mantine-radius-${size})`));
+}
+
+/** The corners in the order of the `border-radius` shorthand. */
+const CORNERS = ['top-left', 'top-right', 'bottom-right', 'bottom-left'] as const;
+
+type Corner = (typeof CORNERS)[number];
+
+/** Logical longhand of each corner, in a left-to-right page. */
+const LOGICAL_CORNER: Record<Corner, string> = {
+  'top-left': 'border-start-start-radius',
+  'top-right': 'border-start-end-radius',
+  'bottom-right': 'border-end-end-radius',
+  'bottom-left': 'border-end-start-radius',
+};
+
+/** Split at spaces outside parentheses: `calc(1rem * 1) 0` → two tokens. */
+function tokens(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of value.trim()) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (depth === 0 && /\s/.test(char)) {
+      if (current) parts.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+/**
+ * Radius of each corner (top-left, top-right, bottom-right, bottom-left) in px: for each one,
+ * whatever wins the cascade among the shorthand and that corner's longhands. Only the
+ * horizontal radius of the shorthand (before a `/`).
+ */
+function cornersOf(styles: Styles, target: Element): number[] {
+  return CORNERS.map((corner, index) => {
+    const winner = styles.declared(target, [
+      'border-radius',
+      `border-${corner}-radius`,
+      LOGICAL_CORNER[corner],
+    ]);
+    if (winner === null) throw new Error(`O elemento não tem raio no canto ${corner}.`);
+    const values = tokens(styles.resolve(target, winner.value));
+    if (winner.prop !== 'border-radius') return toPx(values[0] ?? '');
+    const slash = values.indexOf('/');
+    const horizontal = slash === -1 ? values : values.slice(0, slash);
+    const [a = '', b = a, c = a, d = b] = horizontal;
+    return toPx([a, b, c, d][index] ?? '');
+  });
 }
 
 /** A property that inherits (`font-weight`): the value on the element or its nearest ancestor. */
@@ -156,18 +219,117 @@ describe.each(SCHEMES)('pílula no tema %s (#166)', (scheme) => {
     expect(badge.getAttribute('style') ?? '').toMatch(/text-transform:\s*none/);
   });
 
-  it.each(['horizontal', 'vertical'] as const)('SegmentedControl %s', async (orientation) => {
+  it.each([
+    ['horizontal', false],
+    ['horizontal em largura total', true],
+  ] as const)('SegmentedControl %s', async (_name, fullWidth) => {
     renderInTheme(
       scheme,
       <SegmentedControl
         aria-label="Filtrar alunos"
-        orientation={orientation}
+        orientation="horizontal"
+        fullWidth={fullWidth}
         data={['Todos', 'Presentes']}
       />,
     );
     const root = element(document.querySelector('.mantine-SegmentedControl-root'), 'O seletor');
     const styles = await Styles.now();
     expect(radiusOf(styles, root)).toBe(themeRadius(styles, root, 'xl'));
+  });
+});
+
+/*
+ * § 6.7: no vertical, a pílula (32 px) é bem maior que a metade da altura de um item (uns
+ * 14 px); o trilho recorta e cortava o anel de foco do primeiro e do último item. Com `lg`, o
+ * trilho tem 16 px e os itens 12 px (16 menos os 4 px de padding do trilho): arcos
+ * concêntricos e o anel inteiro. A geometria do anel é medida pela regressão
+ * `166-anel-foco-segmentado-vertical-cortado`.
+ */
+describe.each(SCHEMES)('segmentado vertical no tema %s (#166, § 6.7)', (scheme) => {
+  function track(): HTMLElement {
+    return element(document.querySelector('.mantine-SegmentedControl-root'), 'O seletor');
+  }
+
+  it.each([false, true])('vertical com raio lg (fullWidth: %s)', async (fullWidth) => {
+    renderInTheme(
+      scheme,
+      <SegmentedControl
+        aria-label="Filtrar alunos"
+        orientation="vertical"
+        fullWidth={fullWidth}
+        data={['Todos', 'Presentes', 'Ausentes']}
+      />,
+    );
+    const root = track();
+    expect(root).toHaveAttribute('data-orientation', 'vertical');
+    const styles = await Styles.now();
+    expect(radiusOf(styles, root)).toBe(themeRadius(styles, root, 'lg'));
+    expect(radiusOf(styles, root)).toBe(16);
+  });
+
+  it('ao passar de horizontal para vertical (tela estreita) e de volta, o raio acompanha', async () => {
+    const control = (orientation: 'horizontal' | 'vertical') => (
+      <MantineProvider
+        theme={theme}
+        cssVariablesResolver={cssVariablesResolver}
+        forceColorScheme={scheme}
+      >
+        <SegmentedControl
+          aria-label="Filtrar alunos"
+          orientation={orientation}
+          data={['Todos', 'Presentes']}
+        />
+      </MantineProvider>
+    );
+    const { rerender } = render(control('horizontal'));
+    let styles = await Styles.now();
+    expect(radiusOf(styles, track())).toBe(themeRadius(styles, track(), 'xl'));
+
+    rerender(control('vertical'));
+    styles = await Styles.now();
+    expect(radiusOf(styles, track())).toBe(themeRadius(styles, track(), 'lg'));
+
+    rerender(control('horizontal'));
+    styles = await Styles.now();
+    expect(radiusOf(styles, track())).toBe(themeRadius(styles, track(), 'xl'));
+  });
+
+  it('um raio explícito no vertical continua valendo', async () => {
+    renderInTheme(
+      scheme,
+      <SegmentedControl
+        aria-label="Filtrar alunos"
+        orientation="vertical"
+        radius="md"
+        data={['Todos', 'Presentes']}
+      />,
+    );
+    const styles = await Styles.now();
+    expect(radiusOf(styles, track())).toBe(themeRadius(styles, track(), 'md'));
+  });
+});
+
+describe('filtro "Filtrar alunos" do Dia do exame (#166, § 6.3, § 6.7)', () => {
+  async function filterTrack(width: number): Promise<HTMLElement> {
+    installMockApi();
+    setViewportWidth(width);
+    await renderApp({ route: paths.examDay, signedInAs: 'examiner' });
+    const filters = await screen.findByRole('radiogroup', { name: 'Filtrar alunos' });
+    return element(filters.closest('.mantine-SegmentedControl-root') ?? filters, 'O filtro');
+  }
+
+  it('no notebook (1280 px) é horizontal e em pílula', async () => {
+    const root = await filterTrack(1280);
+    expect(root).toHaveAttribute('data-orientation', 'horizontal');
+    const styles = await Styles.now();
+    expect(radiusOf(styles, root)).toBe(themeRadius(styles, root, 'xl'));
+  });
+
+  it.each([390, 640])('a %i px é vertical, com raio lg', async (width) => {
+    const root = await filterTrack(width);
+    expect(root).toHaveAttribute('data-orientation', 'vertical');
+    const styles = await Styles.now();
+    expect(radiusOf(styles, root)).toBe(themeRadius(styles, root, 'lg'));
   });
 });
 
@@ -210,16 +372,77 @@ describe.each(SCHEMES)('raio lg das superfícies no tema %s (#166)', (scheme) =>
     expect(radiusOf(styles, dialog)).toBe(0);
   });
 
-  it.each(['bottom', 'left'] as const)('Drawer (%s)', async (position) => {
+  /*
+   * The side held to the edge of the screen stays square, like the summary bar and the
+   * full-screen dialog; `lg` only on the corners facing the page. Order: top-left, top-right,
+   * bottom-right, bottom-left. `L` stands for `lg`.
+   */
+  const L = 16;
+  it.each([
+    ['bottom', 'os de cima', 'bottom', [L, L, 0, 0]],
+    ['top', 'os de baixo', 'top', [0, 0, L, L]],
+    ['left', 'os da direita', 'left', [0, L, L, 0]],
+    ['right', 'os da esquerda', 'right', [L, 0, 0, L]],
+    ['sem position, à esquerda', 'os da direita', undefined, [0, L, L, 0]],
+  ] as const)(
+    'Drawer (%s): lg só nos cantos de fora, %s; 0 nos presos à borda',
+    async (_name, _outer, position, expected) => {
+      renderInTheme(
+        scheme,
+        <Drawer opened onClose={noop} title="Decidir o exame" position={position}>
+          Conteúdo da gaveta
+        </Drawer>,
+      );
+      const drawer = await screen.findByRole('dialog', { name: 'Decidir o exame' });
+      const styles = await Styles.now();
+      expect(themeRadius(styles, drawer, 'lg')).toBe(L);
+      expect(cornersOf(styles, drawer)).toEqual(expected);
+    },
+  );
+
+  it('Drawer "Decidir o exame" com a altura do resumo do exame: cantos de cima lg, de baixo 0', async () => {
+    // The same `styles` as `ExamSummary`: they add to the theme's, without undoing the corners.
     renderInTheme(
       scheme,
-      <Drawer opened onClose={noop} title="Decidir o exame" position={position}>
+      <Drawer
+        opened
+        onClose={noop}
+        title="Decidir o exame"
+        position="bottom"
+        styles={{ content: { height: 'auto', maxHeight: '90dvh' } }}
+      >
         Conteúdo da gaveta
       </Drawer>,
     );
     const drawer = await screen.findByRole('dialog', { name: 'Decidir o exame' });
     const styles = await Styles.now();
-    expect(radiusOf(styles, drawer)).toBe(16);
+    expect(cornersOf(styles, drawer)).toEqual([L, L, 0, 0]);
+  });
+
+  it('Drawer com raio explícito: o raio dado nos cantos de fora', async () => {
+    renderInTheme(
+      scheme,
+      <Drawer opened onClose={noop} title="Decidir o exame" position="bottom" radius="sm">
+        Conteúdo da gaveta
+      </Drawer>,
+    );
+    const drawer = await screen.findByRole('dialog', { name: 'Decidir o exame' });
+    const styles = await Styles.now();
+    const sm = themeRadius(styles, drawer, 'sm');
+    expect(sm).toBeGreaterThan(0);
+    expect(cornersOf(styles, drawer)).toEqual([sm, sm, 0, 0]);
+  });
+
+  it('Drawer solto das bordas (offset): os quatro cantos lg', async () => {
+    renderInTheme(
+      scheme,
+      <Drawer opened onClose={noop} title="Decidir o exame" position="bottom" offset={8}>
+        Conteúdo da gaveta
+      </Drawer>,
+    );
+    const drawer = await screen.findByRole('dialog', { name: 'Decidir o exame' });
+    const styles = await Styles.now();
+    expect(cornersOf(styles, drawer)).toEqual([L, L, L, L]);
   });
 
   it('painel "Dados da faixa" do diálogo de faixa (antes radius="sm")', async () => {

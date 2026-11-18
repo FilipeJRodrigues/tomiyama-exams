@@ -15,6 +15,7 @@ import {
   SegmentedControl,
   createTheme,
   darken,
+  getRadius,
   isVirtualColor,
   localStorageColorSchemeManager,
   luminance,
@@ -141,13 +142,43 @@ const SURFACE = 'var(--app-surface)';
 
 /*
  * Shapes (skill `tomiyama-design`, `components.md`): buttons, action icons, badges and
- * segmented controls are pills; cards, dialogs, drawers and panels have the large radius;
- * fields keep `defaultRadius` (`md`), since a pill-shaped text box looks odd. Only the
- * corners change: the height and the touch targets stay, and the focus ring follows the
- * rounded border with Mantine's 2 px offset.
+ * segmented controls are pills (a vertical segmented control takes the large radius, see
+ * below); cards, dialogs, drawers and panels have the large radius (a drawer only on the side
+ * away from the edge of the screen); fields keep `defaultRadius` (`md`), since a pill-shaped
+ * text box looks odd. Only the corners change: the height and the touch targets stay, and
+ * the focus ring follows the rounded border with Mantine's 2 px offset.
  */
 const PILL_RADIUS = 'xl';
 const SURFACE_RADIUS = 'lg';
+
+type DrawerPosition = 'top' | 'bottom' | 'left' | 'right';
+
+/**
+ * Corners of a drawer (`border-radius`: top-left, top-right, bottom-right, bottom-left). The
+ * side held to the edge of the screen stays square, like the summary bar and a full-screen
+ * dialog (rounded there, the corners show the overlay behind them, as in Edge); only the
+ * corners of the side facing the page take the drawer's radius. That radius is the one
+ * Mantine writes on the same element from the `radius` prop (`--paper-radius`, `lg` by
+ * default), so an explicit `radius` still wins. Physical corners, since the app is
+ * left-to-right only. With an `offset` the drawer floats off the edges: all four stay round.
+ */
+function drawerCorners(props: {
+  position?: DrawerPosition | undefined;
+  offset?: number | string | undefined;
+}): string | undefined {
+  if (props.offset !== undefined && props.offset !== 0 && props.offset !== '0') return undefined;
+  const r = 'var(--paper-radius)';
+  switch (props.position ?? 'left') {
+    case 'bottom':
+      return `${r} ${r} 0 0`;
+    case 'top':
+      return `0 0 ${r} ${r}`;
+    case 'left':
+      return `0 ${r} ${r} 0`;
+    case 'right':
+      return `${r} 0 0 ${r}`;
+  }
+}
 
 /**
  * Font of the page titles (`PageTitle`: the `h1` of a screen and its section `h2`) and, later,
@@ -202,8 +233,21 @@ export const theme = createTheme({
       styles: { root: { textTransform: 'none' } },
     }),
     // Pill like the buttons. The indicator of the chosen item is #173.
+    // § 6.7: a vertical one (the "Filtrar alunos" filter of the Dia do exame under 768 px) is
+    // far taller than its items. With the pill, the track's corners are 32 px while an item's
+    // shrink to half its height (about 14 px): the arcs stop being concentric and the track,
+    // which clips, cuts the focus ring of the first and last items at the corners. It takes
+    // `lg`, the radius of the surfaces: 16 px on the track, 16 - 4 = 12 px on the items (the
+    // track's padding is 4 px), concentric, with the 2 px ring inside the track. An explicit
+    // radius other than the pill stays as given.
     SegmentedControl: SegmentedControl.extend({
       defaultProps: { radius: PILL_RADIUS },
+      vars: (_theme, props) => ({
+        root:
+          props.orientation === 'vertical' && props.radius === PILL_RADIUS
+            ? { '--sc-radius': getRadius(SURFACE_RADIUS) }
+            : {},
+      }),
     }),
     // § 6.7: every control reachable by Tab, with a pt-BR name. The toggle announces its
     // state through `aria-pressed`, so the name stays the same when the password shows.
@@ -225,14 +269,18 @@ export const theme = createTheme({
     }),
     // The sticky header of dialogs and drawers paints its own background too. A full-screen
     // dialog (the phone) keeps square corners: Mantine sets them to 0 there. A drawer has no
-    // radius at all by default (Mantine passes 0 to its Paper), so it needs its own.
+    // radius at all by default (Mantine passes 0 to its Paper), so it needs its own, and only
+    // on the side away from the edge of the screen (see `drawerCorners`).
     Modal: Modal.extend({
       defaultProps: { radius: SURFACE_RADIUS },
       styles: { content: { backgroundColor: SURFACE }, header: { backgroundColor: SURFACE } },
     }),
     Drawer: Drawer.extend({
       defaultProps: { radius: SURFACE_RADIUS },
-      styles: { content: { backgroundColor: SURFACE }, header: { backgroundColor: SURFACE } },
+      styles: (_theme, props) => ({
+        content: { backgroundColor: SURFACE, borderRadius: drawerCorners(props) },
+        header: { backgroundColor: SURFACE },
+      }),
     }),
     AppShell: AppShell.extend({
       styles: { header: { backgroundColor: SURFACE }, navbar: { backgroundColor: SURFACE } },
