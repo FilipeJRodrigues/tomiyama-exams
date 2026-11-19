@@ -644,7 +644,7 @@ describe('marking the exam items (§ 6.4)', () => {
   });
 
   describe('"Só não marcados"', () => {
-    it('keeps a just-marked item in place until the tab or the filter changes', async () => {
+    it('keeps a just-marked item visible, at the end of its category, until the tab or the filter changes (#185)', async () => {
       const { user } = await openHelena();
       const filter = screen.getByRole('switch', { name: 'Só não marcados' });
       await user.click(filter);
