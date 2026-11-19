@@ -404,6 +404,25 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
 - Itens agrupados por categoria (com "x/N" por categoria); cada item mostra a descrição, a
   **resposta esperada** (texto secundário) e dois botões **Certo / Errado** (alvo de toque
   ≥ 44 px). Clicar salva **na hora** (atualização otimista; em erro, volta e avisa).
+- **Fila** *(decisão do responsável, 2026-11-19)*: o item marcado vai para o fim da categoria.
+  - ordem: em cada categoria, os itens em aberto primeiro e os marcados depois, cada parte na
+    ordem da ficha; a categoria com todos os itens marcados vai para o fim da aba (entre si,
+    as categorias seguem a ordem da ficha). Assim o topo da aba mostra um item em aberto
+    enquanto houver algum. A ordem depende só dos dados: fica igual depois de recarregar, e
+    a marcação de outro examinador move o item do mesmo jeito. Exame somente leitura fica
+    na ordem da ficha;
+  - tempo: o item marcado mostra a marcação no lugar por cerca de 1 s e então desliza para
+    o fim; com movimento reduzido, a troca é sem animação. Cada marcação recomeça a espera,
+    então marcações seguidas mantêm a lista parada até a última, e os itens se movem juntos.
+    A troca também espera a marcação ser salva: marcação recusada não move o item, e o item
+    do aviso de erro fica onde está até o aviso fechar;
+  - toque: na troca, um toque (não uma tecla) no Certo/Errado de um item que acabou de mudar
+    de lugar é ignorado por um instante, para não marcar o item errado;
+  - "Só não marcados": o item marcado continua visível, no fim da categoria, até trocar de
+    aba ou de filtro;
+  - teclado e leitor de tela: quando o item marcado pelo teclado muda de lugar, o foco vai
+    para o primeiro item em aberto (sem nenhum em aberto, fica onde estava); a mudança de
+    lugar dos itens marcados pelo examinador é anunciada ao leitor de tela.
 - **Resumo** (coluna fixa à direita no notebook; barra fixa no rodapé no celular, com botão
   "Decidir" que abre um painel): % teórico e % prático (grandes), barra de progresso de
   marcação, e:
