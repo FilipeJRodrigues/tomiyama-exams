@@ -1,0 +1,105 @@
+/*
+ * The whole student item opens the student (§ 6.2, card #184): the card on the phone and the
+ * table row from `sm` on. The name stays the item's only link (one Tab stop per student, the
+ * screen reader reads only the name, Ctrl+click and the middle button open a new tab); its
+ * click area is stretched over the item by a pseudo-element, with no `onClick` on the item.
+ */
+
+/*
+ * The item is the containing block of the stretched area (the card already is, in Mantine).
+ * The width and offset of its focus ring (below) are named here so the scroll margin of the
+ * name can count them.
+ */
+.studentItem {
+  position: relative;
+  --item-ring-width: 2px;
+  --item-ring-offset: rem(2px);
+}
+
+/*
+ * The click area of the name covers the item. Nothing between the link and the item is
+ * positioned, and nothing after it in the item either, so this box is the one on top
+ * everywhere in the item (`StudentsPage.item-link.test.tsx`).
+ */
+.studentLink::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+/*
+ * Focus ring around the whole item (§ 6.7), in the ring color of the theme and the width and
+ * offset of Mantine's ring. Drawn on the item itself: the card clips what is inside it
+ * (`overflow: hidden`), not its own outline. The name keeps its own ring too.
+ */
+.studentItem:has(.studentLink:focus-visible) {
+  outline: var(--item-ring-width) solid var(--app-focus-ring, var(--mantine-primary-color-filled));
+  outline-offset: var(--item-ring-offset);
+}
+
+/*
+ * The row's ring goes inside its edges: the table's scroll container would cut a ring drawn
+ * outside the row, at its left and right ends.
+ */
+.studentRow:has(.studentLink:focus-visible) {
+  outline-offset: -2px;
+}
+
+/*
+ * The whole item in view under the fixed header (§ 6.7, card #184). Going back with
+ * Shift+Tab, the browser scrolls the focused name to the top, `scroll-padding-top` below the
+ * header (`HEADER_SCROLL_PADDING`); the ring is drawn on the item, which starts above the
+ * name. The name's top scroll margin is that part of the item, so the item (ring included)
+ * lands where the name would, clear of the header.
+ *
+ * The same margin goes below the name: when the name was off the screen (Tab forward), the
+ * browser centers it with its margins, and an even pair keeps the name where it landed
+ * before; at the bottom edge it only shows more of the item.
+ *
+ * Card: its padding, the Paper border (Mantine's `rem(1px)`) and the ring outside it.
+ */
+.studentCard .studentLink {
+  scroll-margin-block: calc(
+    var(--card-padding) + rem(1px) + var(--item-ring-width) + var(--item-ring-offset)
+  );
+}
+
+/*
+ * Row: every cell at the top, so the row starts one cell padding above the name whatever its
+ * height (in the middle of a tall row, say a status in several lines, the part above the name
+ * grows with the row and no fixed margin covers it). The ring is inside the row, so it adds
+ * nothing above it. The header row keeps Mantine's alignment.
+ */
+.studentRow > th,
+.studentRow > td {
+  vertical-align: top;
+}
+
+.studentRow .studentLink {
+  scroll-margin-block: var(--table-vertical-spacing);
+}
+
+/*
+ * Hover of the card: the hover of the table rows (`highlightOnHover`, Mantine's
+ * `--table-hover-color`: gray.1 / dark.5), so both layouts answer the same way. The theme
+ * paints the card through an inline style (`Paper.extend`), hence `!important`. On a touch
+ * screen the card lights up while pressed, as the rows do.
+ */
+@media (hover: hover) {
+  .studentCard:hover {
+    background-color: light-dark(
+      var(--mantine-color-gray-1),
+      var(--mantine-color-dark-5)
+    ) !important;
+  }
+}
+
+@media (hover: none) {
+  .studentCard:active {
+    background-color: light-dark(
+      var(--mantine-color-gray-1),
+      var(--mantine-color-dark-5)
+    ) !important;
+  }
+}
