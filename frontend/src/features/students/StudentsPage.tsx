@@ -14,6 +14,7 @@ import { NOTICE_TEXTS, noticeOf } from './routeState';
 import { LoadError, LoadingState } from './screenStates';
 import { BeltCell, Field, StatusText } from './studentCells';
 import { ageLabel, dateLabel, nextExamLabel, studentStatus } from './studentText';
+import classes from './StudentsPage.module.css';
 import { useRetryFocus } from './useRetryFocus';
 
 const TITLE_ID = 'students-title';
@@ -54,11 +55,17 @@ function StudentsTable({ students, beltsById }: ListProps) {
         </Table.Thead>
         <Table.Tbody>
           {students.map((student) => (
-            <Table.Tr key={student.id}>
+            <Table.Tr key={student.id} className={`${classes.studentItem} ${classes.studentRow}`}>
               {/* The name is the row's only focus stop: the path to the edit form (§ 6.2),
-                  pinned by tests/features/students/StudentsPage.scroll-region.test.tsx. */}
+                  pinned by tests/features/students/StudentsPage.scroll-region.test.tsx. Its
+                  click area covers the whole row (StudentsPage.module.css, card #184). */}
               <Table.Th scope="row" fw={500}>
-                <Anchor component={Link} to={studentPath(student.id)} inherit>
+                <Anchor
+                  component={Link}
+                  to={studentPath(student.id)}
+                  inherit
+                  className={classes.studentLink}
+                >
                   {student.full_name}
                 </Anchor>
               </Table.Th>
@@ -91,9 +98,22 @@ function StudentsCards({ students, beltsById }: ListProps) {
       style={{ listStyle: 'none' }}
     >
       {students.map((student) => (
-        <Card key={student.id} component="li" withBorder padding="md">
+        <Card
+          key={student.id}
+          component="li"
+          withBorder
+          padding="md"
+          className={`${classes.studentItem} ${classes.studentCard}`}
+        >
+          {/* The name is the card's only link; its click area covers the whole card
+              (StudentsPage.module.css, card #184). */}
           <Title order={2} size="h4" mb="xs">
-            <Anchor component={Link} to={studentPath(student.id)} inherit>
+            <Anchor
+              component={Link}
+              to={studentPath(student.id)}
+              inherit
+              className={classes.studentLink}
+            >
               {student.full_name}
             </Anchor>
           </Title>
