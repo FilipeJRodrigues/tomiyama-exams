@@ -1,8 +1,9 @@
 /**
  * Computed colors in jsdom, for the contrast checks of § 6.7.
  *
- * The suite runs with `css: false` and jsdom does not resolve `var()`, so the tests cannot ask
- * `getComputedStyle` for the color of a focus ring or of a border. This reads the same CSS the
+ * The suite runs with CSS off (`test.css` in `vite.config.ts` lets only `?raw` imports through)
+ * and jsdom does not resolve `var()`, so the tests cannot ask `getComputedStyle` for the color
+ * of a focus ring or of a border. This reads the same CSS the
  * browser gets (Mantine's `styles.css`, every `.css` under `src/` through the project's
  * PostCSS plugins, and the `<style>` elements on the page, where `MantineProvider` writes the
  * theme variables) and works out the cascade for one element: matching rules (jsdom's
