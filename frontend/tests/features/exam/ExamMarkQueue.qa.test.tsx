@@ -4,7 +4,10 @@
  * evento encerrado no meio, "Tentar de novo" e API lenta (a troca espera a gravação), marcação
  * pelo teclado com "Só não marcados", troca de aba na espera, marcação de outro examinador fora
  * da espera (o toque logo depois também é ignorado), marcar e desmarcar na mesma espera,
- * desmarcar pelo teclado e as duas regiões ao vivo (percentuais e fila) na troca.
+ * desmarcar pelo teclado e as duas regiões ao vivo (percentuais e fila) na troca. Com o aviso de
+ * erro aberto (decisões de 2026-11-19): a marcação em outra aba também espera o aviso fechar,
+ * "Tentar de novo" pelo toque deixa o foco no item e fechar pelo teclado o aviso de uma marcação
+ * feita pelo teclado leva o foco ao primeiro item em aberto.
  *
  * Helena (evento aberto, Marrom, exame em andamento): Teórico — Vocabulário: Professor certo,
  * Parar não marcado; Histórico: Nome do fundador do Judô não marcado.
@@ -34,6 +37,7 @@ const ELIDA = '7d0c6a52-1f0e-4f9b-9a51-0a1b2c3d4e05';
 const ANSWER_URL = `${TEST_API_URL}/events/:id/exams/:studentId/answers/:requirementId`;
 const PARAR = mockRequirementId('Marrom', 6);
 const FOUNDER = mockRequirementId('Marrom', 7);
+const DEASHI = mockRequirementId('Marrom', 3);
 const FOUNDER_NAME = 'Nome do fundador do Judô';
 const SHEET_ORDER = ['Professor', 'Parar', FOUNDER_NAME];
 const THEORY_AT_START = ['Parar', 'Professor', FOUNDER_NAME];
@@ -376,6 +380,130 @@ describe('queue of the exam, beyond the card tests (§ 6.4, RN006, #185)', () =>
       // Saved before the test ends (a write still on its way would reach the next test's API).
       await passes(200);
       expect(answerOf(FOUNDER)?.correct).toBe(true);
+    });
+  });
+
+  describe('while a notice is open (decisions of 2026-11-19)', () => {
+    /** The clock goes on in steps of 10 ms until `done`, for at most 1 s. */
+    async function passesUntil(done: () => boolean) {
+      for (let step = 0; step < 100 && !done(); step += 1) await passes(10);
+    }
+
+    function tapIn(target: HTMLElement) {
+      act(() => {
+        target.focus();
+      });
+      fireEvent.click(target, { detail: 1 });
+    }
+
+    function pressIn(target: HTMLElement) {
+      act(() => {
+        target.focus();
+      });
+      fireEvent.click(target, { detail: 0 });
+    }
+
+    it('rn006 a mark in the other tab waits for the notice too, and is announced when it closes there', async () => {
+      server.use(
+        http.put(ANSWER_URL, ({ params }) =>
+          String(params.requirementId) === FOUNDER
+            ? HttpResponse.json({ message: 'Serviço indisponível' }, { status: 503 })
+            : undefined,
+        ),
+      );
+      await openHelena();
+      const live = screen.getByTestId('queue-live');
+      stopTheClock();
+      tap(`Certo: ${FOUNDER_NAME}`);
+      await passes(MOVE_DELAY_MS * 2);
+      await passesUntil(() => screen.queryByRole('alert') !== null);
+      const alert = screen.getByRole('alert');
+
+      fireEvent.click(screen.getByRole('tab', { name: /^Prático/ }));
+      const practice = ['Deashi barai', 'Osoto gari'];
+      expect(itemOrder().slice(0, 2)).toEqual(practice);
+      tap('Certo: Deashi barai');
+      await passes(MOVE_DELAY_MS * 2);
+      expect(pressed('Certo: Deashi barai')).toBe(true);
+      expect(answerOf(DEASHI)?.correct).toBe(true);
+      // Saved, and the wait is over: the notice still holds the list.
+      expect(itemOrder().slice(0, 2)).toEqual(practice);
+      expect(live).toBeEmptyDOMElement();
+
+      tapIn(within(alert).getByRole('button', { name: 'Fechar aviso' }));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(itemOrder().slice(0, 2)).toEqual(['Osoto gari', 'Deashi barai']);
+      expect(live).toHaveTextContent(
+        /^Deashi barai marcado como certo, movido para o fim de Naguewaza\.$/,
+      );
+    });
+
+    it('rn006 "Tentar de novo" with a tap: the item moves once saved, and the focus stays on it', async () => {
+      let busy = true;
+      server.use(
+        http.put(ANSWER_URL, () =>
+          busy
+            ? HttpResponse.json({ message: 'Serviço indisponível' }, { status: 503 })
+            : undefined,
+        ),
+      );
+      await openHelena();
+      const live = screen.getByTestId('queue-live');
+      stopTheClock();
+      tap('Certo: Parar');
+      await passes(MOVE_DELAY_MS * 2);
+      await passesUntil(() => screen.queryByRole('alert') !== null);
+      const alert = screen.getByRole('alert');
+      expect(itemOrder()).toEqual(THEORY_AT_START);
+
+      busy = false;
+      tapIn(within(alert).getByRole('button', { name: /^Tentar de novo/ }));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      await passes(200);
+      expect(answerOf(PARAR)?.correct).toBe(true);
+      expect(itemOrder()).toEqual(THEORY_AT_START);
+      await passes(MOVE_DELAY_MS);
+      expect(itemOrder()).toEqual(THEORY_AFTER_PARAR);
+      expect(live).toHaveTextContent(
+        /^Parar marcado como certo, movido para o fim de Vocabulário\. Categoria Vocabulário completa, movida para o fim da aba\.$/,
+      );
+      // A pointer: the focus stays on the item, now at the end of the tab.
+      expect(button('Certo: Parar')).toHaveFocus();
+    });
+
+    it('rn006 a keyboard mark saved after all: closing its notice by the keyboard sends the focus to the first open item', async () => {
+      // The API saves the mark, but the answer never comes back (network).
+      server.use(
+        http.put(ANSWER_URL, ({ params }) => {
+          if (answerOf(String(params.requirementId)) === undefined) {
+            db.answers.push({
+              exam_id: helenaExam().id,
+              requirement_id: String(params.requirementId),
+              correct: true,
+              marked_by: 'mock-examiner',
+              marked_at: '2026-11-21T13:40:00+00:00',
+            });
+          }
+          return HttpResponse.error();
+        }),
+      );
+      await openHelena();
+      const live = screen.getByTestId('queue-live');
+      stopTheClock();
+      press('Certo: Parar');
+      await passes(MOVE_DELAY_MS * 2);
+      await passesUntil(() => screen.queryByRole('alert') !== null && pressed('Certo: Parar'));
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent('Não foi possível confirmar a marcação de "Parar"');
+      expect(pressed('Certo: Parar')).toBe(true);
+      expect(itemOrder()).toEqual(THEORY_AT_START);
+      expect(live).toBeEmptyDOMElement();
+
+      pressIn(within(alert).getByRole('button', { name: 'Fechar aviso' }));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(itemOrder()).toEqual(THEORY_AFTER_PARAR);
+      expect(live).toHaveTextContent('Parar marcado como certo, movido para o fim de Vocabulário.');
+      expect(button(`Certo: ${FOUNDER_NAME}`)).toHaveFocus();
     });
   });
 

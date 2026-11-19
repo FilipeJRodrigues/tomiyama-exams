@@ -11,6 +11,8 @@
  * aviso, a mudança é anunciada como numa troca normal (§ 6.4 "Fila", teclado e leitor de tela;
  * decisão 4 do responsável, 2026-11-19: região ao vivo só para os itens que este examinador
  * marcou; § 6.7).
+ * O relógio avança em passos depois da última tentativa (2026-11-19): com um só avanço, a
+ * recarga que mostra a marcação salva às vezes chegava depois da conferência do teste.
  * Issue: #185
  */
 import { act, fireEvent, screen, within } from '@testing-library/react';
@@ -85,6 +87,17 @@ it('rn006 announces the move of a saved mark when its notice closes', async () =
   await act(async () => {
     await vi.advanceTimersByTimeAsync(MOVE_DELAY_MS * 2);
   });
+  // The last try is sent at the end of that time: its refusal and the reload after it come
+  // back while the clock goes on in steps of 10 ms (at most 1 s more, the notice still open),
+  // whatever the load of the machine. The checks below are the same with or without the steps.
+  const reloaded = () =>
+    screen.queryByRole('alert') !== null &&
+    screen.getByRole('button', { name: 'Certo: Parar' }).getAttribute('aria-pressed') === 'true';
+  for (let step = 0; step < 100 && !reloaded(); step += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+  }
   const alert = screen.getByRole('alert');
   expect(alert).toHaveTextContent('Não foi possível confirmar a marcação de "Parar"');
   // The reload shows it saved; it stays where the examiner left it while the notice is open.

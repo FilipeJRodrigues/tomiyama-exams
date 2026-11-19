@@ -7,13 +7,16 @@
  * a marcação dele foi recusada (e o aviso já disse isso). O item recusado entra no anúncio
  * porque continua na lista de marcações do examinador (`marked` em `useMarkQueue`) e mudou de
  * lugar junto com a categoria dele (`moveAnnouncement`).
- * Esperado: a região ao vivo fala só dos itens que este examinador marcou (decisão 4 do
- * responsável, 2026-11-19; § 6.4 "Fila"): anuncia "Parar" e a categoria que foi para o fim, e
- * não diz que o item da marcação recusada foi desmarcado (§ 6.7: o que se ouve é o que a tela
- * mostra).
+ * Esperado: a região ao vivo fala só dos itens que este examinador marcou e cuja marcação
+ * ficou (decisão 4 do responsável, 2026-11-19; § 6.4 "Fila"): anuncia "Parar" e a categoria
+ * que foi para o fim, e nunca diz que o item da marcação recusada foi desmarcado (§ 6.7: o que
+ * se ouve é o que a tela mostra). Enquanto o aviso está aberto, a lista inteira fica parada e
+ * nada é anunciado; a troca e o anúncio acontecem quando o aviso fecha (decisão do master de
+ * 2026-11-19 sobre a falha 4 do reteste; § 6.4 "Fila", tempo). Esta versão confere o anúncio
+ * no fechamento do aviso; a primeira o conferia com o aviso aberto, antes dessa decisão.
  * Issue: #185
  */
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -42,13 +45,23 @@ function itemOrder(): string[] {
     .map((group) => group.getAttribute('aria-label')!.replace('Marcação: ', ''));
 }
 
+function pressed(name: string): string | null {
+  return screen.getByRole('button', { name }).getAttribute('aria-pressed');
+}
+
 /** A finger tap: the button takes the focus and the click has `detail` 1. */
-function tap(name: string) {
-  const target = screen.getByRole('button', { name });
+function tap(target: HTMLElement) {
   act(() => {
     target.focus();
   });
   fireEvent.click(target, { detail: 1 });
+}
+
+/** `ms` go by on the clock: timers due run, and the answers of the API come back meanwhile. */
+async function passes(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
 }
 
 beforeEach(() => {
@@ -74,25 +87,33 @@ it('rn006 does not announce as unmarked an item whose mark was refused', async (
   const live = screen.getByTestId('queue-live');
 
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], now: Date.now() });
-  tap('Certo: Parar');
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(200);
-  });
-  tap(`Certo: ${FOUNDER_NAME}`);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(MOVE_DELAY_MS * 2);
-  });
+  tap(screen.getByRole('button', { name: 'Certo: Parar' }));
+  await passes(200);
+  tap(screen.getByRole('button', { name: `Certo: ${FOUNDER_NAME}` }));
+  await passes(MOVE_DELAY_MS * 2);
+  // The last try of the founder is sent at the end of that time: its refusal, and the reload
+  // after it (a 503 may have been saved), come back while the clock goes on in steps.
+  for (let step = 0; step < 100 && screen.queryByRole('alert') === null; step += 1) {
+    await passes(10);
+  }
+  await passes(100);
 
-  expect(screen.getByRole('alert')).toHaveTextContent(
-    `Não foi possível salvar a marcação de "${FOUNDER_NAME}"`,
-  );
-  expect(screen.getByRole('button', { name: `Certo: ${FOUNDER_NAME}` })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
-  // Parar was saved: Vocabulário, complete, went to the end of the tab.
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveTextContent(`Não foi possível salvar a marcação de "${FOUNDER_NAME}"`);
+  expect(pressed(`Certo: ${FOUNDER_NAME}`)).toBe('false');
+  expect(pressed('Certo: Parar')).toBe('true');
+  // The refused mark is never said to be unmarked, not even while its notice is open.
+  expect(live).not.toHaveTextContent('desmarcado');
+  // The notice is open: the whole list waits for it, and nothing is announced yet.
+  expect(itemOrder()).toEqual(['Parar', 'Professor', FOUNDER_NAME]);
+  expect(live).toBeEmptyDOMElement();
+
+  // The notice closes: Vocabulário (complete) goes to the end of the tab and Histórico, with
+  // the item of the refused mark, comes up. Only Parar and its category are announced.
+  tap(within(alert).getByRole('button', { name: 'Fechar aviso' }));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(itemOrder()).toEqual([FOUNDER_NAME, 'Professor', 'Parar']);
-  expect(live).toHaveTextContent('Parar marcado como certo, movido para o fim de Vocabulário.');
+  expect(pressed(`Certo: ${FOUNDER_NAME}`)).toBe('false');
   expect(live).not.toHaveTextContent('desmarcado');
   expect(live).toHaveTextContent(
     /^Parar marcado como certo, movido para o fim de Vocabulário\. Categoria Vocabulário completa, movida para o fim da aba\.$/,
