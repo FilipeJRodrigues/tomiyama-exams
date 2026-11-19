@@ -1,0 +1,25 @@
+/*
+ * Header of the signed-in area (skill `tomiyama-design`, `components.md`, "Cabeçalho e menu
+ * lateral"; § 6.7). Everything else in it comes from Mantine props in `AppLayout.tsx`.
+ */
+
+/*
+ * The name "Tomiyama" next to the logo leaves a narrow screen whole, instead of being cut to
+ * "To…" (decision of 2026-11-19). The brand stays in the logo, whose alternative text
+ * "Academia Tomiyama" the screen reader still reads.
+ *
+ * Below 22.5em, 360 px at the browser's default text size. Measured in Edge: in Barlow
+ * Condensed the name takes 80 px and fits next to the Tema and Sair buttons from 343 px, so
+ * from 360 px (the width of many Android phones) it is always whole. In `em`, like the
+ * breakpoints, so it follows the zoom (400% of a 1280 px notebook is 320 px) and the browser's
+ * text size, as the rem sizes of the header do.
+ *
+ * Before Barlow arrives (`font-display: swap`), the fallback fits from 351 px in Arial Narrow,
+ * but a plain sans-serif (a phone) needs 370 px: between 360 and 369 px it may show cut for
+ * that instant, which is why the name keeps `truncate="end"`.
+ */
+@mixin smaller-than 22.5em {
+  .name {
+    display: none;
+  }
+}

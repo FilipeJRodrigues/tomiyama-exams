@@ -5,8 +5,8 @@
  * - `--app-font-display` vem do tema, com a reserva `'Arial Narrow', sans-serif`.
  * - Só os títulos de página (`PageTitle`) usam a fonte, com peso 600 (o único arquivo
  *   carregado), sem caixa alta, sem `letter-spacing` e quebrando linha em vez de cortar: o
- *   `h1` de cada tela e os `h2` de seção ("Dados da academia", "Logos", "Histórico de exames",
- *   "Resumo").
+ *   `h1` de cada tela (inclusive o título do cartão das telas de entrada, etapa 3) e os `h2` de
+ *   seção ("Dados da academia", "Logos", "Histórico de exames", "Resumo").
  * - Ficam na fonte do sistema: títulos de cartão de lista (nome do aluno, do evento, da faixa,
  *   descrição do requisito), subtítulos `h3`–`h6` e títulos de diálogo.
  * - O nome "Tomiyama" no cabeçalho também usa a fonte de títulos (etapa 2), mas é texto, não
@@ -246,6 +246,17 @@ describe('a fonte vem do próprio site (#166, LGPD)', () => {
     eager: true,
   });
 
+  it('a varredura lê o texto de cada .css do src, inclusive dos módulos CSS', () => {
+    // With `css: false`, Vitest gave "" for `x.css?raw` and a Proxy for `x.module.css?raw`.
+    const css = Object.entries(SOURCES).filter(([path]) => path.endsWith('.css'));
+    expect(css.map(([path]) => path)).toContain('../../src/features/auth/AuthCard.module.css');
+    for (const [path, source] of css) {
+      expect(typeof source, path).toBe('string');
+      expect(source.trim(), path).not.toBe('');
+    }
+    expect(SOURCES['../../src/features/auth/AuthCard.module.css']).toContain('.screen {');
+  });
+
   it('main.tsx importa só o latin-600 da Barlow Condensed', () => {
     const fonts = [...main.matchAll(/import\s+'(@fontsource[^']*)'/g)].map((match) => match[1]);
     expect(fonts).toEqual(['@fontsource/barlow-condensed/latin-600.css']);
@@ -268,10 +279,10 @@ describe('a fonte vem do próprio site (#166, LGPD)', () => {
     expect(Object.keys(manifest.dependencies ?? {})).toContain('@fontsource/barlow-condensed');
   });
 
-  it('nenhum h1 fora do PageTitle, a não ser o das telas de entrada (etapa 3)', () => {
+  it('nenhum h1 fora do PageTitle', () => {
     const found = Object.entries(SOURCES)
       .filter(([, source]) => /<Title\b[^>]*\border=\{1\}/.test(source))
       .map(([path]) => path);
-    expect(found).toEqual(['../../src/features/auth/AuthCard.tsx']);
+    expect(found).toEqual([]);
   });
 });
