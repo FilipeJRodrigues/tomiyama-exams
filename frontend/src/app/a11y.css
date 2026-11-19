@@ -41,3 +41,36 @@
 .mantine-Switch-input:checked:not(:disabled):not([data-disabled]) + * > .mantine-Switch-thumb {
   --switch-thumb-bg: var(--mantine-color-primary-contrast, var(--mantine-color-white));
 }
+
+/*
+ * Side menu, every NavLink (skill `tomiyama-design`, "Cabeçalho e menu lateral"); the colors
+ * come from `NavLink.extend` and `cssVariablesResolver` in `theme.ts`.
+ *
+ * Hover of the items that are not the current page on `--app-nav-hover` (gray.0 / dark.5):
+ * Mantine's dark hover is dark.6, the color of the menu itself, and would not show. The
+ * current page takes the same hover from its own variable (`--nl-hover`).
+ */
+@media (hover: hover) {
+  .mantine-NavLink-root:not([data-active], [aria-current='page']):hover {
+    background-color: var(--app-nav-hover, var(--mantine-color-default-hover));
+  }
+}
+
+@media (hover: none) {
+  .mantine-NavLink-root:not([data-active], [aria-current='page']):active {
+    background-color: var(--app-nav-hover, var(--mantine-color-default-hover));
+  }
+}
+
+/*
+ * The current page (`aria-current="page"` from React Router, or Mantine's `active`) is not told
+ * by its color alone (§ 6.7): bold label, and a bar in the same color on its left edge. The
+ * bar is a border, which forced-colors mode keeps (a shadow or a painted pseudo-element would
+ * vanish there); the padding gives its width back, so the label does not move. The focus ring
+ * is drawn outside the border box, 2 px away, so the bar never covers it.
+ */
+.mantine-NavLink-root:is([data-active], [aria-current='page']) {
+  font-weight: 700;
+  border-inline-start: rem(4px) solid var(--nl-color);
+  padding-inline-start: calc(var(--mantine-spacing-sm) - rem(4px));
+}

@@ -8,8 +8,9 @@
  *   `h1` de cada tela e os `h2` de seção ("Dados da academia", "Logos", "Histórico de exames",
  *   "Resumo").
  * - Ficam na fonte do sistema: títulos de cartão de lista (nome do aluno, do evento, da faixa,
- *   descrição do requisito), subtítulos `h3`–`h6`, títulos de diálogo e o título do cabeçalho
- *   (este muda na etapa 2, com o logo).
+ *   descrição do requisito), subtítulos `h3`–`h6` e títulos de diálogo.
+ * - O nome "Tomiyama" no cabeçalho também usa a fonte de títulos (etapa 2), mas é texto, não
+ *   título: o cabeçalho não tem título nenhum.
  * - A fonte vem do próprio site: `main.tsx` importa só `latin-600` do
  *   `@fontsource/barlow-condensed`, e nada vem do Google Fonts (LGPD).
  */
@@ -132,16 +133,19 @@ describe('títulos de página nas telas (#166)', () => {
     );
   });
 
-  it('Alunos: o h1 na fonte de títulos e o título do cabeçalho na do sistema', async () => {
+  it('Alunos: o h1 na fonte de títulos; no cabeçalho, "Tomiyama" também, sem ser título', async () => {
     await renderApp({ route: paths.students, signedInAs: 'examiner' });
     const title = await screen.findByRole('heading', { level: 1, name: 'Alunos' });
     await screen.findByRole('table');
     const styles = await Styles.now();
     expectPageTitle(styles, title);
 
+    // Etapa 2: the header has no heading; the brand name is text in the display font.
     const banner = screen.getByRole('banner');
-    const header = within(banner).getByRole('heading', { name: 'Tomiyama Exams' });
-    expect(usesDisplayFont(styles, header)).toBe(false);
+    expect(within(banner).queryAllByRole('heading')).toEqual([]);
+    const brand = within(banner).getByText('Tomiyama');
+    expect(fontFamily(styles, brand)).toBe(STACK);
+    expect(inherited(styles, brand, 'font-weight')).toBe(String(DISPLAY_FONT_WEIGHT));
     expect(await displayHeadings()).toEqual(['Alunos']);
   });
 

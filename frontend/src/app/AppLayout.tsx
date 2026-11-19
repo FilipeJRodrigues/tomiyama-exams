@@ -5,10 +5,10 @@ import {
   Burger,
   Button,
   Group,
+  Image,
   NavLink,
   Stack,
   Text,
-  Title,
   useComputedColorScheme,
   useMantineColorScheme,
 } from '@mantine/core';
@@ -17,13 +17,59 @@ import { IconLogout, IconMoon, IconSun } from '@tabler/icons-react';
 import { useRef } from 'react';
 import { NavLink as RouterNavLink, Outlet, useNavigate } from 'react-router';
 
+import logo from '../assets/brand/tomiyama-logo-96.webp';
 import { ROLE_LABELS } from '../auth/types';
 import { useAuth } from '../auth/useAuth';
 import { HEADER_SCROLL_PADDING, useScrollPadding } from '../features/exam/focus';
 import { MOBILE_QUERY } from './breakpoints';
 import { navItemsFor, paths } from './navigation';
+import { DISPLAY_FONT_WEIGHT } from './theme';
 
 const NAV_ID = 'main-navigation';
+
+const NO_WRAP = { whiteSpace: 'nowrap' } as const;
+
+/** Shown at about 40 px; the file has 96 px, sharp on high-density screens (`logo.md`). */
+const LOGO_SIZE = 40;
+
+/**
+ * The brand at the left of the header (skill `tomiyama-design`, "Cabeçalho e menu lateral"):
+ * the round logo, "Tomiyama" in the display font and "Área de exames" in the secondary text,
+ * which leaves below `sm` (phone, 200% zoom). Neither is a heading: the first heading of the
+ * page is the `h1` of the screen.
+ *
+ * Everything fits from 343 px wide. Below that (320 px, 400% zoom) the name is the one thing
+ * that gives way, cut with an ellipsis, so the Tema and Sair buttons stay whole.
+ */
+function Brand() {
+  return (
+    <>
+      <Image
+        src={logo}
+        alt="Academia Tomiyama"
+        width={LOGO_SIZE}
+        height={LOGO_SIZE}
+        w={LOGO_SIZE}
+        h={LOGO_SIZE}
+        fit="contain"
+      />
+      <Group gap="xs" align="baseline" wrap="nowrap" miw={0}>
+        <Text
+          component="span"
+          ff="var(--app-font-display)"
+          fw={DISPLAY_FONT_WEIGHT}
+          fz="h3"
+          truncate="end"
+        >
+          Tomiyama
+        </Text>
+        <Text component="span" size="sm" c="dimmed" visibleFrom="sm" style={NO_WRAP}>
+          Área de exames
+        </Text>
+      </Group>
+    </>
+  );
+}
 
 function ColorSchemeToggle() {
   const { setColorScheme } = useMantineColorScheme();
@@ -83,7 +129,7 @@ export function AppLayout({ useMocks }: { useMocks: boolean }) {
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap" gap="sm">
-          <Group gap="sm" wrap="nowrap" miw={0}>
+          <Group gap="xs" wrap="nowrap" miw={0}>
             <Burger
               ref={burgerRef}
               opened={opened}
@@ -94,9 +140,7 @@ export function AppLayout({ useMocks }: { useMocks: boolean }) {
               aria-expanded={opened}
               aria-controls={NAV_ID}
             />
-            <Title order={2} size="h4" lineClamp={1}>
-              Tomiyama Exams
-            </Title>
+            <Brand />
             {useMocks && (
               <Badge variant="light" color="orange" visibleFrom="xs">
                 Dados simulados
@@ -104,7 +148,9 @@ export function AppLayout({ useMocks }: { useMocks: boolean }) {
             )}
           </Group>
           <Group gap="sm" wrap="nowrap">
-            <Text size="sm" visibleFrom="sm" lineClamp={1} maw={240}>
+            {/* Up to 180 px from `sm` to `md`, where the brand takes the room, and 240 px from
+                `md`; a longer e-mail is cut with an ellipsis. It is also in the menu. */}
+            <Text size="sm" visibleFrom="sm" truncate="end" maw={{ base: 180, md: 240 }}>
               {user.email}
             </Text>
             <ColorSchemeToggle />
