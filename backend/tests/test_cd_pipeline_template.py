@@ -224,7 +224,7 @@ def app() -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ pipeline
-def test_pipeline_is_v2_queued_and_never_starts_on_its_own(cd: dict[str, Any]) -> None:
+def test_pipeline_is_v2_queued_and_has_no_trigger(cd: dict[str, Any]) -> None:
     pipeline = cd["Resources"]["Pipeline"]["Properties"]
     source = _flat_actions(cd)[0]
 

@@ -226,16 +226,50 @@ Nome sugerido: `tomiyama-cd-dev`. Ele **não pode** começar com `tomiyama-dev-`
      --change-set-type CREATE --template-body file://cd-pipeline.yaml \
      --parameters "file://$PARAMS_FILE" \
      --capabilities CAPABILITY_NAMED_IAM --region us-east-2 --profile tomiyama
+   aws cloudformation wait change-set-create-complete --stack-name tomiyama-cd-dev \
+     --change-set-name criar --region us-east-2 --profile tomiyama
    aws cloudformation describe-change-set --stack-name tomiyama-cd-dev --change-set-name criar \
-     --region us-east-2 --profile tomiyama \
-     --query "Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType]" --output table
+     --region us-east-2 --profile tomiyama --output table \
+     --query "{Status: Status, StatusReason: StatusReason, Changes: Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement]}"
+   ```
+
+   O `create-change-set` só pede o change set. O CloudFormation o monta depois, e até lá ele fica em `CREATE_IN_PROGRESS`, sem a lista de mudanças e sem poder ser executado. O `wait change-set-create-complete` espera até ele ficar `CREATE_COMPLETE` e sai com erro se ele terminar `FAILED`. Confira o `Status` na tabela. Com `FAILED`, o motivo está no `StatusReason`: não execute; corrija a causa e apague o change set (`aws cloudformation delete-change-set --stack-name tomiyama-cd-dev --change-set-name criar --region us-east-2 --profile tomiyama`) antes de criá-lo de novo com o mesmo nome. Com `CREATE_COMPLETE`, confira a lista (na criação, toda linha é `Add`) e execute:
+
+   ```bash
    aws cloudformation execute-change-set --stack-name tomiyama-cd-dev --change-set-name criar \
      --region us-east-2 --profile tomiyama
    aws cloudformation wait stack-create-complete --stack-name tomiyama-cd-dev \
      --region us-east-2 --profile tomiyama
    ```
 
-Para mudar a stack de CD depois, siga o mesmo caminho com `--change-set-type UPDATE`. Ao ser criado, o pipeline inicia uma execução sozinho ([iniciar à mão](https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-rerun-manually.html)). Ela falha no `Source`, porque a conexão ainda está `PENDING`. É esperado e não mexe na stack do app. Atualizar a stack de CD não dispara execução (`RestartExecutionOnUpdate: false`).
+   Ao ser criado, o pipeline inicia uma execução sozinho ([iniciar à mão](https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-rerun-manually.html)). Ela falha no `Source`, porque a conexão ainda está `PENDING`. É esperado e não mexe na stack do app.
+
+4. Para mudar a stack de CD depois (um `cd-pipeline.yaml` novo ou outro valor de parâmetro), use um change set de update, com nome próprio (`atualizar`) e o mesmo arquivo de parâmetros do passo 2; se um valor mudou, edite o arquivo antes. Na raiz do repositório, crie o change set, espere e confira:
+
+   ```bash
+   cd infra
+   PARAMS_FILE="$(cygpath -m ~ 2>/dev/null || echo ~)/tomiyama-cd-dev.json"
+   aws cloudformation create-change-set --stack-name tomiyama-cd-dev --change-set-name atualizar \
+     --change-set-type UPDATE --template-body file://cd-pipeline.yaml \
+     --parameters "file://$PARAMS_FILE" \
+     --capabilities CAPABILITY_NAMED_IAM --region us-east-2 --profile tomiyama
+   aws cloudformation wait change-set-create-complete --stack-name tomiyama-cd-dev \
+     --change-set-name atualizar --region us-east-2 --profile tomiyama
+   aws cloudformation describe-change-set --stack-name tomiyama-cd-dev --change-set-name atualizar \
+     --region us-east-2 --profile tomiyama --output table \
+     --query "{Status: Status, StatusReason: StatusReason, Changes: Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement]}"
+   ```
+
+   Um change set sem mudanças (o mesmo template e os mesmos parâmetros da stack) termina `FAILED`, com o motivo, no `StatusReason`, de que não há mudanças. O waiter sai com erro, e não há o que executar. Apague-o como no passo 3 (com `--change-set-name atualizar`), para poder usar o nome de novo. Com `CREATE_COMPLETE`, confira a lista: espere `Modify` nos recursos que o PR mudou (numa mudança de permissões, o `CloudFormationExecutionRole` ou uma das políticas dele). Se a `GitHubConnection` aparecer com Replacement `True`, a conexão nova nasce `PENDING` e precisa ser concluída de novo (veja "Concluir a conexão no console"). Para ver o antes e o depois de cada propriedade, como o texto das políticas, acrescente `--include-property-values` ao `describe-change-set`, como em "Confira as mudanças de IAM". Então execute e espere o update:
+
+   ```bash
+   aws cloudformation execute-change-set --stack-name tomiyama-cd-dev --change-set-name atualizar \
+     --region us-east-2 --profile tomiyama
+   aws cloudformation wait stack-update-complete --stack-name tomiyama-cd-dev \
+     --region us-east-2 --profile tomiyama
+   ```
+
+   O `wait stack-update-complete` só termina bem em `UPDATE_COMPLETE` e sai com erro se o update falhar ou voltar (`UPDATE_ROLLBACK_COMPLETE`). Não use o `wait stack-create-complete` num update: ele conta como sucesso um update ainda em andamento, ou um que falhou e voltou. Atualizar a stack de CD não dispara execução (`RestartExecutionOnUpdate: false`).
 
 ### Concluir a conexão no console
 
