@@ -5,9 +5,15 @@
  * click area is stretched over the item by a pseudo-element, with no `onClick` on the item.
  */
 
-/* The item is the containing block of the stretched area (the card already is, in Mantine). */
+/*
+ * The item is the containing block of the stretched area (the card already is, in Mantine).
+ * The width and offset of its focus ring (below) are named here so the scroll margin of the
+ * name can count them.
+ */
 .studentItem {
   position: relative;
+  --item-ring-width: 2px;
+  --item-ring-offset: rem(2px);
 }
 
 /*
@@ -28,8 +34,8 @@
  * (`overflow: hidden`), not its own outline. The name keeps its own ring too.
  */
 .studentItem:has(.studentLink:focus-visible) {
-  outline: 2px solid var(--app-focus-ring, var(--mantine-primary-color-filled));
-  outline-offset: rem(2px);
+  outline: var(--item-ring-width) solid var(--app-focus-ring, var(--mantine-primary-color-filled));
+  outline-offset: var(--item-ring-offset);
 }
 
 /*
@@ -38,6 +44,40 @@
  */
 .studentRow:has(.studentLink:focus-visible) {
   outline-offset: -2px;
+}
+
+/*
+ * The whole item in view under the fixed header (§ 6.7, card #184). Going back with
+ * Shift+Tab, the browser scrolls the focused name to the top, `scroll-padding-top` below the
+ * header (`HEADER_SCROLL_PADDING`); the ring is drawn on the item, which starts above the
+ * name. The name's top scroll margin is that part of the item, so the item (ring included)
+ * lands where the name would, clear of the header.
+ *
+ * The same margin goes below the name: when the name was off the screen (Tab forward), the
+ * browser centers it with its margins, and an even pair keeps the name where it landed
+ * before; at the bottom edge it only shows more of the item.
+ *
+ * Card: its padding, the Paper border (Mantine's `rem(1px)`) and the ring outside it.
+ */
+.studentCard .studentLink {
+  scroll-margin-block: calc(
+    var(--card-padding) + rem(1px) + var(--item-ring-width) + var(--item-ring-offset)
+  );
+}
+
+/*
+ * Row: every cell at the top, so the row starts one cell padding above the name whatever its
+ * height (in the middle of a tall row, say a status in several lines, the part above the name
+ * grows with the row and no fixed margin covers it). The ring is inside the row, so it adds
+ * nothing above it. The header row keeps Mantine's alignment.
+ */
+.studentRow > th,
+.studentRow > td {
+  vertical-align: top;
+}
+
+.studentRow .studentLink {
+  scroll-margin-block: var(--table-vertical-spacing);
 }
 
 /*
