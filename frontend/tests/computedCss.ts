@@ -21,6 +21,10 @@
  * reads the page as a mouse over that element would leave it: `:hover` matches the element and
  * its ancestors, and `@media (hover: hover)` holds (`(hover: none)` does not). Without it,
  * nothing is hovered, as before.
+ *
+ * Pseudo-elements: a rule ending in `::before` or `::after` is another box, so it never counts
+ * for the element itself; `declared(element, props, { pseudo: '::after' })` reads that box (a
+ * stretched link, for instance). Other pseudo-elements (`::placeholder`...) are not read.
  */
 import postcss, { type AcceptedPlugin, type Container } from 'postcss';
 
@@ -44,6 +48,9 @@ interface Declaration {
   important: boolean;
 }
 
+/** The pseudo-elements `declared` can read (see the top of this file). */
+export type PseudoElement = '::before' | '::after';
+
 /** Marks the hovered element and its ancestors while a `Styles` reads them (see `now`). */
 const HOVER_ATTRIBUTE = 'data-computed-css-hover';
 
@@ -58,6 +65,8 @@ interface Entry {
   order: number;
   media: readonly string[];
   declarations: readonly Declaration[];
+  /** The box the rule styles: the element (null) or one of its pseudo-elements. */
+  pseudo: PseudoElement | null;
 }
 
 export type Rgb = readonly [number, number, number];
@@ -181,17 +190,21 @@ function collect(container: Container, media: readonly string[], out: Entry[]): 
     });
     if (declarations.length === 0) return;
     for (const raw of node.selectors) {
-      // Pseudo-elements are other boxes, not the element.
-      if (/::|:(before|after)\b/.test(raw)) continue;
+      // Pseudo-elements are other boxes, not the element: `::before`/`::after` at the end
+      // are kept for that box only; any other is not read.
+      const ending = /::?(before|after)$/.exec(raw.trim());
+      const own = ending ? raw.trim().slice(0, ending.index) : raw;
+      if (/::|:(before|after)\b/.test(own)) continue;
       out.push({
-        selector: raw
+        selector: (own === '' ? '*' : own)
           .replaceAll(':focus-visible', ':focus')
           .replaceAll(':hover', `[${HOVER_ATTRIBUTE}]`),
-        requiredClasses: subjectClasses(raw),
+        requiredClasses: subjectClasses(own),
         specificity: specificity(raw),
         order: out.length,
         media,
         declarations,
+        pseudo: ending?.[1] === 'before' ? '::before' : ending ? '::after' : null,
       });
     }
   });
@@ -286,7 +299,8 @@ interface Winner {
 export class Styles {
   private readonly entries: Entry[];
   private readonly hovering: boolean;
-  private readonly matched = new Map<Element, Entry[]>();
+  /** Rules that match, per box: the element ('') or a pseudo-element of it. */
+  private readonly matched = new Map<string, Map<Element, Entry[]>>();
 
   private constructor(entries: Entry[], hovering: boolean) {
     this.entries = entries;
@@ -321,10 +335,16 @@ export class Styles {
     return window.matchMedia(query).matches;
   }
 
-  private matching(element: Element): Entry[] {
-    const cached = this.matched.get(element);
+  private matching(element: Element, pseudo: PseudoElement | null = null): Entry[] {
+    let byElement = this.matched.get(pseudo ?? '');
+    if (!byElement) {
+      byElement = new Map();
+      this.matched.set(pseudo ?? '', byElement);
+    }
+    const cached = byElement.get(element);
     if (cached) return cached;
     const found = this.entries.filter((entry) => {
+      if (entry.pseudo !== pseudo) return false;
       if (!entry.requiredClasses.every((name) => element.classList.contains(name))) return false;
       if (!entry.media.every((query) => this.mediaMatches(query))) return false;
       try {
@@ -333,12 +353,20 @@ export class Styles {
         return false;
       }
     });
-    this.matched.set(element, found);
+    byElement.set(element, found);
     return found;
   }
 
-  /** The declaration that wins the cascade on the element, among the given properties. */
-  declared(element: Element, props: readonly string[]): Winner | null {
+  /**
+   * The declaration that wins the cascade on the element, among the given properties; with
+   * `pseudo`, on that pseudo-element of it (inline styles do not reach a pseudo-element).
+   */
+  declared(
+    element: Element,
+    props: readonly string[],
+    options: { pseudo?: PseudoElement } = {},
+  ): Winner | null {
+    const pseudo = options.pseudo ?? null;
     let best: (Winner & { rank: readonly [number, number, number, number] }) | null = null;
     const offer = (declaration: Declaration, inline: boolean, spec: number, order: number) => {
       if (!props.includes(declaration.prop)) return;
@@ -352,12 +380,12 @@ export class Styles {
       }
       best = { prop: declaration.prop, value: declaration.value, rank };
     };
-    for (const entry of this.matching(element)) {
+    for (const entry of this.matching(element, pseudo)) {
       for (const declaration of entry.declarations) {
         offer(declaration, false, entry.specificity, entry.order);
       }
     }
-    const inline = element.getAttribute('style');
+    const inline = pseudo === null ? element.getAttribute('style') : null;
     if (inline) {
       let order = 0;
       postcss.parse(`a{${inline}}`).walkDecls((declaration) => {
