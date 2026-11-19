@@ -1,0 +1,915 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Tomiyama Exams - esteira de deploy (CD) do backend: CodePipeline V2 + CodeBuild + CodeConnections,
+  com change set e aprovação manual. Stack separada da stack do app (card #68).
+
+# Why CodePipeline and not GitHub Actions: the managed SCP of this project denies
+# iam:*Provider*, so the GitHub OIDC provider cannot be created (see the
+# "Deploy pela esteira (CodePipeline)" section of backend/README.md and #177).
+#
+# Name this stack so it does NOT start with "<AppStackName>-" (suggested:
+# tomiyama-cd-dev). The CloudFormation execution role below may manage every
+# resource whose generated name starts with "<AppStackName>-"; the buckets of
+# this stack get names generated from this stack's name. The roles of this
+# stack live under the IAM path /cd/ (no hyphen), so no "role/<name>-*"
+# pattern can ever match them.
+#
+# That holds for the direct reach of the execution role only. Indirectly,
+# through the function roles, it is not isolated: the execution role writes
+# any inline policy on "role/<AppStackName>-*" (no permissions boundary) and
+# passes those roles to Lambda, so a function given broad permissions by a
+# commit on main (the SeedFunction, invoked by Custom::InitialData in the same
+# deploy, or any other later) could change any resource of this stack: its
+# roles and policies, its buckets, the build project (the buildspec and its
+# main check), the pipeline (the approval) and the use of the connection.
+# Every limit this file describes is a direct one. Accepted risk (decision
+# B, 2026-11-18): the same as a manual sam deploy with administrator
+# credentials, guarded by the review of the PR and of the change set. The
+# permissions boundary is card #179. See "Risco aceito: os papéis das
+# funções" in backend/README.md.
+
+Parameters:
+  AppStackName:
+    Type: String
+    Default: tomiyama-dev
+    # Lowercase only: S3 lowercases generated bucket names, and the execution
+    # role scopes S3 by "<AppStackName>-*". Up to 25 characters so the
+    # connection name (cd-<AppStackName>) fits the 32-character limit and the
+    # generated names keep the stack prefix.
+    AllowedPattern: "^[a-z][a-z0-9-]{0,24}$"
+    ConstraintDescription: minúsculas, números e hífen; começa com letra; até 25 caracteres.
+    Description: Nome da stack do app que a esteira atualiza (a mesma do sam deploy manual).
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Parâmetro Environment da stack do app.
+  AdminEmail:
+    Type: String
+    NoEcho: true
+    # No quotes, backslashes or spaces: the value goes into the JSON of ParameterOverrides.
+    AllowedPattern: '^[^"\\\s]+@[^"\\\s]+$'
+    # The longest address SMTP carries: 254 octets (RFC 5321, 4.5.3.1.3). See
+    # the size of ParameterOverrides in AllowedOrigin.
+    MaxLength: 254
+    ConstraintDescription: um e-mail de até 254 caracteres, sem aspas, barras invertidas ou espaços.
+    Description: >-
+      Parâmetro AdminEmail da stack do app. Use o valor atual da stack (describe-stacks): mudar
+      o e-mail substitui o examinador inicial.
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:5173
+    # ASCII only, no quotes, backslashes or spaces: the value goes into the JSON
+    # of ParameterOverrides, and the app accepts only lowercase ASCII origins.
+    AllowedPattern: "^[a-z0-9:/.,-]+$"
+    # Size of ParameterOverrides. CodePipeline takes at most 1,000 characters in
+    # an action configuration value (CodePipeline quotas), and at most 1 KB in
+    # the ParameterOverrides JSON (CloudFormation action reference). The JSON
+    # has 80 fixed characters, plus the four values:
+    #   Environment      4 ("prod")
+    #   AdminEmail     254 (MaxLength counts characters; the only value that
+    #                       may be non-ASCII, but no real address passes 254
+    #                       octets, so 254 bytes at most)
+    #   BudgetLimitUsd  10 (its AllowedPattern: up to 7 integer digits, a point
+    #                       and 2 decimals; ASCII)
+    #   AllowedOrigin  600 (this MaxLength; ASCII, one byte per character)
+    # 80 + 4 + 254 + 10 + 600 = 948 characters and 948 bytes: under 1,000 and
+    # under 1,024. Two origins (localhost and Amplify) take about 66 characters.
+    MaxLength: 600
+    ConstraintDescription: >-
+      origens separadas por vírgula, sem espaços, até 600 caracteres: letras minúsculas,
+      números e os caracteres : / . , -
+    Description: Parâmetro AllowedOrigin da stack do app (origens separadas por vírgula, sem espaços).
+  BudgetLimitUsd:
+    # String, not Number: ParameterOverrides passes every value as text, and
+    # the pattern bounds the size (see the count in AllowedOrigin). A Number
+    # takes neither AllowedPattern nor MaxLength. No sign: no negative value.
+    Type: String
+    Default: "1"
+    AllowedPattern: '^[0-9]{1,7}(\.[0-9]{1,2})?$'
+    ConstraintDescription: >-
+      valor em dólares com até 7 dígitos inteiros e até 2 casas decimais, separadas por ponto
+      (exemplos: 1, 12.5), sem sinal nem notação científica.
+    Description: Parâmetro BudgetLimitUsd da stack do app.
+  RepositoryId:
+    Type: String
+    Default: FilipeJRodrigues/tomiyama-exams
+    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    Description: Repositório do GitHub (dono/nome, com as maiúsculas certas).
+  BranchName:
+    Type: String
+    Default: main
+    AllowedPattern: "^[A-Za-z0-9._/-]+$"
+    Description: >-
+      Branch de onde sai todo deploy. O build só aceita commit da linha de primeiro pai dela
+      (merge de PR ou commit feito direto nela).
+  SamCliVersion:
+    Type: String
+    Default: 1.171.0
+    AllowedPattern: '^\d+\.\d+\.\d+$'
+    Description: Versão fixada do AWS SAM CLI instalada no build (pip).
+
+Resources:
+  # ------------------------------------------------------------- Connection
+  # Created PENDING; the owner completes it once in the console (Developer
+  # Tools > Settings > Connections > Update pending connection).
+  GitHubConnection:
+    Type: AWS::CodeConnections::Connection
+    Properties:
+      ConnectionName: !Sub cd-${AppStackName}
+      ProviderType: GitHub
+
+  # ---------------------------------------------------------------- Buckets
+  # Pipeline artifacts (the clone reference of the source and the packaged
+  # template). Short-lived: everything expires after 30 days.
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpirePipelineArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub ${ArtifactsBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # Lambda code uploaded by "sam package" (one zip per code version, keyed by
+  # its content hash). Kept on purpose: when a deploy fails, CloudFormation
+  # rolls the functions back to the previous package, so the package of the
+  # version in production must outlive the deploy that replaces it. An
+  # expiration here would turn a failed deploy after a long pause into
+  # UPDATE_ROLLBACK_FAILED. Each version is a few hundred KB.
+  PackagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  PackagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PackagesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt PackagesBucket.Arn
+              - !Sub ${PackagesBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ------------------------------------------------------------------ Build
+  # Build logs only (no student data): deleted with this stack.
+  BuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${AWS::StackName}
+      RetentionInDays: 30
+
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cd-${AppStackName}-build
+      Path: /cd/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                aws:SourceArn: !Sub arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${AWS::StackName}-build
+      Policies:
+        - PolicyName: build
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt BuildLogGroup.Arn
+              - Sid: PipelineArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                Resource: !Sub ${ArtifactsBucket.Arn}/*
+              - Sid: FunctionPackages
+                # sam package: HeadObject (s3:GetObject) to skip a package that is
+                # already there, PutObject for a new one.
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub ${PackagesBucket.Arn}/${AppStackName}/*
+              - Sid: BucketMetadata
+                Effect: Allow
+                Action:
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt ArtifactsBucket.Arn
+                  - !GetAtt PackagesBucket.Arn
+              # Full clone (CODEBUILD_CLONE_REF) and the "git fetch" of the
+              # main check use the connection, only for this repository. Both
+              # prefixes, as the CodePipeline connection action page asks.
+              - Sid: UseConnectionCodeConnections
+                Effect: Allow
+                Action: codeconnections:UseConnection
+                Resource: !GetAtt GitHubConnection.ConnectionArn
+                Condition:
+                  StringEquals:
+                    codeconnections:FullRepositoryId: !Ref RepositoryId
+              - Sid: UseConnectionCodeStarConnections
+                Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: !GetAtt GitHubConnection.ConnectionArn
+                Condition:
+                  StringEquals:
+                    codestar-connections:FullRepositoryId: !Ref RepositoryId
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${AWS::StackName}-build
+      Description: Confere que o commit está na linha principal do main, roda sam build e sam package.
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 20
+      QueuedTimeoutInMinutes: 60
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        # Smallest on-demand EC2 machine (arm1.small: 2 vCPU, 4 GiB), inside
+        # the CodeBuild free tier; the functions are arm64 too.
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux-aarch64-standard:4.0
+        EnvironmentVariables:
+          - Name: PACKAGES_BUCKET
+            Value: !Ref PackagesBucket
+          - Name: PACKAGES_PREFIX
+            Value: !Ref AppStackName
+          - Name: MAIN_BRANCH
+            Value: !Ref BranchName
+          - Name: SAM_CLI_VERSION
+            Value: !Ref SamCliVersion
+          - Name: SAM_CLI_TELEMETRY
+            Value: "0"
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref BuildLogGroup
+        S3Logs:
+          Status: DISABLED
+      Source:
+        Type: CODEPIPELINE
+        # Inline on purpose: the first deploy builds an old commit (c603913)
+        # that has no buildspec, and a buildspec in the repository would let
+        # any commit change what the build does, the commit check included.
+        # Here the check runs before any code of the commit; only then does
+        # "sam build" run with the commit's template and requirements. Changing
+        # the check takes a change to this stack, which a deploy could also make
+        # indirectly, through a function role (see the top of this file, #179).
+        # SOURCE_COMMIT comes from the pipeline (#{SourceVariables.CommitId}).
+        #
+        # The commit check runs in pre_build, before the SAM CLI is installed
+        # (build): a refused run stops there and spends no build minutes on pip.
+        # Only commits of the first-parent line of the main branch pass: the
+        # merge commit of a PR, or a commit made straight on main. A commit from
+        # inside a merged branch (a "wip" step that never had QA on its own) is
+        # in the history of main but not on that line, and is refused.
+        BuildSpec: |
+          version: 0.2
+          env:
+            shell: bash
+            git-credential-helper: yes
+          phases:
+            install:
+              runtime-versions:
+                python: "3.12"
+            pre_build:
+              commands:
+                - |
+                  set -eo pipefail
+                  COMMIT="$(git rev-parse HEAD)"
+                  echo "Commit escolhido: $COMMIT"
+                  if [ -n "$SOURCE_COMMIT" ] && ! [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+                    echo "ERRO: o clone está no commit $COMMIT, mas a execução pediu \"$SOURCE_COMMIT\", que não é o SHA completo de um commit (40 caracteres hexadecimais). Informe o SHA completo, que sai de git rev-parse $SOURCE_COMMIT, e rode a esteira com ele."
+                    exit 1
+                  fi
+                  if [ -n "$SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$COMMIT" ]; then
+                    echo "ERRO: o clone está no commit $COMMIT, mas a execução pediu $SOURCE_COMMIT. Rode a esteira de novo."
+                    exit 1
+                  fi
+                  if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+                    git fetch --quiet --unshallow origin
+                  fi
+                  if ! git fetch --quiet --no-tags origin "+refs/heads/$MAIN_BRANCH:refs/remotes/origin/$MAIN_BRANCH"; then
+                    echo "ERRO: não foi possível buscar o $MAIN_BRANCH no GitHub para conferir o commit. Confira se a conexão está disponível (AVAILABLE) e rode a esteira de novo."
+                    exit 1
+                  fi
+                  if ! git merge-base --is-ancestor "$COMMIT" "origin/$MAIN_BRANCH"; then
+                    echo "ERRO: o commit $COMMIT não está no histórico do $MAIN_BRANCH. A esteira só publica commits que já entraram no $MAIN_BRANCH por PR. Escolha o commit de merge do PR no $MAIN_BRANCH e rode de novo."
+                    exit 1
+                  fi
+                  # grep without -q reads the whole list: with pipefail, an early
+                  # exit would kill git rev-list (SIGPIPE) and refuse a good commit.
+                  if ! git rev-list --first-parent "origin/$MAIN_BRANCH" | grep -xF "$COMMIT" > /dev/null; then
+                    echo "ERRO: o commit $COMMIT está no histórico do $MAIN_BRANCH, mas veio de dentro de uma branch mesclada. A esteira só publica commits da linha principal do $MAIN_BRANCH: o commit de merge de um PR, ou um commit feito direto no $MAIN_BRANCH. Escolha o commit de merge do PR (git log --first-parent --oneline origin/$MAIN_BRANCH) e rode de novo."
+                    exit 1
+                  fi
+                  echo "OK: o commit $COMMIT está na linha principal do $MAIN_BRANCH (primeiro pai)."
+            build:
+              commands:
+                - python -m venv /tmp/sam-cli
+                - /tmp/sam-cli/bin/pip install --quiet --disable-pip-version-check "aws-sam-cli==$SAM_CLI_VERSION"
+                - /tmp/sam-cli/bin/sam --version
+                - |
+                  set -eo pipefail
+                  cd infra
+                  /tmp/sam-cli/bin/sam build --template-file template.yaml
+                  /tmp/sam-cli/bin/sam package \
+                    --template-file .aws-sam/build/template.yaml \
+                    --s3-bucket "$PACKAGES_BUCKET" \
+                    --s3-prefix "$PACKAGES_PREFIX" \
+                    --output-template-file "$CODEBUILD_SRC_DIR/packaged.yaml"
+          artifacts:
+            files:
+              - packaged.yaml
+
+  # ------------------------------------------- CloudFormation execution role
+  # The role CloudFormation uses for every operation on the app stack (the
+  # stack keeps it, manual "sam deploy" included). Trusts only CloudFormation.
+  # Permissions: the handler permissions of each resource type the app uses
+  # (CloudFormation resource schemas), only on the app's resources, minus
+  # features the app does not use (KMS keys, VPC, streams, replicas, imports)
+  # and minus data access: no DynamoDB item or S3 object action on the app's
+  # tables and images (student data, LGPD).
+  CloudFormationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cd-${AppStackName}-cfn-exec
+      Path: /cd/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+
+  # Customer managed policies (6,144 characters each) instead of inline ones:
+  # inline policies of a role share a 10,240-character quota.
+  ExecutionComputePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub cd-${AppStackName}-cfn-exec-compute
+      Path: /cd/
+      Roles:
+        - !Ref CloudFormationExecutionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # AWS::Lambda::Function, AWS::Lambda::Permission and
+          # AWS::Lambda::EventInvokeConfig, on the app's functions only
+          # (generated names "<AppStackName>-<LogicalId>-<suffix>").
+          - Sid: LambdaFunctions
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:DeleteFunction
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:PublishVersion
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+              - lambda:PutFunctionConcurrency
+              - lambda:DeleteFunctionConcurrency
+              - lambda:GetFunctionCodeSigningConfig
+              - lambda:GetRuntimeManagementConfig
+              - lambda:PutRuntimeManagementConfig
+              - lambda:GetFunctionRecursionConfig
+              - lambda:PutFunctionRecursionConfig
+              - lambda:GetFunctionScalingConfig
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+              - lambda:PutFunctionEventInvokeConfig
+              - lambda:UpdateFunctionEventInvokeConfig
+              - lambda:DeleteFunctionEventInvokeConfig
+              - lambda:GetFunctionEventInvokeConfig
+            Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AppStackName}-*
+          # Custom::InitialData: with a service role, CloudFormation invokes
+          # the ServiceToken with this role's credentials. Only the seed function.
+          - Sid: InvokeInitialDataFunction
+            Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AppStackName}-SeedFunction-*
+          # The function roles SAM generates ("<AppStackName>-<Function>Role-<suffix>").
+          # No permissions boundary: iam:PutRolePolicy writes any inline policy
+          # on them (accepted risk, see the top of this file and card #179).
+          - Sid: FunctionRoles
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              - iam:UpdateAssumeRolePolicy
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:ListRoleTags
+              - iam:PutRolePolicy
+              - iam:GetRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:ListRolePolicies
+              - iam:ListAttachedRolePolicies
+            Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
+          # SAM attaches only AWSLambdaBasicExecutionRole here; the execution role
+          # may attach no other managed policy (inline ones: see FunctionRoles).
+          - Sid: FunctionRolesManagedPolicy
+            Effect: Allow
+            Action:
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+            Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
+            Condition:
+              ArnEquals:
+                iam:PolicyARN: !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          - Sid: PassFunctionRolesToLambda
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
+            Condition:
+              StringEquals:
+                iam:PassedToService: lambda.amazonaws.com
+          # Lambda reads the code with the caller's credentials. The pipeline
+          # packages into PackagesBucket; a manual "sam deploy --resolve-s3
+          # --s3-prefix <AppStackName>" uses the SAM CLI managed bucket.
+          - Sid: ReadFunctionPackages
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !Sub ${PackagesBucket.Arn}/${AppStackName}/*
+              - !Sub arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default-samclisourcebucket-*/${AppStackName}/*
+          # Belt and braces: even if this stack's name started with
+          # "<AppStackName>-", the execution role could only read packages here.
+          # This Deny binds the execution role alone. With such a name, a function
+          # role given s3:DeleteBucket on "arn:aws:s3:::<AppStackName>-*" (a grant
+          # that looks app-only) would reach these buckets indirectly: accepted
+          # risk, see the top of this file and card #179.
+          - Sid: NeverManageTheCdBuckets
+            Effect: Deny
+            NotAction:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub ${ArtifactsBucket.Arn}/*
+              - !GetAtt PackagesBucket.Arn
+              - !Sub ${PackagesBucket.Arn}/*
+
+  ExecutionDataPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub cd-${AppStackName}-cfn-exec-data
+      Path: /cd/
+      Roles:
+        - !Ref CloudFormationExecutionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # AWS::DynamoDB::Table: control plane only, no item access.
+          - Sid: DynamoDBTables
+            Effect: Allow
+            Action:
+              - dynamodb:CreateTable
+              - dynamodb:DeleteTable
+              - dynamodb:DescribeTable
+              - dynamodb:UpdateTable
+              - dynamodb:DescribeContinuousBackups
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:DescribeTimeToLive
+              - dynamodb:UpdateTimeToLive
+              - dynamodb:DescribeContributorInsights
+              - dynamodb:UpdateContributorInsights
+              - dynamodb:DescribeKinesisStreamingDestination
+              - dynamodb:ListTagsOfResource
+              - dynamodb:TagResource
+              - dynamodb:UntagResource
+              - dynamodb:GetResourcePolicy
+            Resource:
+              - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AppStackName}-*
+              - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AppStackName}-*/index/*
+          # AWS::S3::Bucket and AWS::S3::BucketPolicy (ImagesBucket): bucket
+          # configuration only, never the objects (logos and signatures).
+          - Sid: S3Buckets
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:ListBucket
+              - s3:GetBucketAcl
+              - s3:PutBucketPublicAccessBlock
+              - s3:GetBucketPublicAccessBlock
+              - s3:PutEncryptionConfiguration
+              - s3:GetEncryptionConfiguration
+              - s3:PutBucketOwnershipControls
+              - s3:GetBucketOwnershipControls
+              - s3:PutBucketPolicy
+              - s3:GetBucketPolicy
+              - s3:DeleteBucketPolicy
+              - s3:PutBucketTagging
+              - s3:GetBucketTagging
+              - s3:TagResource
+              - s3:UntagResource
+              - s3:ListTagsForResource
+              - s3:GetAccelerateConfiguration
+              - s3:GetLifecycleConfiguration
+              - s3:GetAnalyticsConfiguration
+              - s3:GetBucketCORS
+              - s3:GetInventoryConfiguration
+              - s3:GetBucketLogging
+              - s3:GetMetricsConfiguration
+              - s3:GetBucketNotification
+              - s3:GetBucketVersioning
+              - s3:GetReplicationConfiguration
+              - s3:GetBucketWebsite
+              - s3:GetBucketObjectLockConfiguration
+              - s3:GetIntelligentTieringConfiguration
+              - s3:GetBucketAbac
+              - s3:GetBucketMetadataTableConfiguration
+            Resource: !Sub arn:${AWS::Partition}:s3:::${AppStackName}-*
+          # AWS::Logs::LogGroup: the functions' log group /aws/lambda/<AppStackName>.
+          - Sid: FunctionsLogGroup
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DeleteLogGroup
+              - logs:PutRetentionPolicy
+              - logs:DeleteRetentionPolicy
+              - logs:TagResource
+              - logs:UntagResource
+              - logs:ListTagsForResource
+              - logs:GetDataProtectionPolicy
+              - logs:DeleteDataProtectionPolicy
+            Resource:
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AppStackName}
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AppStackName}:*
+          # Read-only calls of the log group handler that have no resource-level
+          # permission in IAM (Service Authorization Reference: no resource type).
+          - Sid: LogsDescribeNoResourceLevel
+            Effect: Allow
+            Action:
+              - logs:DescribeLogGroups
+              - logs:DescribeIndexPolicies
+              - logs:DescribeResourcePolicies
+            Resource: "*"
+
+  ExecutionIdentityApiPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub cd-${AppStackName}-cfn-exec-identity-api
+      Path: /cd/
+      Roles:
+        - !Ref CloudFormationExecutionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # CreateUserPool has no resource-level permission in IAM (Service
+          # Authorization Reference: no resource type), hence "*".
+          - Sid: CognitoCreateUserPool
+            Effect: Allow
+            Action: cognito-idp:CreateUserPool
+            Resource: "*"
+          # User pool ids are random (<region>_<id>), so the pools of this
+          # account and Region: pool, client, groups, first examiner and
+          # memberships.
+          - Sid: CognitoUserPools
+            Effect: Allow
+            Action:
+              - cognito-idp:DescribeUserPool
+              - cognito-idp:UpdateUserPool
+              - cognito-idp:DeleteUserPool
+              - cognito-idp:SetUserPoolMfaConfig
+              - cognito-idp:GetUserPoolMfaConfig
+              - cognito-idp:AddCustomAttributes
+              - cognito-idp:TagResource
+              - cognito-idp:UntagResource
+              - cognito-idp:ListTagsForResource
+              - cognito-idp:CreateUserPoolClient
+              - cognito-idp:DescribeUserPoolClient
+              - cognito-idp:UpdateUserPoolClient
+              - cognito-idp:DeleteUserPoolClient
+              - cognito-idp:ListUserPoolClientSecrets
+              - cognito-idp:CreateGroup
+              - cognito-idp:GetGroup
+              - cognito-idp:UpdateGroup
+              - cognito-idp:DeleteGroup
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminDeleteUser
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminListGroupsForUser
+              - cognito-idp:AdminRemoveUserFromGroup
+            Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+          # AWS::Serverless::HttpApi becomes AWS::ApiGatewayV2::Api and
+          # ::Stage. API ids are random, so the HTTP APIs of this Region.
+          - Sid: HttpApi
+            Effect: Allow
+            Action:
+              - apigateway:GET
+              - apigateway:POST
+              - apigateway:PUT
+              - apigateway:PATCH
+              - apigateway:DELETE
+            Resource:
+              - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis
+              - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/*
+              - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/tags/*
+          # AWS::Budgets::Budget named "<AppStackName>-mensal".
+          - Sid: Budget
+            Effect: Allow
+            Action:
+              - budgets:ViewBudget
+              - budgets:ModifyBudget
+              - budgets:TagResource
+              - budgets:UntagResource
+              - budgets:ListTagsForResource
+            Resource: !Sub arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${AppStackName}-*
+
+  # --------------------------------------------------------------- Pipeline
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cd-${AppStackName}-pipeline
+      Path: /cd/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: PipelineArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                Resource: !Sub ${ArtifactsBucket.Arn}/*
+              - Sid: PipelineArtifactsBucket
+                Effect: Allow
+                Action:
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource: !GetAtt ArtifactsBucket.Arn
+              # Both prefixes: the connection action page asks for both.
+              - Sid: UseConnection
+                Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codestar-connections:UseConnection
+                Resource: !GetAtt GitHubConnection.ConnectionArn
+              - Sid: RunBuild
+                Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: !GetAtt BuildProject.Arn
+              # Change sets of the app stack only: no CreateStack, UpdateStack
+              # or DeleteStack. CreateChangeSet only when the request names the
+              # execution role (cloudformation:RoleArn, an ARN condition key of
+              # CreateChangeSet in the Service Authorization Reference): the
+              # pipeline cannot run the app stack with any other role.
+              - Sid: AppStackCreateChangeSet
+                Effect: Allow
+                Action: cloudformation:CreateChangeSet
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*
+                Condition:
+                  ArnEquals:
+                    cloudformation:RoleArn: !GetAtt CloudFormationExecutionRole.Arn
+              - Sid: AppStackChangeSets
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*
+              # The app template uses two transforms; CloudFormation checks
+              # CreateChangeSet against each transform ARN, with the caller's
+              # permissions (it impersonates the caller to run macros). No
+              # RoleArn condition here: this extra check alone creates nothing,
+              # and the change set itself needs AppStackCreateChangeSet.
+              - Sid: AppTemplateTransforms
+                Effect: Allow
+                Action: cloudformation:CreateChangeSet
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:aws:transform/LanguageExtensions
+              # The CloudFormation action asks for ValidateTemplate, which has
+              # no resource-level permission in IAM (no resource type), hence "*".
+              - Sid: ValidateTemplate
+                Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: PassExecutionRoleToCloudFormation
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Ref AWS::StackName
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      RestartExecutionOnUpdate: false
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        # No automatic start: DetectChanges false and no Triggers. Every run
+        # is started by hand (console "Release change" or
+        # start-pipeline-execution --source-revisions with the commit).
+        - Name: Source
+          Actions:
+            - Name: Source
+              Namespace: SourceVariables
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !GetAtt GitHubConnection.ConnectionArn
+                FullRepositoryId: !Ref RepositoryId
+                BranchName: !Ref BranchName
+                DetectChanges: "false"
+                OutputArtifactFormat: CODEBUILD_CLONE_REF
+              OutputArtifacts:
+                - Name: SourceOutput
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref BuildProject
+                EnvironmentVariables: '[{"name":"SOURCE_COMMIT","value":"#{SourceVariables.CommitId}","type":"PLAINTEXT"}]'
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+        # Change set, approval and execution in ONE stage: in QUEUED mode a
+        # stage is locked while an execution is inside it. In separate stages
+        # a second execution could replace the change set (same name) while
+        # the first one waits for approval, and the approved run would execute
+        # a change set nobody reviewed.
+        - Name: Deploy
+          Actions:
+            - Name: CreateChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Ref AppStackName
+                ChangeSetName: codepipeline-changeset
+                TemplatePath: BuildOutput::packaged.yaml
+                RoleArn: !GetAtt CloudFormationExecutionRole.Arn
+                Capabilities: CAPABILITY_IAM,CAPABILITY_AUTO_EXPAND
+                ParameterOverrides: !Sub >-
+                  {"Environment": "${Environment}", "AdminEmail": "${AdminEmail}",
+                  "AllowedOrigin": "${AllowedOrigin}", "BudgetLimitUsd": "${BudgetLimitUsd}"}
+              InputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+            - Name: ApproveChangeSet
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: "1"
+              Configuration:
+                CustomData: !Sub >-
+                  Commit #{SourceVariables.CommitId}. Antes de aprovar, abra o change set
+                  codepipeline-changeset da stack ${AppStackName} (CloudFormation > Stacks >
+                  ${AppStackName} > Conjuntos de alterações) e confira cada recurso; pare se
+                  UserPool ou uma tabela aparecer com Replacement True ou Conditional.
+                ExternalEntityLink: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudformation/home?region=${AWS::Region}#/stacks?filteringText=${AppStackName}
+              RunOrder: 2
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Ref AppStackName
+                ChangeSetName: codepipeline-changeset
+              RunOrder: 3
+
+Outputs:
+  PipelineName:
+    Description: Nome do pipeline (start-pipeline-execution --name).
+    Value: !Ref Pipeline
+  ConnectionArn:
+    Description: Conexão com o GitHub. Nasce PENDING; conclua no console.
+    Value: !GetAtt GitHubConnection.ConnectionArn
+  ArtifactsBucketName:
+    Description: Artefatos do pipeline (expiram em 30 dias). Esvazie antes de apagar a stack.
+    Value: !Ref ArtifactsBucket
+  PackagesBucketName:
+    Description: Pacotes das funções (sam package). Esvazie antes de apagar a stack.
+    Value: !Ref PackagesBucket
+  ExecutionRoleArn:
+    Description: Papel de serviço que o CloudFormation usa na stack do app.
+    Value: !GetAtt CloudFormationExecutionRole.Arn

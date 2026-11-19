@@ -140,6 +140,10 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Validar infra/template.yaml
         run: uv run --project backend --locked --python 3.12 cfn-lint infra/template.yaml
+      # Stack da esteira de deploy (CodePipeline, #68). O nome do job continua o mesmo:
+      # "Template SAM (cfn-lint)" é uma checagem obrigatória do main.
+      - name: Validar infra/cd-pipeline.yaml
+        run: uv run --project backend --locked --python 3.12 cfn-lint infra/cd-pipeline.yaml
 
   frontend:
     name: Frontend (lint, tipos, testes e build)

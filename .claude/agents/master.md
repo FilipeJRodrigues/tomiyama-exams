@@ -24,7 +24,7 @@ Você coordena o projeto Tomiyama Exams, o sistema de exames de graduação de J
    Tarefas grandes viram várias chamadas pequenas e sequenciais, cada uma revisada antes da próxima. Cada chamada cuida de uma tela ou de um assunto só (ex.: "lista de alunos", "formulário de aluno", "login real"); no `frontend`, isso vale sempre. O PR também sai em etapas: um PR por etapa revisada e aprovada pelo QA, em vez de um PR grande no fim.
 5. **Revisão.** O relatório do agente não é prova. Confira você mesmo:
    - leia o `git diff` inteiro;
-   - rode, em `backend/`: `uv run ruff format --check src tests scripts`, `uv run ruff check src tests scripts`, `uv run pytest -q` e `uv run cfn-lint ../infra/template.yaml`;
+   - rode, em `backend/`: `uv run ruff format --check src tests scripts`, `uv run ruff check src tests scripts`, `uv run pytest -q`, `uv run cfn-lint ../infra/template.yaml` e `uv run cfn-lint ../infra/cd-pipeline.yaml`;
    - confira se as camadas foram respeitadas (`handlers/` → `domain/` → `repository/`), se toda regra tem teste `test_rnXXX_*` e se rota nova entrou no `infra/template.yaml` e no `backend/README.md`;
    - se houver mudança em `frontend/`, rode lá os scripts de verificação do `package.json` (lint, `npm run typecheck`, testes e build; `npx tsc --noEmit` na raiz não confere nada) e confira textos em pt-BR, estados de tela e responsividade (§ 6.7);
    - em `fix/*`, confira se há teste novo em `backend/tests/regression/` ou `frontend/tests/regression/`;

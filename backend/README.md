@@ -1,7 +1,7 @@
 # Backend — exames de graduação de Judô
 
 Python 3.12 em AWS Lambda, DynamoDB (provisionado no dev, on-demand no prod), S3 (imagens, privado), Cognito e API Gateway (HTTP API).
-A infraestrutura fica em [`../infra/template.yaml`](../infra/template.yaml) (AWS SAM).
+A infraestrutura fica em [`../infra/template.yaml`](../infra/template.yaml) (AWS SAM), e a esteira de deploy em [`../infra/cd-pipeline.yaml`](../infra/cd-pipeline.yaml) (veja "Deploy pela esteira (CodePipeline)").
 
 ## Estrutura
 
@@ -79,9 +79,11 @@ O `<appid>` aparece no console do Amplify depois de criar o app. Na linha de com
 cd infra
 sam build
 sam deploy --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
-  --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --resolve-s3 \
+  --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --resolve-s3 --s3-prefix tomiyama-dev \
   --parameter-overrides Environment=dev AdminEmail=voce@example.com
 ```
+
+O `--s3-prefix tomiyama-dev` grava o código das funções no prefixo `tomiyama-dev/` do bucket gerenciado do SAM CLI. Depois do primeiro deploy pela esteira, a stack guarda o papel de execução dela, que só lê o código nesse prefixo; sem ele, o deploy falha com AccessDenied e a stack volta (veja "Papel guardado na stack e o `sam deploy` manual").
 
 Ou, com o arquivo de configuração: copie `infra/samconfig.example.toml` para `infra/samconfig.toml` (ignorado pelo git), troque o `AdminEmail` e rode `sam build --config-env dev` e `sam deploy --config-env dev`. Não versione e-mail real.
 
@@ -143,6 +145,185 @@ Também não aumentamos o `SeedVersion`: o `InitialData` rodaria em todo deploy 
 
 - **Rollback preso em `UPDATE_ROLLBACK_FAILED`.** Se um deploy desta versão falhar depois de a tabela começar a apagar o `by_belt`, o rollback automático tenta recriá-lo. Enquanto o DynamoDB ainda apaga o índice (`DELETING` no mesmo `describe-table` acima), a recriação pode ser recusada (uma operação de índice por vez) e a stack ficar em `UPDATE_ROLLBACK_FAILED`. Com cerca de 692 itens o risco é baixo; se acontecer, espere o `by_belt` sumir da lista do `describe-table` e retome com `aws cloudformation continue-update-rollback --stack-name <stack>`: o rollback recria o índice, com o backfill descrito acima. Não pule a tabela (`--resources-to-skip RequirementsTable`): a stack passaria a contar com um `by_belt` que a tabela não tem. Numa stack com o marcador v2, a API continua funcionando nesse meio-tempo (nem o código da 3a/3b nem o desta versão leem o `by_belt`), mas nenhum deploy novo é aceito até o rollback terminar.
 - **Limite diário de reduções de capacidade.** O DynamoDB limita quantas vezes por dia (UTC) a capacidade provisionada de uma tabela ou de um GSI pode ser **reduzida** (a cota vigente está em "Quotas in Amazon DynamoDB", seção "Decreasing provisioned throughput", na documentação do DynamoDB); aumentos não entram nessa conta. Esta transição mexe nas capacidades nos dois sentidos: no dev, o passo 1 reduz as de `Belts`, `Students`, `StudentsByOwner`, `Answers` e do `by_belt`, o passo 2 aumenta de volta as de `Students`, `StudentsByOwner` e `Answers`, e cada rollback inverte o sentido. Deploys e rollbacks repetidos no mesmo dia podem esbarrar nesse limite: a atualização da tabela é recusada com um erro de limite, cuja mensagem fala das reduções de throughput provisionado, e, se for durante um rollback, a stack fica em `UPDATE_ROLLBACK_FAILED`. Nesse caso, espere a cota liberar uma nova redução antes de repetir o deploy ou o `continue-update-rollback`, e evite alternar entre esta versão e a anterior várias vezes no mesmo dia. No prod (`PAY_PER_REQUEST`) não há capacidade provisionada, e esse limite não se aplica.
+
+## Deploy pela esteira (CodePipeline)
+
+O deploy do backend também roda dentro da AWS, pela stack de CD em [`../infra/cd-pipeline.yaml`](../infra/cd-pipeline.yaml): CodePipeline V2 no modo `QUEUED`, CodeBuild e uma conexão do CodeConnections com o GitHub. A esteira nunca começa sozinha. Cada execução é disparada à mão, com o commit escolhido, e nada muda na stack do app sem a aprovação manual do change set. O deploy manual da seção "Deploy" continua valendo (veja "Papel guardado na stack" abaixo). Os limites que esta seção descreve, da esteira e dos papéis dela, são os do alcance direto. Indiretamente, pelo papel de uma função, um deploy aprovado pode alcançar a esteira (veja "Risco aceito: os papéis das funções", card #179).
+
+### Por que não pelo GitHub Actions
+
+O desenho original fazia o deploy pelo GitHub Actions com OIDC. Esta conta é do novo AWS, e a SCP gerenciada `DenyIAMRestrictedActions`, tanto a do Free Tier quanto a do Paid Plan (nenhuma das duas pode ser alterada), nega `iam:*Provider*`, então não dá para criar o provedor OIDC do GitHub ([SCPs dos projetos](https://docs.aws.amazon.com/accounts/latest/reference/scps-and-rcps-for-projects.html)). Em 2026-11-18, o responsável decidiu fazer o CD dentro da AWS, com três serviços da lista do Free Tier ([serviços do novo AWS](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html)). É um desvio aprovado do documento de arquitetura, que punha o deploy em `.github/workflows/`. O GitHub Actions continua só com o CI. A alternativa com OIDC ficou registrada no card #177.
+
+### Como a esteira funciona
+
+| Estágio | Ação | O que faz |
+| --- | --- | --- |
+| `Source` | `CodeStarSourceConnection` | Usa `DetectChanges: false` (sem gatilho) e saída `CODEBUILD_CLONE_REF` (o build recebe um clone completo, com o histórico). |
+| `Build` | CodeBuild | Roda na menor máquina ARM (`BUILD_GENERAL1_SMALL`), com Python 3.12 e timeout de 20 min. Primeiro, na fase `pre_build`, confere o commit: a revisão pedida tem de ser um SHA completo (40 caracteres hexadecimais; se não for, falha com "… não é o SHA completo de um commit", e a mensagem mostra o `git rev-parse` a rodar), tem de estar no histórico do `main` (`git fetch` + `git merge-base --is-ancestor`; se não estiver, "o commit … não está no histórico do main") e na linha de primeiro pai dele (`git rev-list --first-parent`; se veio de dentro de uma branch mesclada, "o commit … veio de dentro de uma branch mesclada"). Só depois, na fase `build`, instala o SAM CLI na versão fixada (`SamCliVersion`, padrão `1.171.0`), roda `sam build` e `sam package` e entrega o `packaged.yaml`. Uma execução recusada para na `pre_build` e não gasta minutos instalando o SAM CLI. |
+| `Deploy` (1) | `CHANGE_SET_REPLACE` | Cria o change set `codepipeline-changeset` na stack do app, com o papel de execução e `CAPABILITY_IAM,CAPABILITY_AUTO_EXPAND`. |
+| `Deploy` (2) | aprovação manual | Mostra o commit e um link para a stack no console do CloudFormation. |
+| `Deploy` (3) | `CHANGE_SET_EXECUTE` | Executa o mesmo change set. |
+
+- **O buildspec fica dentro do template, não no repositório.** O primeiro deploy constrói um commit antigo, que não tem buildspec. Além disso, o build não lê buildspec do commit, e a conferência do commit roda antes de qualquer código dele (só depois o `sam build` roda com o template e as dependências do commit): mudar a conferência exige mudar a stack de CD. A exceção é o caminho indireto de "Risco aceito: os papéis das funções", abaixo (card #179).
+- **A conferência do `main` é obrigatória.** A troca de revisão `COMMIT_ID` aceita qualquer commit do repositório, de qualquer branch ([source revision override](https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-trigger-source-overrides.html)). Só sai deploy de commit da **linha de primeiro pai** do `main`: o commit de merge de um PR, ou um commit feito direto no `main`. Os commits de dentro de uma branch mesclada também estão no histórico do `main`, mas nunca passaram sozinhos pelo QA (os passos "wip … ainda sem o veredito", por exemplo), então são recusados. Para ver os commits que a esteira aceita: `git log --first-parent --oneline origin/main`.
+- **As três ações do `Deploy` ficam no mesmo estágio, de propósito.** No modo `QUEUED`, um estágio fica travado enquanto há uma execução nele, e as outras esperam na entrada ([execuções em QUEUED](https://docs.aws.amazon.com/codepipeline/latest/userguide/concepts-how-it-works.html)). Com a aprovação num estágio separado, uma segunda execução poderia trocar o change set (o nome é o mesmo) enquanto a primeira espera, e a aprovação executaria um change set que ninguém conferiu.
+
+A stack de CD cria:
+
+- a conexão `cd-<AppStackName>`, que nasce `PENDING`;
+- o bucket de artefatos do pipeline: privado, SSE-S3, só TLS, com os objetos expirando em 30 dias. O CodePipeline grava os artefatos com a chave `aws/s3`, gerenciada pela AWS, que não tem custo mensal ([ArtifactStore](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-codepipeline-pipeline-artifactstore.html));
+- o bucket de pacotes das funções, onde o `sam package` grava o código: privado, SSE-S3, só TLS. **Os pacotes não expiram.** Quando um deploy falha, o CloudFormation volta as funções ao pacote anterior, que precisa existir mesmo que tenha sido enviado há meses. Com expiração, um deploy que falhasse depois de uma pausa longa deixaria a stack em `UPDATE_ROLLBACK_FAILED`. Uma regra só para os artefatos do pipeline num bucket único não funciona: no S3 vale a expiração mais curta entre regras que se sobrepõem ([conflitos de ciclo de vida](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-conflicts.html)), e a pasta que o CodePipeline cria tem o nome do pipeline encurtado, sem formato documentado ([solução de problemas](https://docs.aws.amazon.com/codepipeline/latest/userguide/troubleshooting.html)). Cada versão do código tem algumas centenas de KB;
+- o log group `/aws/codebuild/<stack de CD>`, com retenção de 30 dias;
+- três papéis no caminho IAM `/cd/` (`cd-<AppStackName>-pipeline`, `-build` e `-cfn-exec`) e as três políticas gerenciadas do papel de execução.
+
+### Papéis e permissões
+
+- **Pipeline** (confia só em `codepipeline.amazonaws.com`): bucket de artefatos, uso da conexão, `StartBuild`/`BatchGetBuilds` só no projeto, operações de change set e leitura só na stack do app (sem `CreateStack`, `UpdateStack` nem `DeleteStack`). O `CreateChangeSet` na stack do app exige o papel de execução (condição `cloudformation:RoleArn`, chave do tipo ARN dessa ação na [referência de autorização](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudformation.html)): o pipeline não cria change set com outro papel, nem sem papel. Tem ainda `CreateChangeSet` nas transforms `Serverless-2016-10-31` e `LanguageExtensions` e `iam:PassRole` só do papel de execução, com `iam:PassedToService = cloudformation.amazonaws.com`. As transforms entram neste papel porque o CloudFormation confere o `CreateChangeSet` contra o ARN de cada transform ([IAM do CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/control-access-with-iam.html)) e roda as macros com as permissões de quem chama ([macros](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-macros-overview.html)).
+- **Build** (confia só em `codebuild.amazonaws.com`, e só para o próprio projeto): logs no próprio log group, bucket de artefatos, prefixo `<AppStackName>/` do bucket de pacotes e uso da conexão só neste repositório. Não tem permissão de CloudFormation nem de IAM.
+- **Execução do CloudFormation** (confia só em `cloudformation.amazonaws.com`): o que os handlers dos tipos de recurso do app pedem, só nos recursos da stack do app, cujos nomes gerados começam com `<AppStackName>-`. Isso cobre as funções, os papéis das funções (das políticas gerenciadas, só pode anexar a `AWSLambdaBasicExecutionRole`, mas grava qualquer política inline; o `iam:PassRole` vale só para a Lambda), as tabelas, o bucket de imagens, o log group das funções e o orçamento. Pools do Cognito e HTTP APIs têm IDs aleatórios, então a permissão vale para os da conta e da região. O papel invoca só a `SeedFunction`: com papel de serviço, o CloudFormation usa as credenciais dele em toda operação ([papel de serviço](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)), inclusive a invocação do `Custom::InitialData`. **O papel não lê dados**: nem itens do DynamoDB nem objetos do bucket de imagens (LGPD). `"*"` aparece só onde o IAM não tem permissão por recurso: `cognito-idp:CreateUserPool`, `logs:DescribeLogGroups`, `logs:DescribeIndexPolicies`, `logs:DescribeResourcePolicies` e, no papel do pipeline, `cloudformation:ValidateTemplate`.
+
+Os papéis da stack de CD ficam no caminho `/cd/`, que não tem hífen. Um ARN `role/cd/...` nunca casa com `role/<stack>-*`, então as permissões de IAM do papel de execução não alcançam diretamente os papéis da esteira, nem o próprio papel de execução. Indiretamente, pelo papel de uma função, alcançam: é o risco aceito descrito em "Risco aceito: os papéis das funções", logo abaixo, e o permissions boundary que fecharia esse caminho ficou no card #179. O `tests/test_cd_pipeline_template.py` confere só o alcance direto (o padrão do ARN), não o indireto. Ele também falha quando o `infra/template.yaml` passar a usar um tipo de recurso que o papel de execução não cobre. Para ver o que o SAM gera, ele transforma o template do app sem rede e sem a AWS, como o CloudFormation faz (`AWS::LanguageExtensions` pelo cfn-lint, depois a transform do SAM pelo `aws-sam-translator`, dependência de desenvolvimento): pega os tipos que nascem das funções (a regra de um evento `Schedule`, o `AWS::Lambda::Url` de um `FunctionUrlConfig`, a versão e o alias de um `AutoPublishAlias`, o mapeamento de um evento `SQS`) e as políticas gerenciadas que o SAM anexa aos papéis delas (`AWSXrayWriteOnlyAccess` com `Tracing`, por exemplo), que o papel de execução só anexa se estiverem na condição `iam:PolicyARN`. Nesses casos, amplie o papel antes do deploy.
+
+### Risco aceito: os papéis das funções
+
+O papel de execução (`cd-<AppStackName>-cfn-exec`) cria os papéis das funções e grava neles qualquer política inline: `iam:CreateRole` e `iam:PutRolePolicy` valem em todo `role/<AppStackName>-*`, sem permissions boundary, e a condição `iam:PolicyARN` só limita as políticas gerenciadas. Depois, ele entrega esses papéis à Lambda (`iam:PassRole`). Por isso, um commit no `main` que dê permissões amplas ao papel de uma função (`iam:*` em `*` já basta, porque com ela a função se dá qualquer outra) deixaria essa função alcançar indiretamente o que o papel de execução não alcança direto: ela poderia alterar os papéis da esteira (`role/cd/...`, inclusive o próprio `cd-<AppStackName>-cfn-exec`), apagar os buckets dela ou mudar o projeto do CodeBuild e o pipeline. Essa função pode ser a `SeedFunction`, que o CloudFormation invoca no `Custom::InitialData` durante a execução do mesmo change set, ou qualquer outra, invocada depois pela API.
+
+Em 2026-11-18, o responsável aceitou esse risco (decisão B). Ele é o mesmo do `sam deploy` manual com credencial de administrador, que também grava qualquer política. A proteção é a revisão do PR e a do change set (veja "Confira as mudanças de IAM", em "Rodar escolhendo o commit"). O permissions boundary nos papéis das funções, que fecharia esse caminho, ficou no card #179.
+
+### Criar a stack de CD
+
+Nome sugerido: `tomiyama-cd-dev`. Ele **não pode** começar com `tomiyama-dev-`, o prefixo da stack do app: os buckets da stack de CD ganham nomes derivados dele e cairiam no escopo do papel de execução. A política do papel de execução nega mesmo assim (`NeverManageTheCdBuckets`), mas não conte com isso: a negação vale só para esse papel. Com esse nome, uma política inline com `s3:DeleteBucket` em `arn:aws:s3:::tomiyama-dev-*` no papel de uma função, que parece mexer só no app, alcançaria indiretamente os buckets da esteira (veja "Risco aceito: os papéis das funções", card #179). Perto do limite de gastos (spend limit), a SCP da AWS também nega criar stacks, projetos do CodeBuild e pipelines.
+
+1. Leia os parâmetros atuais da stack do app, para o primeiro change set não mudar nada no app:
+
+   ```bash
+   aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
+     --query "Stacks[0].Parameters" --output table
+   ```
+
+2. Copie esses valores para um arquivo **fora do repositório** (ele tem o e-mail real): `tomiyama-cd-dev.json`, na sua pasta pessoal (`~`):
+
+   ```json
+   [
+     {"ParameterKey": "AppStackName", "ParameterValue": "tomiyama-dev"},
+     {"ParameterKey": "Environment", "ParameterValue": "dev"},
+     {"ParameterKey": "AdminEmail", "ParameterValue": "voce@example.com"},
+     {"ParameterKey": "AllowedOrigin", "ParameterValue": "http://localhost:5173,https://main.<appid>.amplifyapp.com"},
+     {"ParameterKey": "BudgetLimitUsd", "ParameterValue": "1"}
+   ]
+   ```
+
+   `AdminEmail` é `NoEcho` na stack de CD, mas o valor fica visível na definição do pipeline (o `ParameterOverrides` da ação), para quem tem acesso à conta.
+
+   O `ParameterOverrides` cabe no limite do CodePipeline (1.000 caracteres por valor de configuração e 1 KB no JSON) porque a stack de CD aceita `AdminEmail` com até 254 caracteres, `AllowedOrigin` com até 600, só com minúsculas, números e `: / . , -`, e `BudgetLimitUsd` com até 10 (até 7 dígitos inteiros e 2 casas decimais, separadas por ponto, como `12.5`; sem sinal nem notação científica). A conta está no comentário do `AllowedOrigin`, em `infra/cd-pipeline.yaml`. Duas origens (localhost e Amplify) ocupam cerca de 66.
+
+3. Crie a stack por change set, confira e execute. `CAPABILITY_NAMED_IAM`: os papéis e as políticas têm nome fixo. A CLI do Windows não entende os caminhos do Git Bash (`/c/Users/...`), então `file://$HOME/...` não acha o arquivo lá. A linha `PARAMS_FILE=` monta um caminho que funciona nos dois: no Git Bash, o `cygpath -m` dá `C:/Users/...`; no Linux, no macOS e no WSL, onde o `cygpath` não existe, vale o `~`.
+
+   ```bash
+   cd infra
+   PARAMS_FILE="$(cygpath -m ~ 2>/dev/null || echo ~)/tomiyama-cd-dev.json"
+   aws cloudformation create-change-set --stack-name tomiyama-cd-dev --change-set-name criar \
+     --change-set-type CREATE --template-body file://cd-pipeline.yaml \
+     --parameters "file://$PARAMS_FILE" \
+     --capabilities CAPABILITY_NAMED_IAM --region us-east-2 --profile tomiyama
+   aws cloudformation describe-change-set --stack-name tomiyama-cd-dev --change-set-name criar \
+     --region us-east-2 --profile tomiyama \
+     --query "Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType]" --output table
+   aws cloudformation execute-change-set --stack-name tomiyama-cd-dev --change-set-name criar \
+     --region us-east-2 --profile tomiyama
+   aws cloudformation wait stack-create-complete --stack-name tomiyama-cd-dev \
+     --region us-east-2 --profile tomiyama
+   ```
+
+Para mudar a stack de CD depois, siga o mesmo caminho com `--change-set-type UPDATE`. Ao ser criado, o pipeline inicia uma execução sozinho ([iniciar à mão](https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-rerun-manually.html)). Ela falha no `Source`, porque a conexão ainda está `PENDING`. É esperado e não mexe na stack do app. Atualizar a stack de CD não dispara execução (`RestartExecutionOnUpdate: false`).
+
+### Concluir a conexão no console
+
+Uma conexão criada pelo CloudFormation nasce `PENDING`, e só o console a completa ([AWS::CodeConnections::Connection](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-codeconnections-connection.html), [atualizar uma conexão pendente](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections-update.html)).
+
+1. No console, na região us-east-2, abra Developer Tools > Settings > Connections (https://console.aws.amazon.com/codesuite/settings/connections).
+2. Escolha `cd-tomiyama-dev` (status Pending) e depois **Update pending connection**.
+3. Instale o app **AWS Connector for GitHub** na conta dona do repositório, ou escolha a instalação que já existe. Em Repository access, prefira **Only select repositories** e marque só `tomiyama-exams`.
+4. Escolha **Connect**. O status passa a **Available**. Para conferir pela CLI: `aws codeconnections get-connection --connection-arn <saída ConnectionArn> --query Connection.ConnectionStatus --region us-east-2 --profile tomiyama`.
+
+### Rodar escolhendo o commit
+
+Escolha um commit da linha principal do `main`: o merge de um PR ou um commit feito direto nele (`git fetch origin` e `git log --first-parent --oneline origin/main`). Um commit de dentro de uma branch mesclada é recusado no build.
+
+- **Console:** CodePipeline > `tomiyama-cd-dev` > **Release change**. Em **Source revision override**, informe o SHA completo do commit, com 40 caracteres (`git rev-parse <sha curto>`). Com o SHA curto, o build falha e mostra o `git rev-parse` a rodar.
+- **CLI:**
+
+  ```bash
+  aws codepipeline start-pipeline-execution --name tomiyama-cd-dev --region us-east-2 --profile tomiyama \
+    --source-revisions actionName=Source,revisionType=COMMIT_ID,revisionValue=<sha completo>
+  ```
+
+Sem a troca de revisão, a esteira usa a ponta do `main`. O log do build mostra o commit e o resultado da conferência do `main`.
+
+**Ver o change set e aprovar.** A execução para na ação `ApproveChangeSet`, que mostra o commit e um link para a stack. No console, abra CloudFormation > Stacks > `tomiyama-dev` > **Change sets** > `codepipeline-changeset` e confira cada recurso. Se `UserPool` ou uma tabela aparecer com Replacement `True` ou `Conditional`, rejeite (veja "Pool do Cognito no prod"). Pela CLI:
+
+```bash
+aws cloudformation describe-change-set --stack-name tomiyama-dev --change-set-name codepipeline-changeset \
+  --region us-east-2 --profile tomiyama \
+  --query "Changes[].ResourceChange.[Action,LogicalResourceId,Replacement]" --output table
+```
+
+**Confira as mudanças de IAM.** Sem permissions boundary (card #179), a revisão do PR e a do change set são a única proteção contra o risco de "Risco aceito: os papéis das funções". Antes de aprovar, procure no change set os recursos `AWS::IAM::Role` (os papéis das funções, que o SAM gera com o nome `<Função>Role`) com Action `Modify` ou `Add`, e qualquer outro recurso `AWS::IAM::*`. Num papel com `Modify`, os detalhes dizem que propriedade mudou: `Policies` (as políticas inline, inclusive as que o SAM gera dos templates de política, como `DynamoDBReadPolicy`) ou `ManagedPolicyArns` (as políticas gerenciadas). O change set também mostra o antes e o depois de cada propriedade que muda, inclusive o texto das políticas. No console, na página do change set, a coluna **Property-level changes** mostra os dois lados. Pela CLI, o `describe-change-set` com `--include-property-values` (primeiro comando abaixo) traz, em cada `Details[].Target`, o caminho da propriedade (`Path`), o `BeforeValue` e o `AfterValue`, e, em cada recurso, o `BeforeContext` e o `AfterContext`: o recurso antes e depois da mudança, num texto JSON. Um papel com `Add` não tem detalhes por propriedade: leia o `AfterContext` dele. Valores grandes podem vir truncados, então a leitura completa é o template processado do change set (segundo comando, nos recursos `AWS::IAM::Role`) ou o diff do `infra/template.yaml` no PR. Rejeite se aparecer permissão de IAM (`iam:*`, `iam:PassRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy` e afins) ou permissão sobre a esteira (os papéis `role/cd/...`, os buckets dela, o projeto do CodeBuild, o pipeline ou a conexão) que o PR não justifica, e também um `"*"` novo em `Action` ou `Resource`.
+
+```bash
+aws cloudformation describe-change-set --stack-name tomiyama-dev --change-set-name codepipeline-changeset \
+  --include-property-values --region us-east-2 --profile tomiyama --output json \
+  --query "Changes[?starts_with(ResourceChange.ResourceType, 'AWS::IAM::')].ResourceChange.{Action: Action, LogicalId: LogicalResourceId, Type: ResourceType, Properties: Details[].Target.{Name: Name, Path: Path, Change: AttributeChangeType, Before: BeforeValue, After: AfterValue}, BeforeContext: BeforeContext, AfterContext: AfterContext}"
+aws cloudformation get-template --stack-name tomiyama-dev --change-set-name codepipeline-changeset \
+  --template-stage Processed --region us-east-2 --profile tomiyama --output json
+```
+
+Para aprovar ou rejeitar no console, use CodePipeline > `tomiyama-cd-dev` > **Review**. Pela CLI, leia o token com `aws codepipeline get-pipeline-state --name tomiyama-cd-dev --region us-east-2 --profile tomiyama --query "stageStates[?stageName=='Deploy'] | [0].actionStates[?actionName=='ApproveChangeSet'] | [0].latestExecution.token" --output text` e rode `aws codepipeline put-approval-result --pipeline-name tomiyama-cd-dev --region us-east-2 --profile tomiyama --stage-name Deploy --action-name ApproveChangeSet --result summary="conferido",status=Approved --token <token>` (ou `status=Rejected`). Rejeitar, ou deixar passar 7 dias sem resposta, encerra a execução sem mudar a stack ([aprovações](https://docs.aws.amazon.com/codepipeline/latest/userguide/approvals.html)). O change set fica na stack até a próxima execução substituí-lo.
+
+### Primeiro deploy: dois passos
+
+O dev ainda roda código anterior aos perfis, sem o `by_profile_belt`. Pela esteira, a ordem é a de "Ordem de deploy da etapa 3c", acima:
+
+1. Rode a esteira com o commit `c603913` (o main até a etapa 3b / pendências da 3a; SHA completo com `git rev-parse c603913`). Ele é o merge de um PR, na linha de primeiro pai do `main`, então passa pela conferência do build; o commit das etapas 1 e 2, se for preciso, também tem de ser o merge do PR delas. Esse primeiro change set também associa o papel de execução à stack, que não tinha papel. Antes de aprovar, confira no change set que os parâmetros são os atuais. Depois da execução, confira que a stack terminou em `UPDATE_COMPLETE` e que o marcador v2 existe (o `aws dynamodb get-item` do passo 1 da seção 3c). Se o CloudFormation recusar, no mesmo passo, criar o índice e mudar a RCU do `by_belt`, faça como em "Primeiro deploy do dev com a etapa 3a": primeiro o commit das etapas 1 e 2, depois o `c603913`.
+2. Só então rode a esteira com o `main`. Esse deploy apaga o `by_belt` e devolve as capacidades.
+
+### Papel guardado na stack e o `sam deploy` manual
+
+Depois do primeiro deploy pela esteira, a stack `tomiyama-dev` guarda o papel `cd-tomiyama-dev-cfn-exec`. O CloudFormation passa a usá-lo em toda operação da stack, inclusive num `sam deploy` manual sem `--role-arn`, e quem roda o deploy nem precisa de `iam:PassRole`. Não dá para tirar o papel da stack, só trocá-lo por outro num update ([papel de serviço](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)). Na prática:
+
+- No deploy manual, o CloudFormation também usa só as permissões do papel, mesmo quando quem roda é um administrador. Um recurso de tipo que o papel não cobre falha com AccessDenied, e a stack volta. Amplie o papel na stack de CD antes. Esse limite vale para o que o CloudFormation faz direto. O código de uma função roda com o papel dela, que o próprio deploy pode ampliar: é o caminho indireto de "Risco aceito: os papéis das funções" (card #179).
+- O papel lê o código das funções no bucket de pacotes da esteira e no bucket gerenciado do SAM CLI (`aws-sam-cli-managed-default-samclisourcebucket-…`), **só no prefixo `tomiyama-dev/`**. O `infra/samconfig.example.toml` já usa `s3_prefix = "tomiyama-dev"`. Na linha de comando, acrescente `--s3-prefix`:
+
+  ```bash
+  sam deploy --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
+    --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --resolve-s3 --s3-prefix tomiyama-dev \
+    --parameter-overrides Environment=dev AdminEmail=voce@example.com
+  ```
+
+- Executar qualquer change set, inclusive o de um `sam deploy`, apaga os outros change sets da stack ([executar um change set](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks-changesets-execute.html)). Se a esteira estiver esperando aprovação, ela falha no `CHANGE_SET_EXECUTE` sem mudar nada. Rode a esteira de novo.
+
+### Quando não há mudanças
+
+Sem nada a mudar (o mesmo commit de novo, ou um commit que só mexeu no frontend), o CloudFormation não cria um change set vazio: o change set termina em `FAILED`, com o motivo de que não há mudanças. A documentação do CodePipeline não descreve o que a ação `CHANGE_SET_REPLACE` faz nesse caso (consultada na [referência da ação](https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-CloudFormation.html) e nas [propriedades de configuração](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/continuous-delivery-codepipeline-action-reference.html)). Em qualquer caso, nada muda na stack do app. Se a ação falhar, a execução para ali; se ela passar, rejeite a aprovação. O `sam package` guarda o código pelo hash do conteúdo, então um commit que não muda o código não gera pacote novo, e as funções não mudam.
+
+### Custo estimado
+
+Preços de us-east-2, tirados da lista de preços pública da AWS (Price List API, publicação de 2026-09 a 2026-11) e das páginas de preço do [CodePipeline](https://aws.amazon.com/codepipeline/pricing/), do [CodeBuild](https://aws.amazon.com/codebuild/pricing/) e do [S3](https://aws.amazon.com/s3/pricing/):
+
+| Item | Uso por deploy (estimado) | Preço | Cota grátis por mês (não expira) |
+| --- | --- | --- | --- |
+| CodePipeline V2 | cerca de 10 minutos de ação (`Source` ~1, `Build` ~5, change set ~1, execução ~3; a aprovação manual não é cobrada) | US$ 0,002 por minuto de ação | 100 minutos de ação |
+| CodeBuild arm1.small | cerca de 5 min (instalar o SAM CLI, `sam build` e `sam package`) | US$ 0,0034 por minuto | 100 minutos (general1.small ou arm1.small) |
+| S3 | menos de 1 MB por versão de código e algumas dezenas de requisições | US$ 0,023 por GB-mês; US$ 0,005 por 1.000 PUT; US$ 0,0004 por 1.000 GET | — |
+| KMS (chave gerenciada `aws/s3`) | algumas requisições | US$ 0,03 por 10.000 requisições | 20.000 requisições |
+
+Dentro da cota gratuita cabem cerca de 10 deploys por mês sem custo de CodePipeline e cerca de 20 sem custo de CodeBuild. Acima disso, cada deploy custa cerca de US$ 0,02 de CodePipeline e US$ 0,02 de CodeBuild, uns US$ 0,04 no total. O primeiro deploy do dev (`c603913`, com a carga e as migrações do `InitialData`) leva alguns minutos a mais na execução. Parada, a esteira só custa o armazenamento dos pacotes, frações de centavo por mês. A conexão e os logs do build (poucos KB por execução) não foram estimados.
+
+### Remover a stack de CD
+
+1. **Antes, decida o papel da stack do app.** Ela guarda o papel `cd-tomiyama-dev-cfn-exec`, que é apagado junto com a stack de CD. Depois disso, toda operação na stack do app falha até alguém informar outro papel. Se a stack do app continua, troque o papel num update (`sam deploy --stack-name tomiyama-dev --region us-east-2 --profile tomiyama … --role-arn <ARN de um papel com as mesmas permissões>`) antes de apagar a stack de CD. Se a stack do app também sai, apague-a primeiro.
+2. **Esvazie os dois buckets**, porque o CloudFormation só apaga bucket vazio: `aws s3 rm s3://<ArtifactsBucketName> --recursive --region us-east-2 --profile tomiyama` e `aws s3 rm s3://<PackagesBucketName> --recursive --region us-east-2 --profile tomiyama` (os nomes estão nas saídas da stack). Sem os pacotes, um deploy manual que falhe no meio não tem para onde voltar as funções, então faça o próximo deploy manual com cuidado.
+3. **Apague a stack:** `aws cloudformation delete-stack --stack-name tomiyama-cd-dev --region us-east-2 --profile tomiyama`, e depois `aws cloudformation wait stack-delete-complete --stack-name tomiyama-cd-dev --region us-east-2 --profile tomiyama`. A conexão vai junto. O app AWS Connector continua instalado no GitHub; remova-o lá se não for mais usar.
 
 ## Itens de exame (Apêndice A)
 
