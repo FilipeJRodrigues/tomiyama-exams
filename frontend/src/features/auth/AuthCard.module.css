@@ -1,0 +1,127 @@
+/*
+ * Entry screens: login, sign-up and password recovery (skill `tomiyama-design`,
+ * `components.md`, "Áreas de marca (azul)" and "Telas de entrada"; § 6.7). The colors come
+ * from `cssVariablesResolver` in `theme.ts` (`--app-brand-*`): the blue of the logo in both
+ * schemes and, on it, white, the light secondary text and the yellow focus ring.
+ */
+
+/*
+ * The blue covers the whole screen: at least the height of the window (`dvh`, the visible
+ * height on phones; `vh` where `dvh` is unknown) and as tall as the content, so a page that
+ * scrolls stays blue to the end. A minimum, not a fixed height: on a short window (a phone on
+ * its side) the page scrolls, and the column is centered with auto margins, which never push
+ * it past the top or the sides.
+ */
+.screen {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--mantine-spacing-md);
+  background-color: var(--app-brand-bg);
+}
+
+/*
+ * The page canvas behind it, which the overscroll of iOS and macOS shows above and below the
+ * page: blue too while an entry screen is open, instead of the page color of the theme. More
+ * specific than the rules of `index.html` for each scheme.
+ */
+:global(:root[data-mantine-color-scheme]):has(.screen) {
+  background-color: var(--app-brand-bg);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-lg);
+  width: 100%;
+  max-width: rem(420px);
+  margin: auto;
+}
+
+/*
+ * On the blue, that is, everything in the column but the card (rule 7 of the skill): white
+ * text, and a yellow focus ring on anything that can take the focus there. Nothing focusable
+ * sits outside the card today; the rule is ready for it. Inside the card the theme's ring
+ * stays (blue on white, yellow on charcoal).
+ */
+.column > :not(.card) {
+  --app-focus-ring: var(--app-brand-focus-ring);
+  color: var(--app-brand-text);
+}
+
+.column > :not(.card) :focus-visible,
+.column > :not(.card):focus-visible {
+  outline: rem(2px) solid var(--app-brand-focus-ring);
+  outline-offset: rem(2px);
+}
+
+/* Logo, "Tomiyama" and "Área de exames", centered above the card; none is a heading. */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* Round, 1:1 and never stretched (`logo.md`). */
+.logo {
+  display: block;
+  width: rem(160px);
+  height: rem(160px);
+  object-fit: contain;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+
+/* The font and its weight come from `AuthCard.tsx` (the same as the header's). */
+.name {
+  --text-fz: var(--mantine-h1-font-size);
+  --text-lh: var(--mantine-h1-line-height);
+}
+
+.area {
+  color: var(--app-brand-text-secondary);
+}
+
+/*
+ * The card on the blue: the theme's surface (white / #2A2A2A) with a border that shows. More
+ * specific than Mantine's per-scheme border color of the Paper.
+ */
+.screen .column > .card {
+  --paper-border-color: var(--app-brand-card-border);
+}
+
+/*
+ * Compact brand, so the form stays in view without scrolling: below `sm` (a phone, the 200%
+ * zoom of a notebook) and on a short window (see the next rule), the logo drops to 96 px and
+ * the name to the size of an `h2`.
+ */
+@mixin smaller-than $mantine-breakpoint-sm {
+  .logo {
+    width: rem(96px);
+    height: rem(96px);
+  }
+
+  .name {
+    --text-fz: var(--mantine-h2-font-size);
+    --text-lh: var(--mantine-h2-line-height);
+  }
+}
+
+/*
+ * A short window: 45em (720 px at the browser's default text size). With the 160 px logo the
+ * login needs 694 px for the brand and the whole card (measured in Edge); up to 720 px (a
+ * 1366×768 notebook with the browser bars has about 650 px) the compact brand keeps all of it
+ * in view, with room for a taller fallback font. In `em`, like the breakpoints, so it follows
+ * the zoom and the browser's text size, as the rem sizes of the screen do.
+ */
+@media (max-height: em(720px)) {
+  .logo {
+    width: rem(96px);
+    height: rem(96px);
+  }
+
+  .name {
+    --text-fz: var(--mantine-h2-font-size);
+    --text-lh: var(--mantine-h2-line-height);
+  }
+}
