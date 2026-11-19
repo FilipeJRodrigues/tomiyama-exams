@@ -839,9 +839,12 @@ Resources:
         Type: S3
         Location: !Ref ArtifactsBucket
       Stages:
-        # No automatic start: DetectChanges false and no Triggers. Every run
-        # is started by hand (console "Release change" or
-        # start-pipeline-execution --source-revisions with the commit).
+        # No trigger: DetectChanges false and no Triggers. The only run that
+        # starts on its own is the one CodePipeline starts when the pipeline
+        # is created; it fails at Source, because the connection is still
+        # PENDING. Every other run is started by hand (console "Release
+        # change" or start-pipeline-execution --source-revisions with the
+        # commit).
         - Name: Source
           Actions:
             - Name: Source
