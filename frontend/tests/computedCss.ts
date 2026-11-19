@@ -16,6 +16,11 @@
  * goes through the `matchMedia` stub of `tests/setup.ts` (widths only), and only `#hex`,
  * `rgb()/rgba()`, `transparent`, `white` and `black` are read as colors; anything else throws,
  * so a check never passes on a color it could not read.
+ *
+ * Hover: jsdom has no pointer, so `:hover` never matches. `Styles.now({ hover: element })`
+ * reads the page as a mouse over that element would leave it: `:hover` matches the element and
+ * its ancestors, and `@media (hover: hover)` holds (`(hover: none)` does not). Without it,
+ * nothing is hovered, as before.
  */
 import postcss, { type AcceptedPlugin, type Container } from 'postcss';
 
@@ -39,8 +44,14 @@ interface Declaration {
   important: boolean;
 }
 
+/** Marks the hovered element and its ancestors while a `Styles` reads them (see `now`). */
+const HOVER_ATTRIBUTE = 'data-computed-css-hover';
+
 interface Entry {
-  /** Selector given to `matches`, with `:focus-visible` read as `:focus`. */
+  /**
+   * Selector given to `matches`, with `:focus-visible` read as `:focus` and `:hover` as the
+   * hover mark (same specificity: one pseudo-class, one attribute).
+   */
   selector: string;
   requiredClasses: readonly string[];
   specificity: number;
@@ -173,7 +184,9 @@ function collect(container: Container, media: readonly string[], out: Entry[]): 
       // Pseudo-elements are other boxes, not the element.
       if (/::|:(before|after)\b/.test(raw)) continue;
       out.push({
-        selector: raw.replaceAll(':focus-visible', ':focus'),
+        selector: raw
+          .replaceAll(':focus-visible', ':focus')
+          .replaceAll(':hover', `[${HOVER_ATTRIBUTE}]`),
         requiredClasses: subjectClasses(raw),
         specificity: specificity(raw),
         order: out.length,
@@ -272,13 +285,19 @@ interface Winner {
  */
 export class Styles {
   private readonly entries: Entry[];
+  private readonly hovering: boolean;
   private readonly matched = new Map<Element, Entry[]>();
 
-  private constructor(entries: Entry[]) {
+  private constructor(entries: Entry[], hovering: boolean) {
     this.entries = entries;
+    this.hovering = hovering;
   }
 
-  static async now(): Promise<Styles> {
+  /**
+   * `hover`: the element under the mouse (see the top of this file). The mark stays on the
+   * page until the next `now()`, which clears it.
+   */
+  static async now(options: { hover?: Element } = {}): Promise<Styles> {
     if (staticEntries === null) throw new Error('Chame loadStyles() no beforeAll.');
     const entries = [...(await staticEntries)];
     for (const style of document.querySelectorAll('style')) {
@@ -286,7 +305,20 @@ export class Styles {
       parse(style.textContent, page);
       for (const entry of page) entries.push({ ...entry, order: entries.length });
     }
-    return new Styles(entries);
+    for (const marked of document.querySelectorAll(`[${HOVER_ATTRIBUTE}]`)) {
+      marked.removeAttribute(HOVER_ATTRIBUTE);
+    }
+    for (let current = options.hover ?? null; current; current = current.parentElement) {
+      current.setAttribute(HOVER_ATTRIBUTE, '');
+    }
+    return new Styles(entries, options.hover !== undefined);
+  }
+
+  /** `(hover: hover)` holds while something is hovered; other queries go to `matchMedia`. */
+  private mediaMatches(query: string): boolean {
+    if (this.hovering && /\(\s*hover\s*:\s*hover\s*\)/.test(query)) return true;
+    if (this.hovering && /\(\s*hover\s*:\s*none\s*\)/.test(query)) return false;
+    return window.matchMedia(query).matches;
   }
 
   private matching(element: Element): Entry[] {
@@ -294,7 +326,7 @@ export class Styles {
     if (cached) return cached;
     const found = this.entries.filter((entry) => {
       if (!entry.requiredClasses.every((name) => element.classList.contains(name))) return false;
-      if (!entry.media.every((query) => window.matchMedia(query).matches)) return false;
+      if (!entry.media.every((query) => this.mediaMatches(query))) return false;
       try {
         return element.matches(entry.selector);
       } catch {
@@ -402,9 +434,10 @@ export class Styles {
     return blend(border, this.background(element.parentElement ?? element));
   }
 
-  /** Text color of the element (`color` inherits). */
+  /** Text color of the element (`color` inherits; `color: inherit` takes the parent's). */
   textColor(element: Element): Rgb {
     for (let current: Element | null = element; current; current = current.parentElement) {
+      if (this.declared(current, ['color'])?.value.trim() === 'inherit') continue;
       const color = this.color(current, ['color']);
       if (color) return blend(color, this.background(current));
     }

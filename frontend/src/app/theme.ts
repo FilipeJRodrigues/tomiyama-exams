@@ -9,6 +9,7 @@ import {
   ComboboxChevron,
   Drawer,
   Modal,
+  NavLink,
   Paper,
   PasswordInput,
   Radio,
@@ -181,10 +182,11 @@ function drawerCorners(props: {
 }
 
 /**
- * Font of the page titles (`PageTitle`: the `h1` of a screen and its section `h2`) and, later,
- * of the brand name. Barlow Condensed comes from the site itself (`main.tsx` imports only the
- * `latin` subset of weight 600, never Google Fonts); Arial Narrow and sans-serif show while it
- * loads (`font-display: swap`). Written as `--app-font-display` by `cssVariablesResolver`.
+ * Font of the page titles (`PageTitle`: the `h1` of a screen and its section `h2`) and of the
+ * name "Tomiyama" in the header (`AppLayout`). Barlow Condensed comes from the site itself
+ * (`main.tsx` imports only the `latin` subset of weight 600, never Google Fonts); Arial Narrow
+ * and sans-serif show while it loads (`font-display: swap`). Written as `--app-font-display`
+ * by `cssVariablesResolver`.
  */
 export const DISPLAY_FONT_FAMILY = "'Barlow Condensed', 'Arial Narrow', sans-serif";
 
@@ -285,6 +287,26 @@ export const theme = createTheme({
     AppShell: AppShell.extend({
       styles: { header: { backgroundColor: SURFACE }, navbar: { backgroundColor: SURFACE } },
     }),
+    // Side menu (skill `tomiyama-design`, "Cabeçalho e menu lateral"), for every NavLink. The
+    // active item has no background of its own: Mantine paints the primary `light` color, and
+    // its darker tone on hover. At rest it shows the menu; on hover, the hover of the other
+    // items (`--app-nav-hover`). Its text and icon take the real primary color of the scheme
+    // (`--app-nav-active`: blue 14.4:1 on white and 13.7:1 on the hover; yellow 11.7:1 on the
+    // menu and 9.2:1 on the hover). The bold label, the bar and the hover of the other items
+    // are in `a11y.css`. A NavLink given its own `color` or `variant` keeps Mantine's colors.
+    NavLink: NavLink.extend({
+      vars: (_theme, props) => ({
+        root:
+          props.color === undefined && props.variant === undefined
+            ? {
+                '--nl-bg': 'transparent',
+                '--nl-hover': 'var(--app-nav-hover)',
+                '--nl-color': 'var(--app-nav-active)',
+              }
+            : {},
+        children: {},
+      }),
+    }),
     // Pill with a bold label. § 6.7: the `default` variant (Sair, Tema, Editar...) draws the
     // control border; the background is the surface and Mantine's border would be 1.5:1.
     Button: Button.extend({
@@ -365,9 +387,9 @@ function readableOn(color: string, backgrounds: readonly string[]): boolean {
 }
 
 /**
- * Text color of the `light` variant (NavLink active, Badge, Alert, ActionIcon) in the light
- * scheme. Mantine draws shade 9 on shade 1, and on shade 2 on hover; for several colors
- * (blue, red, violet, indigo, cyan, teal, green, lime, yellow, orange) that stays under
+ * Text color of the `light` variant (Badge, Alert, ActionIcon, a NavLink with its own color)
+ * in the light scheme. Mantine draws shade 9 on shade 1, and on shade 2 on hover; for several
+ * colors (blue, red, violet, indigo, cyan, teal, green, lime, yellow, orange) that stays under
  * 4.5:1. Darken shade 9 just enough to pass on both backgrounds; colors that already pass
  * keep Mantine's value.
  */
@@ -404,10 +426,11 @@ const VIRTUAL_LIGHT_VARIABLES = ['light', 'light-hover', 'light-color'] as const
  *   white (5.1:1); on the charcoal it is 3.3:1, so the dark scheme uses red.4 (`#FF8577`,
  *   7.2:1 on the page and 4.7:1 on a hovered row).
  * - `*-light-color`: see `lightSchemeLightColor`, for every color of the theme.
- * - The virtual primary color: Mantine writes its `light` variables (active NavLink, `light`
- *   Badge and Alert) from the scale, without the fixes above; they point to the real color
- *   of each scheme instead. The text on the filled primary is white on the blue and blue on
- *   the yellow (`autoContrast` alone would give black there; without it, white at 1.22:1).
+ * - The virtual primary color: Mantine writes its `light` variables (`light` Badge and Alert,
+ *   a NavLink with its own variant) from the scale, without the fixes above; they point to the
+ *   real color of each scheme instead. The text on the filled primary is white on the blue
+ *   and blue on the yellow (`autoContrast` alone would give black there; without it, white at
+ *   1.22:1).
  * The link color (`--mantine-color-anchor`) is primary.8 (blue) in the light scheme and
  * primary.4 (a yellow close to the base) in the dark one.
  *
@@ -416,8 +439,12 @@ const VIRTUAL_LIGHT_VARIABLES = ['light', 'light-hover', 'light-color'] as const
  * - `--app-focus-ring`: the real primary color of each scheme (blue 14.4:1 on white;
  *   yellow 13.9:1 on the page and 11.7:1 on a card).
  * - `--app-control-border`: border of the controls at rest (see `CONTROL_BORDER`).
- * - `--app-font-display`: font of the page titles, the same in both schemes (see
- *   `DISPLAY_FONT_FAMILY`).
+ * - `--app-nav-active`: text, icon and bar of the active item of the side menu, the real
+ *   primary color of each scheme, like the focus ring.
+ * - `--app-nav-hover`: hover of the side menu items, active or not: gray.0 in the light scheme
+ *   and dark.5 in the dark one (Mantine's dark hover is dark.6, the color of the menu itself).
+ * - `--app-font-display`: font of the page titles and of the name "Tomiyama", the same in both
+ *   schemes (see `DISPLAY_FONT_FAMILY`).
  */
 export const cssVariablesResolver: CSSVariablesResolver = (current) => {
   const blue = current.colors['tomiyama-blue'] ?? tomiyamaBlue;
@@ -430,6 +457,8 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     '--app-surface': 'var(--mantine-color-white)',
     '--app-focus-ring': blue[FILLED_SHADE],
     '--app-control-border': CONTROL_BORDER.light,
+    '--app-nav-active': blue[FILLED_SHADE],
+    '--app-nav-hover': current.colors.gray[0],
   };
   const dark: Record<string, string> = {
     '--mantine-color-dimmed': current.colors.dark[1],
@@ -439,6 +468,8 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     '--app-surface': 'var(--mantine-color-dark-6)',
     '--app-focus-ring': yellow[FILLED_SHADE],
     '--app-control-border': CONTROL_BORDER.dark,
+    '--app-nav-active': yellow[FILLED_SHADE],
+    '--app-nav-hover': current.colors.dark[5],
   };
   for (const [name, shades] of Object.entries(current.colors)) {
     if (isVirtualColor(shades)) {
