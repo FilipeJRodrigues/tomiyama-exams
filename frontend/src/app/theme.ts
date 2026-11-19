@@ -141,6 +141,13 @@ const CONTROL_BORDER = { light: '#737B83', dark: '#8F8F8F' } as const;
 /** Surfaces: cards, dialogs, drawers, header and side menu (white / dark.6). */
 const SURFACE = 'var(--app-surface)';
 
+/**
+ * Secondary text on the brand blue of the entry screens (skill `tomiyama-design`, "Áreas de
+ * marca (azul)"), the same in both schemes: a very light blue, 9.2:1 on the blue, apart from
+ * the white of the name (14.4:1). Measured by `tests/app/auth-brand-area.test.tsx`.
+ */
+const ON_BRAND_SECONDARY_TEXT = '#C5CEE6';
+
 /*
  * Shapes (skill `tomiyama-design`, `components.md`): buttons, action icons, badges and
  * segmented controls are pills (a vertical segmented control takes the large radius, see
@@ -445,6 +452,19 @@ const VIRTUAL_LIGHT_VARIABLES = ['light', 'light-hover', 'light-color'] as const
  *   and dark.5 in the dark one (Mantine's dark hover is dark.6, the color of the menu itself).
  * - `--app-font-display`: font of the page titles and of the name "Tomiyama", the same in both
  *   schemes (see `DISPLAY_FONT_FAMILY`).
+ *
+ * The brand blue of the entry screens (login, sign-up, password recovery: `AuthCard`), the same
+ * in both schemes; on it there is only white, yellow and the light secondary text, never red
+ * (2.8:1: errors go inside the card):
+ * - `--app-brand-bg`: the blue of the logo, the background of the whole screen.
+ * - `--app-brand-text`: white text on the blue (14.4:1), the name "Tomiyama".
+ * - `--app-brand-text-secondary`: "Área de exames" (`ON_BRAND_SECONDARY_TEXT`, 9.2:1).
+ * - `--app-brand-focus-ring`: the focus ring on the blue, yellow (11.8:1); the blue ring of
+ *   the light scheme would vanish there. Inside the card, `--app-focus-ring` as everywhere.
+ * - `--app-brand-card-border`: border of the card on the blue. Mantine's gray.3 in the light
+ *   scheme (the white card already stands out, 14.4:1; the border is 11.1:1); in the dark one
+ *   the control border (4.46:1), since the charcoal card is 1.01:1 on the blue and Mantine's
+ *   dark.4 border 1.44:1.
  */
 export const cssVariablesResolver: CSSVariablesResolver = (current) => {
   const blue = current.colors['tomiyama-blue'] ?? tomiyamaBlue;
@@ -459,6 +479,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     '--app-control-border': CONTROL_BORDER.light,
     '--app-nav-active': blue[FILLED_SHADE],
     '--app-nav-hover': current.colors.gray[0],
+    '--app-brand-card-border': current.colors.gray[3],
   };
   const dark: Record<string, string> = {
     '--mantine-color-dimmed': current.colors.dark[1],
@@ -470,6 +491,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     '--app-control-border': CONTROL_BORDER.dark,
     '--app-nav-active': yellow[FILLED_SHADE],
     '--app-nav-hover': current.colors.dark[5],
+    '--app-brand-card-border': 'var(--app-control-border)',
   };
   for (const [name, shades] of Object.entries(current.colors)) {
     if (isVirtualColor(shades)) {
@@ -486,7 +508,14 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     const darkColor = darkSchemeLightColor(shades);
     if (darkColor) dark[`--mantine-color-${name}-light-color`] = darkColor;
   }
-  return { variables: { '--app-font-display': DISPLAY_FONT_FAMILY }, light, dark };
+  const variables: Record<string, string> = {
+    '--app-font-display': DISPLAY_FONT_FAMILY,
+    '--app-brand-bg': blue[FILLED_SHADE],
+    '--app-brand-text': 'var(--mantine-color-white)',
+    '--app-brand-text-secondary': ON_BRAND_SECONDARY_TEXT,
+    '--app-brand-focus-ring': yellow[FILLED_SHADE],
+  };
+  return { variables, light, dark };
 };
 
 /** Light/dark preference only; no personal data. Also read by the script in `index.html`. */

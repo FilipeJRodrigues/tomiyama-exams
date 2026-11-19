@@ -75,6 +75,7 @@ O modelo é a moldura da POS TECH (veja o `SKILL.md`), em caixa de frase:
   - **logo redondo** de uns 40 px, com texto alternativo "Academia Tomiyama" (veja [logo.md](logo.md));
   - **"Tomiyama"** em Barlow Condensed;
   - **"Área de exames"** menor, em texto secundário. Some abaixo do breakpoint `sm`, onde fica só "Tomiyama";
+  - abaixo de **22,5em** (360 px; zoom de 400% num notebook), **"Tomiyama" também some**, inteiro, e fica só o logo, cujo texto alternativo mantém a marca. Nunca "To…" cortado (decisão do responsável de 2026-11-19; `AppLayout.module.css`). O `truncate` fica só como segurança para o instante da fonte de reserva;
   - o selo **"Dados simulados"** (só com os dados de teste), logo depois, como hoje: some abaixo do `xs` e continua em caixa de frase.
 - **Lado direito do cabeçalho:** o e-mail e os botões Tema (`ActionIcon`) e Sair (`Button`), variante `default`, com a borda de controle da regra de "secundária": o fundo deles é a cor do próprio cabeçalho.
 - **Sem linha amarela** sob o cabeçalho: no tema claro ela ficaria quase invisível (1,22:1), e a marca já vem do logo e da cor principal.

@@ -21,6 +21,7 @@ import logo from '../assets/brand/tomiyama-logo-96.webp';
 import { ROLE_LABELS } from '../auth/types';
 import { useAuth } from '../auth/useAuth';
 import { HEADER_SCROLL_PADDING, useScrollPadding } from '../features/exam/focus';
+import classes from './AppLayout.module.css';
 import { MOBILE_QUERY } from './breakpoints';
 import { navItemsFor, paths } from './navigation';
 import { DISPLAY_FONT_WEIGHT } from './theme';
@@ -38,8 +39,10 @@ const LOGO_SIZE = 40;
  * which leaves below `sm` (phone, 200% zoom). Neither is a heading: the first heading of the
  * page is the `h1` of the screen.
  *
- * Everything fits from 343 px wide. Below that (320 px, 400% zoom) the name is the one thing
- * that gives way, cut with an ellipsis, so the Tema and Sair buttons stay whole.
+ * On a very narrow screen (below 22.5em, 360 px; 400% zoom) "Tomiyama" leaves too, whole and
+ * never cut to "To…", so the Tema and Sair buttons stay whole; the logo and its alternative
+ * text keep the brand (`AppLayout.module.css`, with the measures). The ellipsis stays only as
+ * a safety net for the instant the fallback font shows while Barlow loads.
  */
 function Brand() {
   return (
@@ -56,6 +59,7 @@ function Brand() {
       <Group gap="xs" align="baseline" wrap="nowrap" miw={0}>
         <Text
           component="span"
+          className={classes.name}
           ff="var(--app-font-display)"
           fw={DISPLAY_FONT_WEIGHT}
           fz="h3"

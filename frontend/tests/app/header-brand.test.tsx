@@ -6,6 +6,10 @@
  *   texto alternativo "Academia Tomiyama" (1:1, `object-fit: contain`, arquivo de 96 px de
  *   `src/assets/brand/`), "Tomiyama" na fonte de títulos e "Área de exames" no texto
  *   secundário, que some abaixo do `sm`; depois, o selo "Dados simulados";
+ * - numa tela muito estreita, abaixo de 22,5em (360 px; zoom de 400% num notebook de 1280 px),
+ *   "Tomiyama" some inteiro (`display: none`), em vez de aparecer cortado como "To…" (decisão
+ *   do responsável de 2026-11-19); o logo e o texto alternativo ficam em qualquer largura. O
+ *   limite é em `em`, para acompanhar o zoom e o tamanho do texto do navegador;
  * - nada no cabeçalho é título: o primeiro título da página é o `h1` da tela;
  * - os arquivos do logo: o original e os recortes de 96 e 320 px em WebP com transparência;
  * - o título da aba: "Área de exames · Tomiyama".
@@ -14,6 +18,7 @@ import { screen, within } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import indexHtml from '../../index.html?raw';
+import headerCss from '../../src/app/AppLayout.module.css?raw';
 import { paths } from '../../src/app/navigation';
 import { COLOR_SCHEME_KEY, DISPLAY_FONT_FAMILY, DISPLAY_FONT_WEIGHT } from '../../src/app/theme';
 import { Styles, loadStyles } from '../computedCss';
@@ -133,6 +138,81 @@ describe.each<Scheme>(['dark', 'light'])('marca no cabeçalho, tema %s (#166)', 
     const [first] = screen.getAllByRole('heading');
     expect(first).toHaveAccessibleName('Alunos');
     expect(first?.tagName).toBe('H1');
+  });
+});
+
+/* ----------------------------------------------------- name on a narrow screen */
+
+/**
+ * Below this width "Tomiyama" leaves the header: 22.5em at the browser's default text size.
+ * Measured in Edge: in Barlow Condensed the name fits next to the Tema and Sair buttons from
+ * 343 px, so it is never cut from 360 px on (see `AppLayout.module.css`).
+ */
+const NAME_LIMIT_PX = 360;
+
+describe.each<Scheme>(['dark', 'light'])(
+  'nome "Tomiyama" numa tela estreita, tema %s (#166, decisão de 2026-11-19)',
+  (scheme) => {
+    beforeEach(() => {
+      installMockApi();
+      window.localStorage.setItem(COLOR_SCHEME_KEY, scheme);
+    });
+
+    /** The logo with its alternative text, shown; the Tema and Sair buttons, shown. */
+    function expectLogoAndActions(styles: Styles, header: HTMLElement): void {
+      const logo = within(header).getByRole('img', { name: 'Academia Tomiyama' });
+      expect(hiddenByCss(styles, logo)).toBe(false);
+      const toggle = within(header).getByRole('button', { name: /^Usar tema (claro|escuro)$/ });
+      const signOut = within(header).getByRole('button', { name: 'Sair' });
+      expect(hiddenByCss(styles, toggle)).toBe(false);
+      expect(hiddenByCss(styles, signOut)).toBe(false);
+    }
+
+    it.each([NAME_LIMIT_PX, 375, 390, 640, 1280])(
+      'a %i px, a partir do limite: "Tomiyama" aparece, ao lado do logo com o texto alternativo',
+      async (width) => {
+        setViewportWidth(width);
+        await renderApp({ route: paths.students, signedInAs: 'examiner' });
+        const header = await banner();
+        const brand = within(header).getByText('Tomiyama');
+        const styles = await Styles.now();
+        expect(hiddenByCss(styles, brand)).toBe(false);
+        expect(inherited(styles, brand, 'font-family')).toBe(DISPLAY_FONT_FAMILY);
+        expectLogoAndActions(styles, header);
+      },
+    );
+
+    it.each([320, 343, NAME_LIMIT_PX - 1])(
+      'a %i px, abaixo do limite: "Tomiyama" some com display: none; o logo com o texto alternativo fica',
+      async (width) => {
+        setViewportWidth(width);
+        await renderApp({ route: paths.students, signedInAs: 'examiner' });
+        const header = await banner();
+        const brand = within(header).getByText('Tomiyama');
+        const styles = await Styles.now();
+        // On the name itself: it leaves whole, not faded or shrunk (`opacity`, a zero size).
+        const display = styles.declared(brand, ['display']);
+        expect(display && styles.resolve(brand, display.value)).toBe('none');
+        expect(hiddenByCss(styles, brand)).toBe(true);
+        expectLogoAndActions(styles, header);
+        // The brand stays for the screen reader in the logo, the only image of the header.
+        expect(
+          within(header)
+            .getAllByRole('img')
+            .map((img) => img.getAttribute('alt')),
+        ).toEqual(['Academia Tomiyama']);
+      },
+    );
+  },
+);
+
+describe('limite do nome "Tomiyama" em em (#166, § 6.7)', () => {
+  it('a regra que esconde o nome usa em, para acompanhar o zoom e o tamanho do texto', () => {
+    // `@mixin smaller-than 22.5em` or `@media (max-width: …)`: every width query of the file.
+    const limits = [
+      ...headerCss.matchAll(/(?:smaller-than|larger-than|(?:max|min)-width:)\s*([\d.]+)([a-z]+)/g),
+    ].map((match) => `${match[1] ?? ''}${match[2] ?? ''}`);
+    expect(limits).toEqual([`${String(NAME_LIMIT_PX / 16)}em`]);
   });
 });
 
