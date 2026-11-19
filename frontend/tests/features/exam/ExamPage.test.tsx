@@ -254,15 +254,15 @@ describe('exam of a student (§ 6.4)', () => {
       expect(tab(/^Prático 2\/4$/)).toHaveAttribute('aria-selected', 'false');
     });
 
-    it('groups the items by category in sheet order with x/N each', async () => {
+    it('groups the items by category, the open ones first (#185), with x/N each', async () => {
       await openExam(OPEN, HELENA);
       await examHeading('Helena Prado');
       expect(screen.getAllByRole('region', { name: /\d+\/\d+$/ })).toHaveLength(2);
       expect(category(/^Vocabulário 1\/2$/)).toBeInTheDocument();
       expect(category(/^Histórico 0\/1$/)).toBeInTheDocument();
       expect(itemTexts(category(/^Vocabulário/))).toEqual([
-        'ProfessorResposta esperada: SenseiCerto',
         'PararResposta esperada: MateNão marcado',
+        'ProfessorResposta esperada: SenseiCerto',
       ]);
     });
 

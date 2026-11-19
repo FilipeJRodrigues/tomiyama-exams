@@ -312,7 +312,8 @@ export interface CategoryGroup {
 }
 
 /**
- * Items grouped by category in sheet order (a category comes where its first item is). With
+ * Items grouped by category in the order given (a category comes where its first item is):
+ * the sheet order, or the queue order of the exam screen (`markQueue.ts`). With
  * `onlyUnmarked`, the marked items are hidden and so are the categories left empty, except
  * the ones in `keep` (marked while the filter was on: they leave when the tab or the filter
  * changes, not under the finger); the `x/N` count stays the one of the whole category.

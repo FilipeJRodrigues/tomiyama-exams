@@ -80,12 +80,18 @@ const CHOICE_ICONS = {
 
 interface MarkButtonsProps {
   item: ExamSheetItem;
-  onMark: (item: ExamSheetItem, state: MarkState) => void;
+  /** `byKeyboard`: the click came from Space or Enter (`detail` 0), not from a pointer. */
+  onMark: (item: ExamSheetItem, state: MarkState, byKeyboard: boolean) => void;
   /**
    * Drops a double tap on the same button (`useMarkClickGuard` of the exam screen), timed by
    * the `timeStamp` of the click events.
    */
   acceptClick: AcceptMarkClick;
+  /**
+   * Whether a pointer tap on this item is ignored: the item, or what was around it, just
+   * changed place in the queue (`useMarkQueue`, card #185).
+   */
+  settling?: (itemId: string) => boolean;
 }
 
 /**
@@ -93,9 +99,11 @@ interface MarkButtonsProps {
  * `aria-pressed`, a filled icon, a border and a tinted background, so the state never
  * depends on color alone (§ 6.7); clicking it again takes the mark off. The accessible
  * name starts with the visible text and names the item ("Certo: Osoto gari"). A double tap
- * or the Enter key held down counts as one click (`markClickGuard`).
+ * or the Enter key held down counts as one click (`markClickGuard`); a tap on an item that
+ * just changed place is ignored (`settling`), a key press on it is not: the keyboard acts on
+ * the focused button, which the examiner sees and hears.
  */
-export function MarkButtons({ item, onMark, acceptClick }: MarkButtonsProps) {
+export function MarkButtons({ item, onMark, acceptClick, settling }: MarkButtonsProps) {
   const state = markState(item);
   return (
     <Group gap="xs" wrap="nowrap" role="group" aria-label={`Marcação: ${item.description}`}>
@@ -114,9 +122,11 @@ export function MarkButtons({ item, onMark, acceptClick }: MarkButtonsProps) {
             leftSection={<Icon size={20} aria-hidden />}
             onKeyDown={preventMarkKeyRepeat}
             onClick={(event) => {
+              const tapped = event.detail > 0;
+              if (tapped && settling?.(item.id) === true) return;
               const next = nextMarkState(state, choice);
               if (!acceptClick(item.id, choice, state, next, event.timeStamp)) return;
-              onMark(item, next);
+              onMark(item, next, !tapped);
             }}
             style={{
               ...TOUCH_TARGET,
@@ -163,7 +173,7 @@ function ExamItem({ item, renderMark }: { item: ExamSheetItem; renderMark: Rende
 function CategorySection({ group, renderMark }: { group: CategoryGroup; renderMark: RenderMark }) {
   const headingId = useId();
   return (
-    <section aria-labelledby={headingId}>
+    <section aria-labelledby={headingId} data-category={group.category}>
       <Title order={3} size="h5" id={headingId} mb="xs">
         <Group component="span" justify="space-between" gap="sm" wrap="nowrap">
           <span>{group.category}</span>{' '}
@@ -198,7 +208,7 @@ function KindPanel({
   keep,
   renderMark,
 }: {
-  items: ExamSheetItem[];
+  items: readonly ExamSheetItem[];
   kind: RequirementKind;
   onlyUnmarked: boolean;
   keep: ReadonlySet<string>;
@@ -218,7 +228,8 @@ function KindPanel({
 }
 
 interface ExamItemsProps {
-  items: ExamSheetItem[];
+  /** In the order of the screen: the queue order while the exam takes marks (`useMarkQueue`). */
+  items: readonly ExamSheetItem[];
   summary: ExamSummary;
   kind: RequirementKind;
   onKindChange: (kind: RequirementKind) => void;
@@ -233,7 +244,7 @@ const KEEP_NONE: ReadonlySet<string> = new Set();
 
 /**
  * Teórico and Prático tabs with "marked/total" (from the API summary), the "Só não marcados"
- * filter and the items grouped by category with "x/N" each.
+ * filter and the items grouped by category with "x/N" each, in the order given (`items`).
  */
 export function ExamItems({
   items,

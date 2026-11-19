@@ -609,10 +609,11 @@ describe('marking the exam items (§ 6.4)', () => {
   describe('keyboard', () => {
     it('rn006 reaches the buttons with Tab and marks with Space and Enter', async () => {
       const { user } = await openHelena();
+      // Parar, still open, comes before Professor, already marked (#185).
       button('Certo: Professor').focus();
-      await user.tab();
-      expect(button('Errado: Professor')).toHaveFocus();
-      await user.tab();
+      await user.tab({ shift: true });
+      expect(button('Errado: Parar')).toHaveFocus();
+      await user.tab({ shift: true });
       expect(button('Certo: Parar')).toHaveFocus();
 
       // Visible focus ring on keyboard focus (theme `focusRing: 'auto'`, § 6.7).
@@ -631,7 +632,14 @@ describe('marking the exam items (§ 6.4)', () => {
       await waitFor(() => {
         expect(answerOf(PARAR)?.correct).toBe(false);
       });
-      expect(button('Errado: Parar')).toHaveFocus();
+      // Marked with the keyboard, Parar goes to the end after the wait (#185): the focus goes
+      // on to the first open item.
+      await waitFor(
+        () => {
+          expect(button('Certo: Nome do fundador do Judô')).toHaveFocus();
+        },
+        { timeout: 3000 },
+      );
     });
   });
 
