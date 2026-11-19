@@ -10,6 +10,9 @@
   packages prefix is the one both roles use.
 - The properties of the app's resources that need extra permissions are covered by the
   execution role (CORS or lifecycle in the images bucket, Layers or VPC in a function...).
+- Both roles that take part in the change set (pipeline and execution) pass the check of
+  every transform of the app template, and the transform check is the only CloudFormation
+  permission of the execution role.
 """
 
 import copy
@@ -561,3 +564,55 @@ def test_property_guard_catches_a_new_property(
     changed["Resources"][resource]["Properties"][prop] = value
 
     assert (resource, prop, action) in _uncovered_properties(cd, changed)
+
+
+# ------------------------------------------------------------------ transforms of the app
+def _app_transform_arns(app: dict[str, Any]) -> list[str]:
+    names = cd_tests._as_list(app.get("Transform", []))
+    return sorted(
+        f"arn:aws:cloudformation:{REGION}:aws:transform/{name.removeprefix('AWS::')}"
+        for name in names
+    )
+
+
+@pytest.mark.parametrize("role", [cd_tests.PIPELINE_ROLE, cd_tests.EXECUTION_ROLE])
+def test_change_set_roles_pass_the_check_of_every_app_transform(
+    cd: dict[str, Any], app: dict[str, Any], role: str
+) -> None:
+    """With a service role, CloudFormation checks each transform with the execution role
+    (first real run, 2026-11-18). The pipeline role keeps the same grant as a precaution,
+    since the documentation does not say whether the caller is checked too: a transform
+    added to infra/template.yaml must reach both roles, not only the execution one."""
+    statements = cd_tests._statements(cd, role)
+    arns = _app_transform_arns(app)
+    missing = [
+        arn
+        for arn in arns
+        if not cd_tests._allows(statements, "cloudformation:CreateChangeSet", arn)
+    ]
+
+    assert arns
+    assert not missing, (
+        f"O {role} não tem cloudformation:CreateChangeSet nas transforms {missing} do "
+        "infra/template.yaml: inclua-as no Sid AppTemplateTransforms dele "
+        "(infra/cd-pipeline.yaml)."
+    )
+
+
+def test_execution_role_cloudformation_permission_is_only_the_transform_check(
+    cd: dict[str, Any],
+) -> None:
+    """The execution role acts on the app's resources, not on stacks: its only
+    CloudFormation permission is CreateChangeSet on the ARNs of AWS transforms."""
+    transform = re.compile(rf"arn:aws:cloudformation:{REGION}:aws:transform/[A-Za-z0-9-]+")
+    for statement in cd_tests._statements(cd, cd_tests.EXECUTION_ROLE):
+        actions = {
+            action.lower()
+            for action in cd_tests._as_list(statement.get("Action", []))
+            if action.lower().startswith("cloudformation:")
+        }
+        if statement["Effect"] != "Allow" or not actions:
+            continue
+        assert actions == {"cloudformation:createchangeset"}, statement.get("Sid")
+        for resource in cd_tests._as_list(statement["Resource"]):
+            assert transform.fullmatch(resource), (statement.get("Sid"), resource)

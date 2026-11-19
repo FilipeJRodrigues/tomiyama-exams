@@ -224,7 +224,7 @@ def app() -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ pipeline
-def test_pipeline_is_v2_queued_and_never_starts_on_its_own(cd: dict[str, Any]) -> None:
+def test_pipeline_is_v2_queued_and_has_no_trigger(cd: dict[str, Any]) -> None:
     pipeline = cd["Resources"]["Pipeline"]["Properties"]
     source = _flat_actions(cd)[0]
 
@@ -762,13 +762,16 @@ def test_connection_is_used_only_on_this_stack_connection(cd: dict[str, Any]) ->
 
 def test_cd_roles_stay_outside_the_execution_role_scope(cd: dict[str, Any]) -> None:
     """The direct reach only: no IAM pattern of the execution role matches a CD
-    role (its own role included). The CD roles live under a path without hyphen:
-    "role/<path>/..." can never match "role/<stack name>-*", whatever the stack
-    names. The indirect path is not checked here and is not closed: the execution
-    role writes any inline policy on the function roles, and a function given broad
-    permissions could then change the CD roles. That is the risk accepted in
-    decision B, with the permissions boundary left for #179 (see "Risco aceito: os
-    papéis das funções" in backend/README.md)."""
+    role (its own role included). The CD roles live under a one-segment path
+    without hyphen, and AppStackName has no slash (its AllowedPattern), so
+    "role/<path>/..." can never match "role/<AppStackName>-*", whatever the stack
+    names. The indirect reach is not checked here and is not closed: the execution
+    role creates the function roles ("role/<AppStackName>-*"), writes any inline
+    policy on them (no permissions boundary) and passes them to Lambda, so a
+    function given broad permissions by a commit on main (the SeedFunction, invoked
+    by Custom::InitialData in the same deploy, or any other later) could change the
+    CD roles. That is the risk accepted in decision B, with the permissions boundary
+    left for #179 (see "Risco aceito: os papéis das funções" in backend/README.md)."""
     resolver = Resolver(cd)
     patterns = [
         resource
