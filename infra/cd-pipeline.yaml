@@ -399,7 +399,8 @@ Resources:
   # ------------------------------------------- CloudFormation execution role
   # The role CloudFormation uses for every operation on the app stack (the
   # stack keeps it, manual "sam deploy" included). Trusts only CloudFormation.
-  # Permissions: the handler permissions of each resource type the app uses
+  # Permissions: the check of the app template's transforms (inline policy
+  # below), then the handler permissions of each resource type the app uses
   # (CloudFormation resource schemas), only on the app's resources, minus
   # features the app does not use (KMS keys, VPC, streams, replicas, imports)
   # and minus data access: no DynamoDB item or S3 object action on the app's
@@ -416,9 +417,33 @@ Resources:
             Principal:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
+      # With a service role, CloudFormation uses the role's credentials for
+      # every operation on the stack ("CloudFormation service role", User
+      # Guide), the check of each transform of infra/template.yaml included:
+      # cloudformation:CreateChangeSet on the transform ARN ("Control access
+      # with IAM", example 2). Without it, the first real run (2026-11-18)
+      # left the change set FAILED, "not authorized to perform
+      # cloudformation:CreateChangeSet on ...:transform/LanguageExtensions".
+      # Inline, not in the managed policies below: those group the resource
+      # types of the app, and this is about the template itself. Only the two
+      # transform ARNs, no stack ARN: this grant creates no change set by
+      # itself. A new transform in infra/template.yaml goes here too (the
+      # regression test of #68 reads them from the template).
+      Policies:
+        - PolicyName: app-template-transforms
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AppTemplateTransforms
+                Effect: Allow
+                Action: cloudformation:CreateChangeSet
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:aws:transform/LanguageExtensions
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
 
-  # Customer managed policies (6,144 characters each) instead of inline ones:
-  # inline policies of a role share a 10,240-character quota.
+  # The resource permissions go in customer managed policies (6,144
+  # characters each): the inline policies of a role share a 10,240-character
+  # quota, and the role keeps only the small one of the transforms above.
   ExecutionComputePolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -771,11 +796,17 @@ Resources:
                   - cloudformation:DescribeStackResources
                   - cloudformation:GetTemplate
                 Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*
-              # The app template uses two transforms; CloudFormation checks
-              # CreateChangeSet against each transform ARN, with the caller's
-              # permissions (it impersonates the caller to run macros). No
-              # RoleArn condition here: this extra check alone creates nothing,
-              # and the change set itself needs AppStackCreateChangeSet.
+              # The app template uses two transforms, and CloudFormation checks
+              # CreateChangeSet against each transform ARN ("Control access
+              # with IAM", example 2). With a service role, it checks the
+              # execution role: the first real run (2026-11-18) failed on
+              # cfn-exec (see AppTemplateTransforms in
+              # CloudFormationExecutionRole). Kept here as well: the
+              # documentation does not say whether the caller is checked too
+              # when the stack has a service role, and that run could not tell
+              # (this role had the permission). No RoleArn condition here: this
+              # extra check alone creates nothing, and the change set itself
+              # needs AppStackCreateChangeSet.
               - Sid: AppTemplateTransforms
                 Effect: Allow
                 Action: cloudformation:CreateChangeSet
