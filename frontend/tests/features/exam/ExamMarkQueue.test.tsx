@@ -116,6 +116,15 @@ async function passes(ms: number) {
   });
 }
 
+/**
+ * The clock goes on in steps of 10 ms until `done`, for at most `ms`: an answer asked for
+ * right at the end of a `passes` (the reload after the last try) comes back before the test
+ * looks, whatever the load of the machine.
+ */
+async function passesUntil(done: () => boolean, ms: number) {
+  for (let step = 0; step < ms / 10 && !done(); step += 1) await passes(10);
+}
+
 /** A finger tap: the button takes the focus, as in Chrome, and the click has `detail` 1. */
 function tap(name: string) {
   const target = button(name);
@@ -453,6 +462,8 @@ describe('marked items go to the end of the queue (§ 6.4, RN006, #185)', () => 
       await passes(MOVE_DELAY_MS * 2);
       const alert = screen.getByRole('alert');
       expect(alert).toHaveTextContent('Não foi possível confirmar a marcação de "Parar"');
+      // The last try was at the end of the wait: the reload after it comes back.
+      await passesUntil(() => pressed('Certo: Parar'), 500);
       // The reload shows it saved; it stays where the examiner left it.
       expect(pressed('Certo: Parar')).toBe(true);
       expect(itemOrder()).toEqual(THEORY_AT_START);
@@ -465,6 +476,44 @@ describe('marked items go to the end of the queue (§ 6.4, RN006, #185)', () => 
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(itemOrder()).toEqual(THEORY_AFTER_PARAR);
       expect(button('Certo: Parar')).toHaveFocus();
+    });
+
+    it('rn006 nothing moves while a notice is open; on closing, only the mark that stayed is announced', async () => {
+      server.use(
+        http.put(ANSWER_URL, ({ params }) =>
+          String(params.requirementId) === FOUNDER
+            ? HttpResponse.json({ message: 'Serviço indisponível' }, { status: 503 })
+            : undefined,
+        ),
+      );
+      await openHelena();
+      const live = screen.getByTestId('queue-live');
+      stopTheClock();
+      tap('Certo: Parar');
+      await passes(200);
+      tap(`Certo: ${FOUNDER_NAME}`);
+      await passes(MOVE_DELAY_MS * 2);
+      await passesUntil(() => screen.queryByRole('alert') !== null, 500);
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent(`Não foi possível salvar a marcação de "${FOUNDER_NAME}"`);
+      // Parar was saved and Vocabulário is complete, but the list waits for the notice.
+      expect(pressed('Certo: Parar')).toBe(true);
+      expect(itemOrder()).toEqual(THEORY_AT_START);
+      expect(live).toBeEmptyDOMElement();
+      await passes(MOVE_DELAY_MS);
+      expect(itemOrder()).toEqual(THEORY_AT_START);
+
+      const close = within(alert).getByRole('button', { name: 'Fechar aviso' });
+      act(() => {
+        close.focus();
+      });
+      fireEvent.click(close, { detail: 0 });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(itemOrder()).toEqual(THEORY_AFTER_PARAR);
+      // The refused mark went back: its item moved with its category, but was not unmarked.
+      expect(live).toHaveTextContent(
+        /^Parar marcado como certo, movido para o fim de Vocabulário\. Categoria Vocabulário completa, movida para o fim da aba\.$/,
+      );
     });
   });
 

@@ -414,15 +414,17 @@ Login por e-mail/senha; "Cadastre-se" aberto (cria responsável).
   - tempo: o item marcado mostra a marcação no lugar por cerca de 1 s e então desliza para
     o fim; com movimento reduzido, a troca é sem animação. Cada marcação recomeça a espera,
     então marcações seguidas mantêm a lista parada até a última, e os itens se movem juntos.
-    A troca também espera a marcação ser salva: marcação recusada não move o item, e o item
-    do aviso de erro fica onde está até o aviso fechar;
+    A troca também espera a marcação ser salva: marcação recusada não move o item, e,
+    enquanto o aviso de erro estiver aberto, a lista não muda de lugar; a troca acontece
+    quando ele fecha;
   - toque: na troca, um toque (não uma tecla) no Certo/Errado de um item que acabou de mudar
     de lugar é ignorado por um instante, para não marcar o item errado;
   - "Só não marcados": o item marcado continua visível, no fim da categoria, até trocar de
     aba ou de filtro;
-  - teclado e leitor de tela: quando o item marcado pelo teclado muda de lugar, o foco vai
-    para o primeiro item em aberto (sem nenhum em aberto, fica onde estava); a mudança de
-    lugar dos itens marcados pelo examinador é anunciada ao leitor de tela.
+  - teclado e leitor de tela: quando o item marcado pelo teclado (inclusive pelo "Tentar de
+    novo" do aviso de erro) muda de lugar, o foco vai para o primeiro item em aberto (sem
+    nenhum em aberto, fica onde estava); a mudança de lugar dos itens marcados pelo
+    examinador é anunciada ao leitor de tela.
 - **Resumo** (coluna fixa à direita no notebook; barra fixa no rodapé no celular, com botão
   "Decidir" que abre um painel): % teórico e % prático (grandes), barra de progresso de
   marcação, e:

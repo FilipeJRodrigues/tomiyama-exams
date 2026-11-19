@@ -154,8 +154,11 @@ const CLOSE_NOTICE_LABEL = 'Fechar aviso';
 interface MarkFailureNoticeProps {
   failure: MarkFailure;
   onClose: () => void;
-  /** "Tentar de novo", after passing refusals (`failure.retry`) while the exam takes marks. */
-  onRetry: (() => void) | undefined;
+  /**
+   * "Tentar de novo", after passing refusals (`failure.retry`) while the exam takes marks;
+   * `byKeyboard`: Enter or Space (`detail` 0), not a pointer.
+   */
+  onRetry: ((byKeyboard: boolean) => void) | undefined;
   /**
    * Where the focus goes when it was in the notice (its close button goes away, § 6.7) and
    * the item the notice names is no longer on the screen (another tab, the filter).
@@ -295,9 +298,9 @@ function MarkFailureNotice({
             variant="default"
             leftSection={<IconRefresh size={18} aria-hidden />}
             aria-label={`Tentar de novo: ${failure.item}`}
-            onClick={() => {
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
               leave();
-              onRetry();
+              onRetry(event.detail === 0);
             }}
             style={TOUCH_TARGET}
           >
@@ -499,14 +502,15 @@ function ExamContent({
   const markInQueue =
     onMark &&
     ((item: ExamSheetItem, state: MarkState, byKeyboard: boolean) => {
-      marked(item.id, byKeyboard);
+      marked(item.id, state, byKeyboard);
       onMark(item, state);
     });
-  // "Tentar de novo" marks the item again: the order waits for it too.
+  // "Tentar de novo" marks the item again: the order waits for it too. From the keyboard it
+  // counts as a keyboard mark: when the item moves, the focus goes on to the first open item.
   const retryInQueue =
     onRetryFailure &&
-    (() => {
-      if (failure) marked(failure.itemId, false);
+    ((byKeyboard: boolean) => {
+      if (failure?.retry !== undefined) marked(failure.itemId, failure.retry, byKeyboard);
       onRetryFailure();
     });
   const renderMark: RenderMark = markInQueue
