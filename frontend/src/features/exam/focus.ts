@@ -1,6 +1,7 @@
 /**
  * The one rule for moving the focus on the exam screen (§ 6.7): the focus only moves when it
- * is lost. Wherever the user put it (the trail, a tab, another button), it stays.
+ * is lost. Wherever the user put it (the trail, a tab, another button), it stays. The single
+ * exception is `focusInView`, for the item marked with the keyboard that moved to the end.
  *
  * The focus is lost when `document.activeElement` is null or the body, when it is an element
  * no longer in the document, or when it is inside an element the caller says is going away
@@ -63,6 +64,17 @@ export function focusIfLost(
   const target = list.find(canTakeFocus);
   if (target === undefined) return false;
   target.focus({ preventScroll: options.preventScroll ?? inViewport(target) });
+  return document.activeElement === target;
+}
+
+/**
+ * Moves the focus to `target` even when it is not lost, scrolling only when the target is not
+ * fully in view. The one exception to `focusIfLost`: the marked item that moved away from the
+ * keyboard (card #185), whose focus goes on to the next open item.
+ */
+export function focusInView(target: HTMLElement): boolean {
+  if (!canTakeFocus(target)) return false;
+  target.focus({ preventScroll: inViewport(target) });
   return document.activeElement === target;
 }
 

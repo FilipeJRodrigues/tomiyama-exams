@@ -1,6 +1,7 @@
-/** Viewport size read by the `matchMedia` stub in `setup.ts`. */
+/** Viewport size and motion preference read by the `matchMedia` stub in `setup.ts`. */
 let viewportWidth = 1280;
 let viewportHeight = 800;
+let reducedMotion = false;
 
 export function setViewportWidth(width: number): void {
   viewportWidth = width;
@@ -11,9 +12,15 @@ export function setViewportHeight(height: number): void {
   viewportHeight = height;
 }
 
+/** `prefers-reduced-motion: reduce` matches from now on (until the test ends). */
+export function setReducedMotion(reduce: boolean): void {
+  reducedMotion = reduce;
+}
+
 export function resetViewport(): void {
   viewportWidth = 1280;
   viewportHeight = 800;
+  reducedMotion = false;
 }
 
 function toPx(value: string | undefined, unit: string | undefined): number {
@@ -21,6 +28,7 @@ function toPx(value: string | undefined, unit: string | undefined): number {
 }
 
 export function mediaMatches(query: string): boolean {
+  if (/prefers-reduced-motion:\s*reduce/.test(query)) return reducedMotion;
   const max = /max-width:\s*([\d.]+)(px|em|rem)/.exec(query);
   if (max) return viewportWidth <= toPx(max[1], max[2]);
   const min = /min-width:\s*([\d.]+)(px|em|rem)/.exec(query);

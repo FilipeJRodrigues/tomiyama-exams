@@ -42,9 +42,11 @@ import {
 } from './examModel';
 import { focusIfLost, focusIsLost } from './focus';
 import { DOUBLE_TAP_MS, useMarkClickGuard } from './markClickGuard';
+import { QueueMotion } from './QueueMotion';
 import { TOUCH_TARGET } from './touch';
 import { useDecisionFlow, type DecisionFlow, type SummaryLayout } from './useDecisionFlow';
 import { useExamMarking, type MarkFailure } from './useExamMarking';
+import { useMarkQueue } from './useMarkQueue';
 
 const MSG_EVENT_NOT_FOUND = 'Evento não encontrado';
 
@@ -152,8 +154,11 @@ const CLOSE_NOTICE_LABEL = 'Fechar aviso';
 interface MarkFailureNoticeProps {
   failure: MarkFailure;
   onClose: () => void;
-  /** "Tentar de novo", after passing refusals (`failure.retry`) while the exam takes marks. */
-  onRetry: (() => void) | undefined;
+  /**
+   * "Tentar de novo", after passing refusals (`failure.retry`) while the exam takes marks;
+   * `byKeyboard`: Enter or Space (`detail` 0), not a pointer.
+   */
+  onRetry: ((byKeyboard: boolean) => void) | undefined;
   /**
    * Where the focus goes when it was in the notice (its close button goes away, § 6.7) and
    * the item the notice names is no longer on the screen (another tab, the filter).
@@ -293,9 +298,9 @@ function MarkFailureNotice({
             variant="default"
             leftSection={<IconRefresh size={18} aria-hidden />}
             aria-label={`Tentar de novo: ${failure.item}`}
-            onClick={() => {
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
               leave();
-              onRetry();
+              onRetry(event.detail === 0);
             }}
             style={TOUCH_TARGET}
           >
@@ -449,6 +454,17 @@ function ExamContent({
   titleRef,
   ...itemProps
 }: ExamContentProps) {
+  const { kind, onlyUnmarked, keep } = itemProps;
+  // The marked items go to the end of the queue (card #185); read-only, the sheet order.
+  const queue = useMarkQueue({
+    items: sheet.items,
+    active: onMark !== undefined,
+    settled,
+    failure,
+    kind,
+    onlyUnmarked,
+    keep,
+  });
   const belts = useBelts();
   const examiners = useExaminers();
   useReadOnlyFocus(titleRef, onMark === undefined, failure);
@@ -482,8 +498,30 @@ function ExamContent({
     carriedNoticeFocus.current = null;
     if (carried !== null) focusIfLost([markButtonOf(carried.itemId), titleRef.current]);
   });
-  const renderMark: RenderMark = onMark
-    ? (item) => <MarkButtons item={item} onMark={onMark} acceptClick={acceptClick} />
+  const { marked, settling } = queue;
+  const markInQueue =
+    onMark &&
+    ((item: ExamSheetItem, state: MarkState, byKeyboard: boolean) => {
+      marked(item.id, state, byKeyboard);
+      onMark(item, state);
+    });
+  // "Tentar de novo" marks the item again: the order waits for it too. From the keyboard it
+  // counts as a keyboard mark: when the item moves, the focus goes on to the first open item.
+  const retryInQueue =
+    onRetryFailure &&
+    ((byKeyboard: boolean) => {
+      if (failure?.retry !== undefined) marked(failure.itemId, failure.retry, byKeyboard);
+      onRetryFailure();
+    });
+  const renderMark: RenderMark = markInQueue
+    ? (item) => (
+        <MarkButtons
+          item={item}
+          onMark={markInQueue}
+          acceptClick={acceptClick}
+          settling={settling}
+        />
+      )
     : renderReadOnlyMark;
 
   const main = (
@@ -496,19 +534,25 @@ function ExamContent({
           key={failure.id}
           failure={failure}
           onClose={onDismissFailure}
-          onRetry={onRetryFailure}
+          onRetry={retryInQueue}
           focusTarget={titleRef}
           carriedRef={carriedNoticeFocus}
           onTappedAway={keepNoticeSpace}
         />
       )}
       {!failure && noticeSpace !== null && <NoticeSpace height={noticeSpace.height} />}
-      <ExamItems
-        items={sheet.items}
-        summary={sheet.summary}
-        renderMark={renderMark}
-        {...itemProps}
-      />
+      <QueueMotion move={queue.move}>
+        <ExamItems
+          items={queue.items}
+          summary={sheet.summary}
+          renderMark={renderMark}
+          {...itemProps}
+        />
+      </QueueMotion>
+      {/* The marked item that moved (card #185); the percentages have their own region. */}
+      <VisuallyHidden role="status" aria-live="polite" aria-atomic="true" data-testid="queue-live">
+        {queue.announcement && <span key={queue.announcement.id}>{queue.announcement.text}</span>}
+      </VisuallyHidden>
     </Stack>
   );
 
@@ -550,7 +594,8 @@ export function ExamPage() {
   const [kind, setKind] = useState<RequirementKind>('THEORY');
   const [onlyUnmarked, setOnlyUnmarked] = useState(false);
   // Items marked on this exam since the tab or the filter last changed: under "Só não
-  // marcados" they stay where they are instead of vanishing under the finger.
+  // marcados" they stay on the screen (at the end of their category, card #185) instead of
+  // vanishing, so they can still be corrected.
   const examKey = `${eventId}/${studentId}`;
   const [kept, setKept] = useState<{ examKey: string; ids: ReadonlySet<string> }>({
     examKey,
@@ -589,7 +634,7 @@ export function ExamPage() {
     );
   } else {
     const markable = canMark(data.exam, data.event);
-    // Marked items stay in place under "Só não marcados" until the tab or the filter changes.
+    // Marked items stay shown under "Só não marcados" until the tab or the filter changes.
     const keepItem = (itemId: string) => {
       setKept((current) => ({
         examKey,
