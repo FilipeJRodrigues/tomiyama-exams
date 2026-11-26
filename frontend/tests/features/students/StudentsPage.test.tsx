@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StudentView } from '../../../src/api/types';
 import { createMockDb } from '../../../src/mocks/data';
 import { createHandlers } from '../../../src/mocks/handlers';
+import { Styles, loadStyles } from '../../computedCss';
 import { server, TEST_API_URL } from '../../msw-server';
 import { renderApp } from '../../render';
 import { setViewportWidth } from '../../viewport';
@@ -234,8 +235,13 @@ describe('students list (§ 6.2)', () => {
     const davi = within(table).getByRole('rowheader', { name: 'Davi Oliveira' }).closest('tr')!;
     const swatch = await within(davi).findByTestId('belt-swatch');
     expect(swatch).toHaveAttribute('aria-hidden', 'true');
-    // White belt on a white page: the border keeps it visible.
-    expect(swatch.getAttribute('style')).toContain('border: 1px solid var(--mantine-color-dimmed)');
+    // White belt on a white page: the border keeps it visible. It comes from the CSS module of
+    // the mini belt (#166, step 4); only the colors of the belt are inline.
+    await loadStyles();
+    const styles = await Styles.now();
+    expect(styles.declared(swatch, ['border'])?.value).toBe(
+      '1px solid var(--mantine-color-dimmed)',
+    );
     expect(within(davi).getAllByRole('cell')[0]).toHaveTextContent(/^Branca$/);
   });
 
