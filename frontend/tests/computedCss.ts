@@ -14,9 +14,14 @@
  * component `vars`/`styles`, a stylesheet of the app or an inline style.
  *
  * Limits: `@layer` order and `@container` are not evaluated (the app uses neither), `@media`
- * goes through the `matchMedia` stub of `tests/setup.ts` (widths only), and only `#hex`,
+ * goes through the `matchMedia` stub of `tests/setup.ts` (widths; hover and pointer only on
+ * the touch screen of `setTouchScreen` in `tests/viewport.ts`), and only `#hex`,
  * `rgb()/rgba()`, `transparent`, `white` and `black` are read as colors; anything else throws,
  * so a check never passes on a color it could not read.
+ *
+ * Font size: `fontSizePx(element)` gives the computed size in CSS px (`font-size` or the `font`
+ * shorthand, `var()`, `calc()/min()/max()/clamp()`, `px/rem/em/%` and the size keywords,
+ * inherited when nothing is declared). A value it cannot read throws, as with colors.
  *
  * Hover: jsdom has no pointer, so `:hover` never matches. `Styles.now({ hover: element })`
  * reads the page as a mouse over that element would leave it: `:hover` matches the element and
@@ -488,6 +493,175 @@ export class Styles {
     for (let current: Element | null = element; current; current = current.parentElement) {
       if (this.color(current, ['background', 'background-color'])?.alpha === 1) return current;
     }
+    return null;
+  }
+
+  /**
+   * Computed font size of the element, in CSS px: the declaration that wins (`font-size` or
+   * the `font` shorthand), `rem` from the root, `em` and `%` from the parent, the parent's
+   * size when nothing is declared. A form control with nothing declared throws: the browser
+   * gives it its own size there, not the parent's.
+   */
+  fontSizePx(element: Element): number {
+    const root = element.ownerDocument.documentElement;
+    const rootPx = element === root ? MEDIUM_PX : this.fontSizePx(root);
+    const parentPx = () =>
+      element === root || element.parentElement === null
+        ? MEDIUM_PX
+        : this.fontSizePx(element.parentElement);
+    const winner = this.declared(element, ['font', 'font-size']);
+    if (winner === null) {
+      if (FORM_CONTROLS.has(element.tagName)) {
+        throw new Error(
+          `Nenhum font-size nas folhas de estilo para <${element.tagName.toLowerCase()}>: o navegador usaria o tamanho do sistema.`,
+        );
+      }
+      return parentPx();
+    }
+    const value = this.resolve(element, winner.value);
+    const size = winner.prop === 'font' ? fontShorthandSize(value) : value.trim().toLowerCase();
+    if (size === 'inherit' || size === 'unset') return parentPx();
+    if (size === 'initial') return MEDIUM_PX;
+    if (size === 'larger') return parentPx() * 1.2;
+    if (size === 'smaller') return parentPx() / 1.2;
+    const keyword = FONT_SIZE_KEYWORDS[size];
+    if (keyword !== undefined) return keyword;
+    const px = lengthPx(size, { rem: rootPx, em: parentPx });
+    if (px === null) throw new Error(`font-size não reconhecido: "${winner.prop}: ${value}"`);
+    return px;
+  }
+}
+
+/* --------------------------------------------------------------- font size */
+
+/** The initial font size (`medium`). */
+const MEDIUM_PX = 16;
+
+/** Absolute size keywords of `font-size`, in px (CSS Fonts 4). */
+const FONT_SIZE_KEYWORDS: Readonly<Record<string, number>> = {
+  'xx-small': 9,
+  'x-small': 10,
+  small: 13,
+  medium: 16,
+  large: 18,
+  'x-large': 24,
+  'xx-large': 32,
+  'xxx-large': 48,
+};
+
+/** Elements whose font the browser does not inherit by default (its own stylesheet). */
+const FORM_CONTROLS = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON']);
+
+const SIZE_TOKEN = /^([+-]?(\d+\.?\d*|\.\d+)(px|rem|em|%)|(calc|min|max|clamp)\(.*\))$/;
+
+/** The size inside a `font` shorthand (`700 1rem/1.5 sans-serif`), or its global keyword. */
+function fontShorthandSize(value: string): string {
+  const text = value.trim().toLowerCase();
+  if (/^(inherit|initial|unset)$/.test(text)) return text;
+  for (const token of splitTopLevel(text, (char) => /\s/.test(char))) {
+    const size = splitTopLevel(token, (char) => char === '/')[0] ?? '';
+    if (SIZE_TOKEN.test(size) || size in FONT_SIZE_KEYWORDS || /^(larger|smaller)$/.test(size)) {
+      return size;
+    }
+  }
+  throw new Error(`Tamanho não encontrado no atalho "font: ${value}"`);
+}
+
+interface Quantity {
+  value: number;
+  /** A length (px) or a plain number. */
+  length: boolean;
+}
+
+/**
+ * A length in px: `16px`, `1rem`, `calc(0.875rem * 1)`, `max(1rem, 14px)`, `clamp(...)`; `em`
+ * and `%` are of the parent's size (the font-size rule). Null when it is not a length.
+ */
+function lengthPx(text: string, base: { rem: number; em: () => number }): number | null {
+  const tokens = text.match(
+    /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?(?:px|rem|em|%)?|[a-z-]+\(|[()*/,+-]/g,
+  );
+  if (tokens === null || tokens.join('') !== text.replace(/\s+/g, '')) return null;
+  let position = 0;
+  const peek = () => tokens[position];
+  const take = () => tokens[position++];
+
+  function factor(): Quantity {
+    const token = take();
+    if (token === undefined) throw new Error('fim');
+    if (token === '(') {
+      const inner = sum();
+      if (take() !== ')') throw new Error(')');
+      return inner;
+    }
+    const fn = /^([a-z-]+)\($/.exec(token);
+    if (fn) {
+      const args = [sum()];
+      while (peek() === ',') {
+        take();
+        args.push(sum());
+      }
+      if (take() !== ')') throw new Error(')');
+      const values = args.map((arg) => arg.value);
+      const length = args.some((arg) => arg.length);
+      if (fn[1] === 'calc' && args.length === 1 && args[0]) return args[0];
+      if (fn[1] === 'min') return { value: Math.min(...values), length };
+      if (fn[1] === 'max') return { value: Math.max(...values), length };
+      if (fn[1] === 'clamp' && values.length === 3) {
+        const [low = 0, middle = 0, high = 0] = values;
+        return { value: Math.max(low, Math.min(middle, high)), length };
+      }
+      throw new Error(fn[1]);
+    }
+    const number = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(px|rem|em|%)?$/.exec(token);
+    if (!number) throw new Error(token);
+    const amount = Number(number[1]);
+    switch (number[2]) {
+      case 'px':
+        return { value: amount, length: true };
+      case 'rem':
+        return { value: amount * base.rem, length: true };
+      case 'em':
+        return { value: amount * base.em(), length: true };
+      case '%':
+        return { value: (amount / 100) * base.em(), length: true };
+      default:
+        return { value: amount, length: false };
+    }
+  }
+
+  function product(): Quantity {
+    let left = factor();
+    while (peek() === '*' || peek() === '/') {
+      const operator = take();
+      const right = factor();
+      left =
+        operator === '*'
+          ? { value: left.value * right.value, length: left.length || right.length }
+          : { value: left.value / right.value, length: left.length };
+    }
+    return left;
+  }
+
+  function sum(): Quantity {
+    let left = product();
+    for (;;) {
+      const next = peek();
+      // `calc(1rem -0.125rem)` reads as two numbers: a sign glued to the number.
+      const glued = next !== undefined && /^[+-]./.test(next) ? next : null;
+      if (next !== '+' && next !== '-' && glued === null) return left;
+      if (glued === null) take();
+      const right = product();
+      const sign = glued !== null ? 1 : next === '-' ? -1 : 1;
+      left = { value: left.value + sign * right.value, length: left.length || right.length };
+    }
+  }
+
+  try {
+    const result = sum();
+    if (position !== tokens.length || !result.length) return null;
+    return result.value;
+  } catch {
     return null;
   }
 }
