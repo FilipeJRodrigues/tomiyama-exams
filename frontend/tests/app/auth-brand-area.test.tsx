@@ -56,6 +56,8 @@ const YELLOW = BRAND_COLORS.yellow.toLowerCase();
 const WHITE = '#ffffff';
 const SECONDARY = '#c5cee6';
 const SURFACE: Record<Scheme, string> = { light: WHITE, dark: '#2a2a2a' };
+/** The page color of the theme (`--mantine-color-body`): dark.7 and white. */
+const PAGE: Record<Scheme, string> = { light: WHITE, dark: appTheme.colors.dark[7].toLowerCase() };
 /** The real primary color: filled button and focus ring inside the card. */
 const PRIMARY: Record<Scheme, string> = { light: BLUE, dark: YELLOW };
 /** Border of the card: Mantine's gray.3 on the white card; the control border on charcoal. */
@@ -293,6 +295,21 @@ describe.each<Scheme>(['dark', 'light'])(
           ? styles.resolve(card, 'var(--app-control-border)')
           : appTheme.colors.gray[3],
       );
+    });
+
+    it('body e html pintados pela variável da marca; a cor da página do tema continua (#190)', async () => {
+      await open(SCREENS[0]);
+      const styles = await Styles.now();
+      // The color of the document that Safari shows past the page: the variable, no loose hex.
+      for (const page of [document.body, document.documentElement]) {
+        expect(styles.declared(page, ['background-color', 'background'])?.value).toBe(
+          'var(--app-brand-bg)',
+        );
+      }
+      expect(hex(styles.background(document.body))).toBe(BLUE);
+      // Only the background changes: the page color of the theme (dark.7 / white) stays.
+      const page = styles.resolve(document.body, 'var(--mantine-color-body)').toLowerCase();
+      expect(page.replace(/^#(\w)(\w)(\w)$/, '#$1$1$2$2$3$3')).toBe(PAGE[scheme]);
     });
 
     it('botão principal na cor principal, com o anel de foco do tema dentro do cartão', async () => {

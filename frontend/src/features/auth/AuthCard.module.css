@@ -22,10 +22,21 @@
 
 /*
  * The page canvas behind it, which the overscroll of iOS and macOS shows above and below the
- * page: blue too while an entry screen is open, instead of the page color of the theme. More
- * specific than the rules of `index.html` for each scheme.
+ * page and iOS shows behind the Safari bars: blue too while an entry screen is open, instead of
+ * the page color of the theme (#190). Safari paints both with the background of the document,
+ * the `html` color with the `body` color over it, so an opaque `body` wins
+ * (`LocalFrameView::documentBackgroundColor` in WebKit; `underPageBackgroundColor`, "using the
+ * background colors of the <html> and <body> elements",
+ * https://developer.apple.com/documentation/webkit/wkwebview/underpagebackgroundcolor). So both
+ * turn blue, not only the `html`:
+ * - the `html` (0,3,0) beats the rules of `index.html` for each scheme, up to (0,2,0);
+ * - the `body` (0,1,1) beats Mantine's `body` (0,0,1), which paints `--mantine-color-body`.
+ * Only the background changes: `--mantine-color-body` stays, so the card keeps the surface of
+ * the theme. When the screen leaves (sign-in), `:has()` stops matching and both go back to the
+ * theme.
  */
-:global(:root[data-mantine-color-scheme]):has(.screen) {
+:global(:root[data-mantine-color-scheme]):has(.screen),
+:global(body):has(.screen) {
   background-color: var(--app-brand-bg);
 }
 

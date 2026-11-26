@@ -31,6 +31,17 @@
  * Pseudo-elements: a rule ending in `::before` or `::after` is another box, so it never counts
  * for the element itself; `declared(element, props, { pseudo: '::after' })` reads that box (a
  * stretched link, for instance). Other pseudo-elements (`::placeholder`...) are not read.
+ *
+ * Order of the `<style>` elements: they come after the CSS files, as the ones `MantineProvider`
+ * writes do. A `<style>` with `BEFORE_APP_CSS` comes before them instead, as the `<style>` of
+ * `index.html` does in the browser (Vite adds the app's CSS at the end of the `<head>`), so it
+ * loses every tie of specificity to the app's CSS.
+ *
+ * Declarations a browser drops: `declared(element, props, { skip })` reads the cascade without
+ * them, as a browser that does not know a unit (`dvh`, for instance) would.
+ *
+ * `inherit` in a color (`background-color: inherit`) takes the parent's value, as in CSS; on the
+ * root, none (transparent).
  */
 import postcss, { type AcceptedPlugin, type Container } from 'postcss';
 
@@ -59,6 +70,12 @@ export type PseudoElement = '::before' | '::after';
 
 /** Marks the hovered element and its ancestors while a `Styles` reads them (see `now`). */
 const HOVER_ATTRIBUTE = 'data-computed-css-hover';
+
+/**
+ * A `<style>` with this attribute comes before the CSS files in the cascade, as the `<style>`
+ * of `index.html` does in the browser (see the top of this file).
+ */
+export const BEFORE_APP_CSS = 'data-computed-css-before-app';
 
 interface Entry {
   /**
@@ -319,8 +336,18 @@ export class Styles {
    */
   static async now(options: { hover?: Element } = {}): Promise<Styles> {
     if (staticEntries === null) throw new Error('Chame loadStyles() no beforeAll.');
-    const entries = [...(await staticEntries)];
-    for (const style of document.querySelectorAll('style')) {
+    const styles = [...document.querySelectorAll('style')];
+    const before: Entry[] = [];
+    for (const style of styles.filter((element) => element.hasAttribute(BEFORE_APP_CSS))) {
+      parse(style.textContent, before);
+    }
+    const files = await staticEntries;
+    // Without a `<style>` before the files, the same entries and order as always.
+    const entries =
+      before.length === 0
+        ? [...files]
+        : [...before, ...files].map((entry, order) => ({ ...entry, order }));
+    for (const style of styles.filter((element) => !element.hasAttribute(BEFORE_APP_CSS))) {
       const page: Entry[] = [];
       parse(style.textContent, page);
       for (const entry of page) entries.push({ ...entry, order: entries.length });
@@ -365,17 +392,22 @@ export class Styles {
 
   /**
    * The declaration that wins the cascade on the element, among the given properties; with
-   * `pseudo`, on that pseudo-element of it (inline styles do not reach a pseudo-element).
+   * `pseudo`, on that pseudo-element of it (inline styles do not reach a pseudo-element); with
+   * `skip`, without the declarations it returns true for (see the top of this file).
    */
   declared(
     element: Element,
     props: readonly string[],
-    options: { pseudo?: PseudoElement } = {},
+    options: {
+      pseudo?: PseudoElement;
+      skip?: (declaration: { prop: string; value: string }) => boolean;
+    } = {},
   ): Winner | null {
     const pseudo = options.pseudo ?? null;
     let best: (Winner & { rank: readonly [number, number, number, number] }) | null = null;
     const offer = (declaration: Declaration, inline: boolean, spec: number, order: number) => {
       if (!props.includes(declaration.prop)) return;
+      if (options.skip?.({ prop: declaration.prop, value: declaration.value })) return;
       const rank = [declaration.important ? 1 : 0, inline ? 1 : 0, spec, order] as const;
       if (best !== null) {
         for (let i = 0; i < rank.length; i += 1) {
@@ -441,6 +473,10 @@ export class Styles {
     const winner = this.declared(element, props);
     if (winner === null) return null;
     const value = this.resolve(element, winner.value);
+    if (value.toLowerCase() === 'inherit') {
+      const parent = element.parentElement;
+      return parent ? this.color(parent, props) : null;
+    }
     const tokens = splitTopLevel(value, (char) => /\s/.test(char));
     for (const token of tokens) {
       const parsed = parseColor(token);
