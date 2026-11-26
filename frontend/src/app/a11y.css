@@ -33,6 +33,35 @@
 }
 
 /*
+ * § 6.7, the page at the width of the screen after a tap on a field (#191): iOS Safari zooms
+ * the page in when the focus goes to an `input`, `select` or `textarea` whose text is under
+ * 16 px, and the zoom stays on the next page (after "Entrar", the Academia page showed
+ * enlarged and cut at the edges). Every field of the app has Mantine's `sm` size, 14 px. On a
+ * touch screen the text of every field is at least 16 px (`1rem`); a field given a larger size
+ * on purpose (`size="md"` and up) keeps its own. With a mouse, the fields stay at 14 px.
+ *
+ * Which screens: `any-pointer: coarse`, any touch screen, whatever the main pointer is. An
+ * iPad with a trackpad reports a fine main pointer (`pointer: fine`, `hover: hover`) and Safari
+ * still zooms there; a notebook with a touch screen also gets 16 px, which is fine. Not by
+ * width: a phone turned sideways is 844 px wide. Not `@supports (-webkit-touch-callout: none)`
+ * either, which only tells iOS apart and would leave the rule to a browser detail.
+ *
+ * Where: on the field itself (`.mantine-Input-input`: the `input` of TextInput, the `select` of
+ * NativeSelect, the `textarea`, and the box of PasswordInput, whose inner `input` takes
+ * `font-size: inherit`), keeping Mantine's own expression inside `max()`. Not on `--input-fz`,
+ * which Mantine writes inline on the wrapper, so only `!important` would beat it. Same
+ * specificity as Mantine's rule; this file comes after, so it wins without `!important`.
+ *
+ * Never `maximum-scale` or `user-scalable=no` in the viewport of `index.html` to stop the
+ * zoom: on Android that also takes away the pinch zoom, and § 6.7 asks for a 200% zoom.
+ */
+@media (any-pointer: coarse) {
+  .mantine-Input-input {
+    font-size: max(1rem, var(--_input-fz, var(--input-fz, var(--mantine-font-size-md))));
+  }
+}
+
+/*
  * Thumb of a switch that is on: the contrast color of the primary (white on the blue, blue
  * on the yellow, where Mantine's white is 1.22:1). Mantine's variable is the same for on and
  * off, so the rule only takes the checked input: off, the thumb stays white. Every switch of
