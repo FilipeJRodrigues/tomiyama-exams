@@ -364,17 +364,20 @@ Nada disto roda sem o ok do responsável. A ordem importa: primeiro a stack de C
 3. **Ponha o limite nos papéis atuais das funções**, com a sua credencial de administrador (a do `--profile tomiyama`). Os 48 papéis da `tomiyama-dev` ainda não têm limite, e o papel de execução só grava as políticas de um papel que já o tem. A documentação não diz em que ordem o handler do `AWS::IAM::Role` faz as chamadas num update: se ele regravar as políticas (`PutRolePolicy`) antes de pôr o limite (`PutRolePermissionsBoundary`), o deploy do passo 4 cai em AccessDenied. Com o limite já posto, a ordem não importa, e o passo 4 põe o mesmo valor pelo CloudFormation (nada fica fora do template). As funções já passam a rodar com o limite aqui: confira o app logo depois (como no passo 5).
 
    ```bash
+   READ_FAILED=
    BOUNDARY=$(
      aws cloudformation describe-stacks --stack-name tomiyama-cd-dev --region us-east-2 --profile tomiyama \
        --query "Stacks[0].Outputs[?OutputKey=='FunctionPermissionsBoundaryArn'].OutputValue" --output text
-   )
+   ) || READ_FAILED=1
    ROLES=$(
      aws cloudformation list-stack-resources --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
        --query "StackResourceSummaries[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text
-   )
+   ) || READ_FAILED=1
    BOUNDARY=${BOUNDARY//$'\r'/}; ROLES=${ROLES//$'\r'/}
    echo "$BOUNDARY"; echo "$ROLES" | wc -w
-   if [[ ! $BOUNDARY =~ ^arn:aws:iam::[0-9]{12}:policy/cd/cd-tomiyama-dev-function-boundary$ ]]; then
+   if [[ -n $READ_FAILED ]]; then
+     echo "A AWS CLI falhou ao ler o ARN do limite ou a lista de papéis (o erro dela está acima); resolva-o e rode o bloco de novo. Nenhum papel foi alterado."
+   elif [[ ! $BOUNDARY =~ ^arn:aws:iam::[0-9]{12}:policy/cd/cd-tomiyama-dev-function-boundary$ ]]; then
      echo "O ARN do limite veio \"$BOUNDARY\", e não arn:aws:iam::<conta>:policy/cd/cd-tomiyama-dev-function-boundary. Nenhum papel foi alterado."
    elif [[ -z $ROLES || $ROLES == None ]]; then
      echo "Não veio nenhum papel da tomiyama-dev (\"$ROLES\"). Nenhum papel foi alterado."
@@ -385,7 +388,7 @@ Nada disto roda sem o ok do responsável. A ordem importa: primeiro a stack de C
    fi
    ```
 
-   O bloco só põe o limite se o ARN tiver o formato `arn:aws:iam::<conta>:policy/cd/cd-tomiyama-dev-function-boundary` (12 dígitos na conta) e vier algum papel. Senão, ele diz o que deu errado e não altera nenhum papel. Com `--output text`, a AWS CLI devolve uma linha vazia quando o filtro não acha a saída (a stack de CD ainda sem o #179, por exemplo) e `None` quando a stack não tem `Outputs`; um ARN de outra política também é recusado. A lista de papéis é recusada vazia ou `None`. O bloco não usa `exit`, então pode ser colado num terminal aberto sem fechá-lo. A linha que tira o `\r` é para o Git Bash: a saída de um programa do Windows, como a AWS CLI, pode terminar as linhas com `\r\n`, o Git Bash só tira o `\r` do fim da saída, e, se a lista de papéis vier em mais de uma linha, o último papel de cada linha do meio ficaria com `\r` no nome; no Linux e no macOS a linha não muda nada. O `echo` mostra o ARN e o número de papéis (48 hoje).
+   O bloco só põe o limite se as duas leituras derem certo, o ARN tiver o formato `arn:aws:iam::<conta>:policy/cd/cd-tomiyama-dev-function-boundary` (12 dígitos na conta) e vier algum papel. Senão, ele diz o que deu errado e não altera nenhum papel. A leitura que falha (credencial vencida, sem conexão, limite de chamadas) escreve o erro no terminal e sai com código diferente de zero, e o bloco confere esse código antes de tudo. No `list-stack-resources` isso importa mesmo com o ARN certo: com `--output text`, a AWS CLI escreve uma linha por página, e uma falha no meio da paginação deixaria só parte dos papéis na lista. A primeira linha (`READ_FAILED=`) zera a marca de falha, para o bloco poder ser colado de novo no mesmo terminal. Com `--output text`, a AWS CLI devolve uma linha vazia quando o filtro não acha a saída (a stack de CD ainda sem o #179, por exemplo) e `None` quando a stack não tem `Outputs`; um ARN de outra política também é recusado. A lista de papéis é recusada vazia ou `None`. O bloco não usa `exit`, então pode ser colado num terminal aberto sem fechá-lo. A linha que tira o `\r` é para o Git Bash: a saída de um programa do Windows, como a AWS CLI, pode terminar as linhas com `\r\n`, o Git Bash só tira o `\r` do fim da saída, e, se a lista de papéis vier em mais de uma linha, o último papel de cada linha do meio ficaria com `\r` no nome; no Linux e no macOS a linha não muda nada. O `echo` mostra o ARN e o número de papéis (48 hoje).
 4. **Rode a esteira com o commit de merge do #179** (veja "Rodar escolhendo o commit"). No change set, espere `Modify` em cada papel `…FunctionRole` (Replacement `False`), só com `PermissionsBoundary` nos detalhes, sem mudança em `Policies`; o parâmetro `FunctionPermissionsBoundary` aparece com o ARN. Confira e aprove.
 5. **Confira:** a stack em `UPDATE_COMPLETE`, o limite num papel qualquer (`aws iam get-role --role-name <papel> --query Role.PermissionsBoundary --profile tomiyama` mostra o ARN) e o app funcionando: entrar, listar alunos, abrir uma ficha, marcar e desmarcar um item, abrir as configurações e uma assinatura. Um AccessDenied no log das funções (`/aws/lambda/tomiyama-dev`) aponta algo que o limite não cobre: amplie o limite na stack de CD.
 
@@ -424,7 +427,7 @@ aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 
 
 **Antes do passo 3 (a lista de papéis vem vazia).** É seguro voltar direto, porque nenhum papel depende da política. Pegue o template anterior pelo git, num arquivo fora do repositório, e rode o change set `atualizar` do passo 4 de "Criar a stack de CD" com ele e com o mesmo arquivo de parâmetros. `<merge do #179>` é o commit de merge do PR do #179 (`git log --first-parent --oneline origin/main`), e o `^1` é o `main` logo antes dele.
 
-O `^1` só é o template certo enquanto nenhum PR posterior ao #179 tiver mudado o `infra/cd-pipeline.yaml`. Confira, depois de um `git fetch origin`, com `git log --oneline <merge do #179>..origin/main -- infra/cd-pipeline.yaml`: fora o PR intermediário do caso "Depois do passo 4", que a volta desfaz de propósito, a lista tem de vir vazia. Se vier outro commit, a volta pelo `^1` desfaria as mudanças dele também, e o change set mostraria mais do que o esperado. Nesse caso, faça antes o PR que reverte o #179 no `main` (o último item da lista depois do bloco), resolvendo os conflitos com as mudanças posteriores. No diff dele, o `infra/cd-pipeline.yaml` só pode perder o que o #179 pôs. Depois, troque no `git show` o `<merge do #179>^1` pelo commit de merge desse PR.
+O `^1` só é o template certo enquanto nenhum PR posterior ao #179 tiver mudado o `infra/cd-pipeline.yaml`. Confira, depois de um `git fetch origin`, com `git log --first-parent --oneline <merge do #179>..origin/main -- infra/cd-pipeline.yaml`: fora o PR intermediário do caso "Depois do passo 4", que a volta desfaz de propósito, a lista tem de vir vazia. O `--first-parent` mostra cada PR pelo commit de merge dele ("Merge pull request #N"); sem ele, a lista traria os commits de dentro da branch do PR, e não o merge. Se vier outro commit, a volta pelo `^1` desfaria as mudanças dele também, e o change set mostraria mais do que o esperado. Nesse caso, faça antes o PR que reverte o #179 no `main` (o último item da lista depois do bloco), resolvendo os conflitos com as mudanças posteriores. No diff dele, o `infra/cd-pipeline.yaml` só pode perder o que o #179 pôs. Depois, troque no `git show` o `<merge do #179>^1` pelo commit de merge desse PR.
 
 Na raiz do repositório:
 
@@ -448,22 +451,27 @@ Espere `Remove` em `FunctionBoundaryPolicy`, `Modify` em `ExecutionComputePolicy
 
 - a saída `FunctionPermissionsBoundaryArn` some, e o laço do passo 3 de "Implantar o limite de permissões", se alguém o rodar, para sem alterar papel;
 - a esteira deixa de passar `FunctionPermissionsBoundary` e volta a aceitar commits anteriores ao #179 (o que diz "Voltar para um commit anterior ao #179" vale só com a stack de CD do #179). Um deploy do `main` com o #179 não põe o limite: o parâmetro não vem, a stack do app não tem outro valor nele (o segundo comando do começo desta seção veio vazio), e o padrão do template é vazio;
-- o `main` continua com o #179, e o próximo change set `atualizar` com o `infra/cd-pipeline.yaml` dele põe a política e as condições de volta. Para a volta durar, reverta o #179 no `main` (um PR com `git revert -m 1 <merge do #179>`) e use o arquivo desse `main`. Se o PR intermediário do caso "Depois do passo 4" já entrou no `main`, reverta-o antes, no mesmo PR (`git revert -m 1 <merge do PR intermediário>` e só depois o do #179): na ordem inversa, o revert do #179 dá conflito, porque os dois mexem nas mesmas linhas.
+- o `main` continua com o #179, e o próximo change set `atualizar` com o `infra/cd-pipeline.yaml` dele põe a política e as condições de volta. Para a volta durar, reverta o #179 no `main` (um PR com `git revert -m 1 <merge do #179>`) e use o arquivo desse `main`. Se o PR intermediário do caso "Depois do passo 4" já entrou no `main`, reverta-o antes, no mesmo PR (`git revert -m 1 <merge do PR intermediário>` e só depois o do #179): na ordem inversa, o revert do #179 dá conflito, porque os dois mexem nas mesmas linhas. O revert apaga também os testes do #179. Pelo `tests/regression/README.md`, o PR mantém o `tests/regression/test_179_readme_template_cd_passa_do_template_body.py`, que vale para qualquer template; as regressões que leem as seções do #179 saem com elas, e o PR explica a mudança, como esse README pede para uma regra que mudou de propósito.
 
 **Depois do passo 3 e antes do passo 4 (papéis na lista; o parâmetro do app vazio).** É também o estado depois de "Se o deploy do passo 4 falhar", com papéis pulados no rollback. O limite foi posto à mão, e o template do app não o tem: tire-o à mão, com a mesma credencial de administrador (o inverso do passo 3), e rode de novo o `list-entities-for-policy` acima. Com a lista vazia, siga como em "Antes do passo 3".
 
 ```bash
+READ_FAILED=
 APP_BOUNDARY=$(
   aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
     --query "Stacks[0].Parameters[?ParameterKey=='FunctionPermissionsBoundary'].ParameterValue" --output text
-)
+) || READ_FAILED=1
 ROLES=$(
   aws cloudformation list-stack-resources --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
     --query "StackResourceSummaries[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text
-)
+) || READ_FAILED=1
 APP_BOUNDARY=${APP_BOUNDARY//$'\r'/}; ROLES=${ROLES//$'\r'/}
-if [[ -n $APP_BOUNDARY ]]; then
-  echo "O parâmetro FunctionPermissionsBoundary da tomiyama-dev veio \"$APP_BOUNDARY\", e não vazio: é o caso \"Depois do passo 4\". Nenhum papel foi alterado."
+if [[ -n $READ_FAILED ]]; then
+  echo "A AWS CLI falhou ao ler o parâmetro FunctionPermissionsBoundary ou a lista de papéis da tomiyama-dev (o erro dela está acima); resolva-o e rode o bloco de novo. Nenhum papel foi alterado."
+elif [[ $APP_BOUNDARY =~ ^arn:aws:iam::[0-9]{12}:policy/ ]]; then
+  echo "O parâmetro FunctionPermissionsBoundary da tomiyama-dev tem o ARN \"$APP_BOUNDARY\": é o caso \"Depois do passo 4\". Nenhum papel foi alterado."
+elif [[ -n $APP_BOUNDARY ]]; then
+  echo "O parâmetro FunctionPermissionsBoundary da tomiyama-dev veio \"$APP_BOUNDARY\", um valor inesperado (nem vazio nem um ARN de política). Nenhum papel foi alterado."
 elif [[ -z $ROLES || $ROLES == None ]]; then
   echo "Não veio nenhum papel da tomiyama-dev (\"$ROLES\"). Nenhum papel foi alterado."
 else
@@ -473,7 +481,7 @@ else
 fi
 ```
 
-O bloco lê antes o parâmetro `FunctionPermissionsBoundary` da `tomiyama-dev` (o segundo comando do começo desta seção) e só tira o limite se ele vier vazio e vier algum papel. Com o ARN, o caso é "Depois do passo 4", em que o template do app diz que os papéis têm o limite. Com o ARN ou qualquer outro valor não vazio (`None`, por exemplo), o bloco não altera nenhum papel. Como o do passo 3, ele não usa `exit` e tira o `\r` do Git Bash.
+O bloco lê antes o parâmetro `FunctionPermissionsBoundary` da `tomiyama-dev` (o segundo comando do começo desta seção) e só tira o limite se as duas leituras derem certo, o parâmetro vier vazio e vier algum papel. A leitura que falha (credencial vencida, sem conexão, limite de chamadas) não escreve nada na saída, e o `$( )` daria o mesmo vazio de um parâmetro vazio. Por isso o bloco confere antes o código de saída das duas leituras: se alguma falhou, ele diz isso e não altera nenhum papel, mesmo que a outra tenha dado certo (no `list-stack-resources`, uma falha no meio da paginação deixaria só parte dos papéis). Com um ARN de política, o caso é "Depois do passo 4", em que o template do app diz que os papéis têm o limite; com outro valor não vazio (`None`, por exemplo), o bloco diz que o valor é inesperado. Nos dois casos, ele não altera nenhum papel. Como o do passo 3, ele zera a marca de falha na primeira linha, não usa `exit` e tira o `\r` do Git Bash.
 
 **Depois do passo 4 (papéis na lista; o parâmetro do app com o ARN).** Não é um rollback, e o template anterior, aplicado direto, não serve:
 

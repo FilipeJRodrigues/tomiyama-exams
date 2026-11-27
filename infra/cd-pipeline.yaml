@@ -87,7 +87,7 @@ Parameters:
 
 Resources:
   # ------------------------------------------------------------- Connection
-  # Born PENDING: complete it once in the console (README, "Concluir a conexão").
+  # Born PENDING: complete it once in the console (README, "Concluir a conexão no console").
   GitHubConnection:
     Type: AWS::CodeConnections::Connection
     Properties:

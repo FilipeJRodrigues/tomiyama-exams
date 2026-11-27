@@ -9,7 +9,8 @@ by hand, taken from ``backend/README.md`` itself and run in bash with a fake ``a
   Windows ends its lines with ``\\r\\n``, Git Bash strips only the last one, and the
   roles of each page of ``list-stack-resources`` come in a line of their own.
 - The inverse block of "Voltar a stack de CD para antes do #179" (between steps 3 and 4)
-  removes the boundary of every role, with a clean name, and calls nothing without roles.
+  removes the boundary of every role, with a clean name, and calls nothing without roles,
+  nor when the credential expired (both reads fail).
 
 Skipped where there is no bash.
 """
@@ -176,3 +177,33 @@ def test_inverse_block_calls_nothing_without_roles(roles: str) -> None:
     calls, _ = _run(DELETE_BLOCK, "", roles)
 
     assert _role_names(calls, "delete-role-permissions-boundary") == []
+
+
+# Like FAKE_AWS, but every read fails as the AWS CLI does with an expired credential: the
+# error on stderr, nothing on stdout, exit code 254. Calls are logged in the file $CALLS.
+FAKE_AWS_EXPIRED = r"""
+aws() {
+  printf '%s\037' "$@" >> "$CALLS"; printf '\n' >> "$CALLS"
+  printf '\nAn error occurred (ExpiredToken) when calling the %s operation: %s\n' \
+    "$2" "The security token included in the request is expired" >&2
+  return 254
+}
+"""
+
+
+def test_inverse_block_calls_nothing_when_the_credential_expired(tmp_path: Path) -> None:
+    """With an expired credential both reads fail, and the empty list of roles stops the
+    block, even though the empty parameter alone would let it go on."""
+    calls_file = tmp_path / "calls"
+    script = f"{FAKE_AWS_EXPIRED}CALLS='{calls_file.as_posix()}'\n{DELETE_BLOCK}\n"
+    done = subprocess.run([BASH], input=script.encode(), capture_output=True, check=False)
+    calls = [
+        line.split("\x1f")[:-1] for line in calls_file.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert [call[:2] for call in calls] == [
+        ["cloudformation", "describe-stacks"],
+        ["cloudformation", "list-stack-resources"],
+    ]
+    assert REFUSED in done.stdout.decode(errors="replace")
+    assert "ExpiredToken" in done.stderr.decode(errors="replace")
