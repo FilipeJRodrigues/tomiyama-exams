@@ -14,18 +14,24 @@ Description: >-
 # stack live under the IAM path /cd/ (no hyphen), so no "role/<name>-*"
 # pattern can ever match them.
 #
-# That holds for the direct reach of the execution role only. Indirectly,
-# through the function roles, it is not isolated: the execution role writes
-# any inline policy on "role/<AppStackName>-*" (no permissions boundary) and
-# passes those roles to Lambda, so a function given broad permissions by a
-# commit on main (the SeedFunction, invoked by Custom::InitialData in the same
-# deploy, or any other later) could change any resource of this stack: its
-# roles and policies, its buckets, the build project (the buildspec and its
-# main check), the pipeline (the approval) and the use of the connection.
-# Every limit this file describes is a direct one. Accepted risk (decision
-# B, 2026-11-18): the same as a manual sam deploy with administrator
-# credentials, guarded by the review of the PR and of the change set. The
-# permissions boundary is card #179. See "Risco aceito: os papéis das
+# That is the direct reach of the execution role. There is also an indirect
+# path, through the function roles: the execution role creates the roles
+# "role/<AppStackName>-*", writes their inline policies and passes them to
+# Lambda, so a function given broad permissions by a commit on main (the
+# SeedFunction, invoked by Custom::InitialData in the same deploy, or any
+# other later) could change any resource of this stack: its roles and
+# policies, its buckets, the build project (the buildspec and its main
+# check), the pipeline (the approval) and the use of the connection.
+#
+# Card #179 closes that path with FunctionBoundaryPolicy, the permissions
+# boundary of every function role. The execution role creates a role, writes
+# its inline policies, attaches a managed policy, changes its trust policy or
+# sets a boundary only when the role's boundary is that policy (condition
+# iam:PermissionsBoundary), and it may neither remove the boundary nor change
+# the policy. The boundary allows only what the functions use today, on the
+# app's resources, nothing in IAM, and explicitly denies every resource of
+# this stack. Whatever a commit writes in a function's Policies, the function
+# gets at most the boundary. See "Limite de permissões dos papéis das
 # funções" in backend/README.md.
 
 Parameters:
@@ -65,19 +71,28 @@ Parameters:
     # Size of ParameterOverrides. CodePipeline takes at most 1,000 characters in
     # an action configuration value (CodePipeline quotas), and at most 1 KB in
     # the ParameterOverrides JSON (CloudFormation action reference). The JSON
-    # has 80 fixed characters, plus the four values:
-    #   Environment      4 ("prod")
-    #   AdminEmail     254 (MaxLength counts characters; the only value that
-    #                       may be non-ASCII, but no real address passes 254
-    #                       octets, so 254 bytes at most)
-    #   BudgetLimitUsd  10 (its AllowedPattern: up to 7 integer digits, a point
-    #                       and 2 decimals; ASCII)
-    #   AllowedOrigin  600 (this MaxLength; ASCII, one byte per character)
-    # 80 + 4 + 254 + 10 + 600 = 948 characters and 948 bytes: under 1,000 and
-    # under 1,024. Two origins (localhost and Amplify) take about 66 characters.
-    MaxLength: 600
+    # has 115 fixed characters, plus the five values:
+    #   Environment                   4 ("prod")
+    #   AdminEmail                  254 (MaxLength counts characters; the only
+    #                                    value that may be non-ASCII, but no
+    #                                    real address passes 254 octets, so
+    #                                    254 bytes at most)
+    #   BudgetLimitUsd               10 (its AllowedPattern: up to 7 integer
+    #                                    digits, a point and 2 decimals; ASCII)
+    #   AllowedOrigin               500 (this MaxLength; ASCII, one byte per
+    #                                    character)
+    #   FunctionPermissionsBoundary  89 (the ARN of FunctionBoundaryPolicy:
+    #                                    "arn:" + partition (at most 10,
+    #                                    aws-us-gov) + ":iam::" + account (12) +
+    #                                    ":policy/cd/" + its name, "cd-" +
+    #                                    AppStackName (at most 25) +
+    #                                    "-function-boundary"; ASCII)
+    # 115 + 4 + 254 + 10 + 500 + 89 = 972 characters and 972 bytes: under 1,000
+    # and under 1,024. Two origins (localhost and Amplify) take about 66
+    # characters. MaxLength was 600 before #179 added the boundary ARN.
+    MaxLength: 500
     ConstraintDescription: >-
-      origens separadas por vírgula, sem espaços, até 600 caracteres: letras minúsculas,
+      origens separadas por vírgula, sem espaços, até 500 caracteres: letras minúsculas,
       números e os caracteres : / . , -
     Description: Parâmetro AllowedOrigin da stack do app (origens separadas por vírgula, sem espaços).
   BudgetLimitUsd:
@@ -327,8 +342,9 @@ Resources:
         # any commit change what the build does, the commit check included.
         # Here the check runs before any code of the commit; only then does
         # "sam build" run with the commit's template and requirements. Changing
-        # the check takes a change to this stack, which a deploy could also make
-        # indirectly, through a function role (see the top of this file, #179).
+        # the check takes a change to this stack. The indirect path, through a
+        # function role, is closed by the permissions boundary (see the top of
+        # this file, #179).
         # SOURCE_COMMIT comes from the pipeline (#{SourceVariables.CommitId}).
         #
         # The commit check runs in pre_build, before the SAM CLI is installed
@@ -395,6 +411,119 @@ Resources:
           artifacts:
             files:
               - packaged.yaml
+
+  # ----------------------------------------- Function permissions boundary
+  # The permissions boundary of every function role of the app (#179): a
+  # function gets at most the intersection of its own policies and this one,
+  # whatever a commit writes in its Policies. Attached to no one (no Roles): it
+  # grants nothing by itself. The pipeline passes its ARN to the app stack
+  # (parameter FunctionPermissionsBoundary), and the execution role writes a
+  # function role only when the role's boundary is this policy.
+  #
+  # Allow: what the functions of infra/template.yaml use today, with the SAM
+  # policy templates expanded, on the app's resources by the stack name
+  # prefix (tests/test_cd_function_boundary.py checks every action and
+  # resource of every function role against it). Nothing in IAM or STS. A new
+  # action or resource in a function's Policies must come here first, in an
+  # update of this stack: otherwise the function fails with AccessDenied when
+  # it runs, not when it is deployed.
+  #
+  # Deny: IAM and STS, and every action on the resources of this stack, this
+  # policy included. Nothing below allows them; the explicit Deny also wins
+  # over a resource-based policy that grants something to a function's role
+  # session (such a grant is not limited by an implicit deny in a boundary,
+  # IAM User Guide) and over a future grant here that would match them by
+  # accident (this stack named "<AppStackName>-...").
+  #
+  # No Description, and keep ManagedPolicyName and Path: changing any of them
+  # replaces the policy (new ARN) while the function roles still use the old
+  # one as their boundary.
+  FunctionBoundaryPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub cd-${AppStackName}-function-boundary
+      Path: /cd/
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Item access (DynamoDBCrudPolicy, DynamoDBReadPolicy and the inline
+          # statements of the functions) on the app's tables and indexes.
+          - Sid: AppTables
+            Effect: Allow
+            Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:ConditionCheckItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Resource:
+              - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AppStackName}-*
+              - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AppStackName}-*/index/*
+          # Logos and signatures: objects of the images bucket, never the bucket.
+          - Sid: AppImages
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::${AppStackName}-*/*
+          # AWSLambdaBasicExecutionRole grants these on "*"; the functions write
+          # only to /aws/lambda/<AppStackName> (Globals.LoggingConfig).
+          - Sid: AppFunctionLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AppStackName}
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AppStackName}:*
+          # The post-confirmation trigger, the settings and the examiners. Pool
+          # ids are random, so the pools of this account and Region.
+          - Sid: AppUserPools
+            Effect: Allow
+            Action:
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:ListUsersInGroup
+            Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+          # The asynchronous copy and deletion of a requirement profile.
+          - Sid: AppFunctions
+            Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AppStackName}-*
+          - Sid: NoIamNorSts
+            Effect: Deny
+            Action:
+              - iam:*
+              - sts:*
+            Resource: "*"
+          # The pipeline by its name (the stack's): a Ref to it would be a
+          # circular dependency (its ParameterOverrides refers to this policy).
+          # Every connection of the account and Region, under both prefixes:
+          # the functions use none.
+          - Sid: NeverTheCdStack
+            Effect: Deny
+            Action: "*"
+            Resource:
+              - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cd/*
+              - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/cd/*
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub ${ArtifactsBucket.Arn}/*
+              - !GetAtt PackagesBucket.Arn
+              - !Sub ${PackagesBucket.Arn}/*
+              - !GetAtt BuildProject.Arn
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${BuildLogGroup}
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${BuildLogGroup}:*
+              - !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}
+              - !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}/*
+              - !Sub arn:${AWS::Partition}:codeconnections:${AWS::Region}:${AWS::AccountId}:connection/*
+              - !Sub arn:${AWS::Partition}:codestar-connections:${AWS::Region}:${AWS::AccountId}:connection/*
+              - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*
 
   # ------------------------------------------- CloudFormation execution role
   # The role CloudFormation uses for every operation on the app stack (the
@@ -493,37 +622,64 @@ Resources:
             Action: lambda:InvokeFunction
             Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AppStackName}-SeedFunction-*
           # The function roles SAM generates ("<AppStackName>-<Function>Role-<suffix>").
-          # No permissions boundary: iam:PutRolePolicy writes any inline policy
-          # on them (accepted risk, see the top of this file and card #179).
+          # Reads, and changes that grant nothing: no condition, so a role of an
+          # older deploy (without a boundary) can still lose a policy, a tag or
+          # be deleted. None of these sets, changes or removes a boundary.
           - Sid: FunctionRoles
             Effect: Allow
             Action:
-              - iam:CreateRole
               - iam:DeleteRole
               - iam:GetRole
               - iam:UpdateRole
               - iam:UpdateRoleDescription
-              - iam:UpdateAssumeRolePolicy
               - iam:TagRole
               - iam:UntagRole
               - iam:ListRoleTags
-              - iam:PutRolePolicy
               - iam:GetRolePolicy
               - iam:DeleteRolePolicy
               - iam:ListRolePolicies
               - iam:ListAttachedRolePolicies
             Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
-          # SAM attaches only AWSLambdaBasicExecutionRole here; the execution role
-          # may attach no other managed policy (inline ones: see FunctionRoles).
-          - Sid: FunctionRolesManagedPolicy
+          # Everything that gives a function role permissions, or lets another
+          # principal use them, only with FunctionBoundaryPolicy as the role's
+          # boundary (#179). iam:PermissionsBoundary (an ARN key of each of these
+          # actions, Service Authorization Reference) is the boundary of the
+          # request on CreateRole and PutRolePermissionsBoundary, and the one the
+          # role already has on PutRolePolicy and UpdateAssumeRolePolicy. No
+          # iam:DeleteRolePermissionsBoundary: a boundary, once set, stays.
+          - Sid: FunctionRolesWithBoundary
             Effect: Allow
             Action:
-              - iam:AttachRolePolicy
-              - iam:DetachRolePolicy
+              - iam:CreateRole
+              - iam:PutRolePermissionsBoundary
+              - iam:PutRolePolicy
+              - iam:UpdateAssumeRolePolicy
+            Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
+            Condition:
+              ArnEquals:
+                iam:PermissionsBoundary: !Ref FunctionBoundaryPolicy
+          # SAM attaches only AWSLambdaBasicExecutionRole here; the execution role
+          # may attach no other managed policy, and only to a role with the boundary.
+          - Sid: FunctionRolesManagedPolicy
+            Effect: Allow
+            Action: iam:AttachRolePolicy
             Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
             Condition:
               ArnEquals:
                 iam:PolicyARN: !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+                iam:PermissionsBoundary: !Ref FunctionBoundaryPolicy
+          # Detaching grants nothing: no boundary condition (see FunctionRoles).
+          - Sid: FunctionRolesDetachManagedPolicy
+            Effect: Allow
+            Action: iam:DetachRolePolicy
+            Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AppStackName}-*
+            Condition:
+              ArnEquals:
+                iam:PolicyARN: !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          # iam:PassRole has no iam:PermissionsBoundary key: it passes any
+          # "role/<AppStackName>-*" to Lambda. Every role the execution role
+          # creates or writes carries the boundary; a role of that name made
+          # outside the stack (by an administrator) is out of its control.
           - Sid: PassFunctionRolesToLambda
             Effect: Allow
             Action: iam:PassRole
@@ -544,10 +700,10 @@ Resources:
               - !Sub arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default-samclisourcebucket-*/${AppStackName}/*
           # Belt and braces: even if this stack's name started with
           # "<AppStackName>-", the execution role could only read packages here.
-          # This Deny binds the execution role alone. With such a name, a function
-          # role given s3:DeleteBucket on "arn:aws:s3:::<AppStackName>-*" (a grant
-          # that looks app-only) would reach these buckets indirectly: accepted
-          # risk, see the top of this file and card #179.
+          # This Deny binds the execution role alone. The function roles get the
+          # same denial indirectly, from their permissions boundary
+          # (FunctionBoundaryPolicy, #179): with such a name, its object grant on
+          # "<AppStackName>-*/*" would otherwise cover these buckets too.
           - Sid: NeverManageTheCdBuckets
             Effect: Deny
             NotAction:
@@ -899,9 +1055,11 @@ Resources:
                 TemplatePath: BuildOutput::packaged.yaml
                 RoleArn: !GetAtt CloudFormationExecutionRole.Arn
                 Capabilities: CAPABILITY_IAM,CAPABILITY_AUTO_EXPAND
+                # The size of this JSON is counted in the comment of AllowedOrigin.
                 ParameterOverrides: !Sub >-
                   {"Environment": "${Environment}", "AdminEmail": "${AdminEmail}",
-                  "AllowedOrigin": "${AllowedOrigin}", "BudgetLimitUsd": "${BudgetLimitUsd}"}
+                  "AllowedOrigin": "${AllowedOrigin}", "BudgetLimitUsd": "${BudgetLimitUsd}",
+                  "FunctionPermissionsBoundary": "${FunctionBoundaryPolicy}"}
               InputArtifacts:
                 - Name: BuildOutput
               RunOrder: 1
@@ -947,3 +1105,8 @@ Outputs:
   ExecutionRoleArn:
     Description: Papel de serviço que o CloudFormation usa na stack do app.
     Value: !GetAtt CloudFormationExecutionRole.Arn
+  FunctionPermissionsBoundaryArn:
+    Description: >-
+      Limite de permissões dos papéis das funções (card #179). A esteira o passa à stack do app no
+      parâmetro FunctionPermissionsBoundary; use o mesmo valor num sam deploy manual.
+    Value: !Ref FunctionBoundaryPolicy

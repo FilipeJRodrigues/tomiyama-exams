@@ -36,9 +36,24 @@ Parameters:
     Description: >-
       dev usa DynamoDB provisionado dentro do free tier (25 RCU/25 WCU), sem PITR e
       logs por 7 dias; prod usa on-demand com PITR, como pede a arquitetura.
+  # Permissions boundary of every function role (#179): the ARN of the policy
+  # the CD stack creates (its output FunctionPermissionsBoundaryArn), which the
+  # pipeline passes. Empty, the roles get no boundary: a manual deploy of a
+  # stack the pipeline never touched works as before. Once a stack has the
+  # boundary, its execution role refuses to remove it (see "Limite de
+  # permissões dos papéis das funções" in backend/README.md).
+  FunctionPermissionsBoundary:
+    Type: String
+    Default: ""
+    AllowedPattern: '^(arn:aws[a-z-]*:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_/-]+)?$'
+    ConstraintDescription: vazio, ou o ARN de uma política gerenciada do IAM (arn:aws:iam::<conta>:policy/...).
+    Description: >-
+      ARN do limite de permissões (permissions boundary) dos papéis das funções; a esteira passa o
+      da stack de CD (saída FunctionPermissionsBoundaryArn). Vazio, os papéis ficam sem limite.
 
 Conditions:
   IsProd: !Equals [!Ref Environment, prod]
+  HasFunctionPermissionsBoundary: !Not [!Equals [!Ref FunctionPermissionsBoundary, ""]]
 
 Mappings:
   # Settings per environment.
@@ -124,6 +139,13 @@ Globals:
     CodeUri: ../backend/src
     Timeout: 10
     MemorySize: 256
+    # SAM sets it on the role it generates for each function. An explicit
+    # AWS::IAM::Role in this template needs the same !If (the test of #179
+    # checks every role of the transformed template).
+    PermissionsBoundary: !If
+      - HasFunctionPermissionsBoundary
+      - !Ref FunctionPermissionsBoundary
+      - !Ref AWS::NoValue
     LoggingConfig:
       LogGroup: !Ref FunctionsLogGroup
     Environment:

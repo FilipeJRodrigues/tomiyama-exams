@@ -22,6 +22,9 @@ resolve_s3 = true
 s3_prefix = "tomiyama-dev"
 # Na linha de comando, --parameter-overrides substitui esta linha inteira:
 # repita Environment=dev se usar a opção.
+# FunctionPermissionsBoundary (card #179) fica de fora: num update, o SAM CLI
+# mantém o valor que a esteira passou. Não o mande vazio numa stack que tem o
+# limite (veja "O limite no deploy manual" no backend/README.md).
 parameter_overrides = "Environment=dev AdminEmail=voce@example.com"
 # Com o front no Amplify, libere as duas origens no CORS (troque <appid> e use
 # esta linha no lugar da de cima). Os pares são separados por espaço; as origens,

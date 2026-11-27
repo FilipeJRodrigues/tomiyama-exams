@@ -107,6 +107,10 @@ class Resolver:
             return self.resolve(props["LogGroupName"])
         if kind == "AWS::CodePipeline::Pipeline":
             return self.resolve(props["Name"])
+        if kind == "AWS::IAM::ManagedPolicy":  # Ref is the ARN
+            partition, path = self.values["AWS::Partition"], self.resolve(props.get("Path", "/"))
+            policy = self.resolve(props["ManagedPolicyName"])
+            return f"arn:{partition}:iam::{ACCOUNT}:policy{path}{policy}"
         raise KeyError(f"Ref sem valor fictício para {name} ({kind})")
 
     def get_att(self, name: str, attribute: str) -> str:
@@ -292,10 +296,13 @@ def test_change_set_parameters_cover_the_app_template(
     assert len(json.dumps(overrides)) < 1024  # 1 KB limit of ParameterOverrides
 
 
-# The four values at their longest (see the MaxLength comment of AllowedOrigin).
+# The five values at their longest (see the MaxLength comment of AllowedOrigin).
 # BudgetLimitUsd is bounded by its AllowedPattern: 7 integer digits, a point and
-# 2 decimals, 10 characters.
+# 2 decimals, 10 characters. The ARN of the function boundary (#179) grows with
+# AppStackName (its AllowedPattern: up to 25 characters) and the partition
+# (aws-us-gov is the longest).
 LONGEST_BUDGET = "9999999.99"
+LONGEST_PARTITION = "aws-us-gov"
 
 
 def _longest(cd: dict[str, Any], parameter: str, unit: str) -> str:
@@ -307,17 +314,22 @@ def test_parameter_overrides_fit_codepipeline_with_the_longest_values(cd: dict[s
     """CodePipeline takes at most 1,000 characters in an action configuration value
     (quotas) and 1 KB in the ParameterOverrides JSON (CloudFormation action
     reference). MaxLength on AdminEmail (254, the longest address SMTP carries) and
-    on AllowedOrigin, and the AllowedPattern of BudgetLimitUsd (10 characters), keep
-    the resolved JSON under both, whatever the stack gets."""
+    on AllowedOrigin, the AllowedPattern of BudgetLimitUsd (10 characters) and the
+    AllowedPattern of AppStackName (the ARN of the function boundary, #179) keep the
+    resolved JSON under both, whatever the stack gets."""
     email_pattern = cd["Parameters"]["AdminEmail"]["AllowedPattern"]
     origin_pattern = cd["Parameters"]["AllowedOrigin"]["AllowedPattern"]
     budget_pattern = cd["Parameters"]["BudgetLimitUsd"]["AllowedPattern"]
+    stack_pattern = cd["Parameters"]["AppStackName"]["AllowedPattern"]
     domain = "@example.com"
     email = _longest(cd, "AdminEmail", "a")[: -len(domain)] + domain
     origins = _longest(cd, "AllowedOrigin", "http://localhost:5173,")
+    app_stack = "t" * 25
     resolver = Resolver(cd)
     resolver.values.update(
         {
+            "AWS::Partition": LONGEST_PARTITION,
+            "AppStackName": app_stack,
             "Environment": max(cd["Parameters"]["Environment"]["AllowedValues"], key=len),
             "AdminEmail": email,
             "AllowedOrigin": origins,
@@ -325,12 +337,16 @@ def test_parameter_overrides_fit_codepipeline_with_the_longest_values(cd: dict[s
         }
     )
     text = resolver.resolve(_flat_actions(cd)[2]["Configuration"]["ParameterOverrides"])
+    boundary = json.loads(text)["FunctionPermissionsBoundary"]
 
     assert int(cd["Parameters"]["AdminEmail"]["MaxLength"]) == 254
     assert len(email) == 254 and re.fullmatch(email_pattern, email)
     assert len(origins) == int(cd["Parameters"]["AllowedOrigin"]["MaxLength"])
     assert re.fullmatch(origin_pattern, origins)
     assert len(LONGEST_BUDGET) == 10 and re.fullmatch(budget_pattern, LONGEST_BUDGET)
+    assert len(app_stack) == 25 and re.fullmatch(stack_pattern, app_stack)
+    assert not re.fullmatch(stack_pattern, app_stack + "t")  # 25 is the longest
+    assert boundary.startswith(f"arn:{LONGEST_PARTITION}:iam::") and app_stack in boundary
     assert json.loads(text)["AllowedOrigin"] == origins
     assert json.loads(text)["BudgetLimitUsd"] == LONGEST_BUDGET
     assert len(text) <= 1000, len(text)
@@ -684,9 +700,13 @@ def test_execution_role_iam_actions_stay_in_the_app_prefix(cd: dict[str, Any]) -
     assert pass_role[0]["Condition"] == {
         "StringEquals": {"iam:PassedToService": "lambda.amazonaws.com"}
     }
+    # Only AWSLambdaBasicExecutionRole, and only on a role with the function
+    # boundary (#179; see tests/test_cd_function_boundary.py).
+    assert len(attach) == 1
     assert attach[0]["Condition"] == {
         "ArnEquals": {
-            "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            "iam:PermissionsBoundary": Resolver(cd).ref("FunctionBoundaryPolicy"),
         }
     }
 
@@ -765,13 +785,13 @@ def test_cd_roles_stay_outside_the_execution_role_scope(cd: dict[str, Any]) -> N
     role (its own role included). The CD roles live under a one-segment path
     without hyphen, and AppStackName has no slash (its AllowedPattern), so
     "role/<path>/..." can never match "role/<AppStackName>-*", whatever the stack
-    names. The indirect reach is not checked here and is not closed: the execution
-    role creates the function roles ("role/<AppStackName>-*"), writes any inline
-    policy on them (no permissions boundary) and passes them to Lambda, so a
-    function given broad permissions by a commit on main (the SeedFunction, invoked
-    by Custom::InitialData in the same deploy, or any other later) could change the
-    CD roles. That is the risk accepted in decision B, with the permissions boundary
-    left for #179 (see "Risco aceito: os papéis das funções" in backend/README.md)."""
+    names. The indirect reach is checked elsewhere: the execution role creates the
+    function roles ("role/<AppStackName>-*"), writes their inline policies and
+    passes them to Lambda, so a function given broad permissions by a commit on main
+    (the SeedFunction, invoked by Custom::InitialData in the same deploy, or any
+    other later) could change the CD roles. The permissions boundary of #179 closes
+    that path; tests/test_cd_function_boundary.py checks it (see "Limite de
+    permissões dos papéis das funções" in backend/README.md)."""
     resolver = Resolver(cd)
     patterns = [
         resource
@@ -792,7 +812,8 @@ def test_cd_roles_stay_outside_the_execution_role_scope(cd: dict[str, Any]) -> N
 def test_execution_role_cannot_manage_the_cd_buckets(cd: dict[str, Any]) -> None:
     """Even with a CD stack named "<AppStackName>-..." (its buckets would then fall
     in the app's S3 scope), the execution role only reads packages there. Direct
-    reach only: indirectly, through a function role, see #179."""
+    reach only: indirectly, through a function role, the boundary of #179 denies
+    the same (tests/test_cd_function_boundary.py)."""
     resolver = Resolver(cd, stack_name=f"{APP}-cd")
     statements = [
         resolver.resolve(statement)
@@ -928,6 +949,7 @@ REQUIRED_ACTIONS: dict[str, list[tuple[str, str]]] = {
     ],
     "AWS::IAM::Role": [
         ("iam:CreateRole", FUNCTION_ROLE),
+        ("iam:PutRolePermissionsBoundary", FUNCTION_ROLE),  # Globals PermissionsBoundary
         ("iam:GetRole", FUNCTION_ROLE),
         ("iam:TagRole", FUNCTION_ROLE),
         ("iam:PutRolePolicy", FUNCTION_ROLE),
