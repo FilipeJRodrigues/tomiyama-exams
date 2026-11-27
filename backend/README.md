@@ -151,6 +151,8 @@ Também não aumentamos o `SeedVersion`: o `InitialData` rodaria em todo deploy 
 
 O deploy do backend também roda dentro da AWS, pela stack de CD em [`../infra/cd-pipeline.yaml`](../infra/cd-pipeline.yaml): CodePipeline V2 no modo `QUEUED`, CodeBuild e uma conexão do CodeConnections com o GitHub. A esteira não tem gatilho (`DetectChanges: false` e nenhum `Triggers`). A única execução automática é a que o CodePipeline inicia ao criar o pipeline, que falha no `Source` porque a conexão ainda está `PENDING` e não mexe na stack do app (veja "Criar a stack de CD"). Todas as outras são disparadas à mão, com o commit escolhido, e nada muda na stack do app sem a aprovação manual do change set. O deploy manual da seção "Deploy" continua valendo (veja "Papel guardado na stack" abaixo). Os papéis das funções do app têm um limite de permissões (permissions boundary) criado pela stack de CD, que fecha o caminho indireto de um deploy até a esteira pelo papel de uma função (veja "Limite de permissões dos papéis das funções", card #179).
 
+Os blocos de comando desta seção são de bash: no Windows, rode-os no Git Bash; no Linux e no macOS, no `bash`. O zsh, padrão do macOS, não separa as palavras de `$ROLES` no `for` dos laços.
+
 ### Por que não pelo GitHub Actions
 
 O desenho original fazia o deploy pelo GitHub Actions com OIDC. Esta conta é do novo AWS, e a SCP gerenciada `DenyIAMRestrictedActions`, tanto a do Free Tier quanto a do Paid Plan (nenhuma das duas pode ser alterada), nega `iam:*Provider*`, então não dá para criar o provedor OIDC do GitHub ([SCPs dos projetos](https://docs.aws.amazon.com/accounts/latest/reference/scps-and-rcps-for-projects.html)). Em 2026-11-18, o responsável decidiu fazer o CD dentro da AWS, com três serviços da lista do Free Tier ([serviços do novo AWS](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html)). É um desvio aprovado do documento de arquitetura, que punha o deploy em `.github/workflows/`. O GitHub Actions continua só com o CI. A alternativa com OIDC ficou registrada no card #177.
@@ -231,6 +233,8 @@ Nome sugerido: `tomiyama-cd-dev`. Ele **não pode** começar com `tomiyama-dev-`
    O `ParameterOverrides` cabe no limite do CodePipeline (1.000 caracteres por valor de configuração e 1 KB no JSON) porque a stack de CD aceita `AdminEmail` com até 254 caracteres, `AllowedOrigin` com até 500, só com minúsculas, números e `: / . , -`, e `BudgetLimitUsd` com até 10 (até 7 dígitos inteiros e 2 casas decimais, separadas por ponto, como `12.5`; sem sinal nem notação científica). O JSON leva também o ARN do limite dos papéis das funções (`FunctionPermissionsBoundary`, até 89 caracteres; card #179), e por isso o `AllowedOrigin` caiu de 600 para 500. A conta está no comentário do `AllowedOrigin`, em `infra/cd-pipeline.yaml`. Duas origens (localhost e Amplify) ocupam cerca de 66.
 
 3. Crie a stack por change set, confira e execute. `CAPABILITY_NAMED_IAM`: os papéis e as políticas têm nome fixo. A CLI do Windows não entende os caminhos do Git Bash (`/c/Users/...`), então `file://$HOME/...` não acha o arquivo lá. A linha `PARAMS_FILE=` monta um caminho que funciona nos dois: no Git Bash, o `cygpath -m` dá `C:/Users/...`; no Linux, no macOS e no WSL, onde o `cygpath` não existe, vale o `~`.
+
+   O `--template-body` aceita até 51.200 bytes, e o `infra/cd-pipeline.yaml` tem de caber nisso, aqui e no passo 4. Quem for aumentar o template deve enxugar antes os comentários (a explicação longa fica neste README) ou passar a mandá-lo por um objeto do S3 (`--template-url`). O teste de regressão do #179 (`tests/regression/test_179_readme_template_cd_passa_do_template_body.py`) confere o tamanho de cada arquivo que o README manda pelo `--template-body`.
 
    ```bash
    cd infra
@@ -418,7 +422,11 @@ aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 
   --query "Stacks[0].Parameters[?ParameterKey=='FunctionPermissionsBoundary'].ParameterValue" --output text
 ```
 
-**Antes do passo 3 (a lista de papéis vem vazia).** É seguro voltar direto, porque nenhum papel depende da política. Pegue o template anterior pelo git, num arquivo fora do repositório, e rode o change set `atualizar` do passo 4 de "Criar a stack de CD" com ele e com o mesmo arquivo de parâmetros. `<merge do #179>` é o commit de merge do PR do #179 (`git log --first-parent --oneline origin/main`), e o `^1` é o `main` logo antes dele. Na raiz do repositório:
+**Antes do passo 3 (a lista de papéis vem vazia).** É seguro voltar direto, porque nenhum papel depende da política. Pegue o template anterior pelo git, num arquivo fora do repositório, e rode o change set `atualizar` do passo 4 de "Criar a stack de CD" com ele e com o mesmo arquivo de parâmetros. `<merge do #179>` é o commit de merge do PR do #179 (`git log --first-parent --oneline origin/main`), e o `^1` é o `main` logo antes dele.
+
+O `^1` só é o template certo enquanto nenhum PR posterior ao #179 tiver mudado o `infra/cd-pipeline.yaml`. Confira, depois de um `git fetch origin`, com `git log --oneline <merge do #179>..origin/main -- infra/cd-pipeline.yaml`: fora o PR intermediário do caso "Depois do passo 4", que a volta desfaz de propósito, a lista tem de vir vazia. Se vier outro commit, a volta pelo `^1` desfaria as mudanças dele também, e o change set mostraria mais do que o esperado. Nesse caso, faça antes o PR que reverte o #179 no `main` (o último item da lista depois do bloco), resolvendo os conflitos com as mudanças posteriores. No diff dele, o `infra/cd-pipeline.yaml` só pode perder o que o #179 pôs. Depois, troque no `git show` o `<merge do #179>^1` pelo commit de merge desse PR.
+
+Na raiz do repositório:
 
 ```bash
 git fetch origin
@@ -440,20 +448,32 @@ Espere `Remove` em `FunctionBoundaryPolicy`, `Modify` em `ExecutionComputePolicy
 
 - a saída `FunctionPermissionsBoundaryArn` some, e o laço do passo 3 de "Implantar o limite de permissões", se alguém o rodar, para sem alterar papel;
 - a esteira deixa de passar `FunctionPermissionsBoundary` e volta a aceitar commits anteriores ao #179 (o que diz "Voltar para um commit anterior ao #179" vale só com a stack de CD do #179). Um deploy do `main` com o #179 não põe o limite: o parâmetro não vem, a stack do app não tem outro valor nele (o segundo comando do começo desta seção veio vazio), e o padrão do template é vazio;
-- o `main` continua com o #179, e o próximo change set `atualizar` com o `infra/cd-pipeline.yaml` dele põe a política e as condições de volta. Para a volta durar, reverta o #179 no `main` (um PR com `git revert -m 1 <merge do #179>`) e use o arquivo desse `main`.
+- o `main` continua com o #179, e o próximo change set `atualizar` com o `infra/cd-pipeline.yaml` dele põe a política e as condições de volta. Para a volta durar, reverta o #179 no `main` (um PR com `git revert -m 1 <merge do #179>`) e use o arquivo desse `main`. Se o PR intermediário do caso "Depois do passo 4" já entrou no `main`, reverta-o antes, no mesmo PR (`git revert -m 1 <merge do PR intermediário>` e só depois o do #179): na ordem inversa, o revert do #179 dá conflito, porque os dois mexem nas mesmas linhas.
 
 **Depois do passo 3 e antes do passo 4 (papéis na lista; o parâmetro do app vazio).** É também o estado depois de "Se o deploy do passo 4 falhar", com papéis pulados no rollback. O limite foi posto à mão, e o template do app não o tem: tire-o à mão, com a mesma credencial de administrador (o inverso do passo 3), e rode de novo o `list-entities-for-policy` acima. Com a lista vazia, siga como em "Antes do passo 3".
 
 ```bash
+APP_BOUNDARY=$(
+  aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
+    --query "Stacks[0].Parameters[?ParameterKey=='FunctionPermissionsBoundary'].ParameterValue" --output text
+)
 ROLES=$(
   aws cloudformation list-stack-resources --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
     --query "StackResourceSummaries[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text
 )
-ROLES=${ROLES//$'\r'/}
-for ROLE in $ROLES; do
-  aws iam delete-role-permissions-boundary --role-name "$ROLE" --profile tomiyama
-done
+APP_BOUNDARY=${APP_BOUNDARY//$'\r'/}; ROLES=${ROLES//$'\r'/}
+if [[ -n $APP_BOUNDARY ]]; then
+  echo "O parâmetro FunctionPermissionsBoundary da tomiyama-dev veio \"$APP_BOUNDARY\", e não vazio: é o caso \"Depois do passo 4\". Nenhum papel foi alterado."
+elif [[ -z $ROLES || $ROLES == None ]]; then
+  echo "Não veio nenhum papel da tomiyama-dev (\"$ROLES\"). Nenhum papel foi alterado."
+else
+  for ROLE in $ROLES; do
+    aws iam delete-role-permissions-boundary --role-name "$ROLE" --profile tomiyama
+  done
+fi
 ```
+
+O bloco lê antes o parâmetro `FunctionPermissionsBoundary` da `tomiyama-dev` (o segundo comando do começo desta seção) e só tira o limite se ele vier vazio e vier algum papel. Com o ARN, o caso é "Depois do passo 4", em que o template do app diz que os papéis têm o limite. Com o ARN ou qualquer outro valor não vazio (`None`, por exemplo), o bloco não altera nenhum papel. Como o do passo 3, ele não usa `exit` e tira o `\r` do Git Bash.
 
 **Depois do passo 4 (papéis na lista; o parâmetro do app com o ARN).** Não é um rollback, e o template anterior, aplicado direto, não serve:
 
@@ -468,7 +488,7 @@ O caminho abaixo não depende dessas respostas. A ordem segura é **primeiro o a
    - tira a condição `iam:PermissionsBoundary` de `iam:CreateRole`, `iam:PutRolePolicy`, `iam:UpdateAssumeRolePolicy` e `iam:AttachRolePolicy` (este continua só com a `AWSLambdaBasicExecutionRole`), como antes do #179. Um papel sem limite não atende a condição, e a ordem em que o handler do `AWS::IAM::Role` faz as chamadas não está documentada. O `iam:PutRolePermissionsBoundary` fica com a condição: se o deploy do passo 3 abaixo falhar, o rollback consegue repor o limite;
    - passa `"FunctionPermissionsBoundary": ""` no `ParameterOverrides` do pipeline, explícito, para não depender do que a ação faz com um parâmetro ausente.
 
-   Os testes do #179 em `tests/test_cd_function_boundary.py` recusam essas mudanças e precisam mudar no mesmo PR.
+   Essas mudanças quebram testes do #179 em três arquivos, que precisam mudar no mesmo PR: `tests/test_cd_function_boundary.py` (as condições do papel de execução e o ARN no `ParameterOverrides`), `tests/test_cd_pipeline_template.py` (por exemplo, `test_parameter_overrides_fit_codepipeline_with_the_longest_values` e `test_execution_role_iam_actions_stay_in_the_app_prefix`) e `tests/test_cd_pipeline_template_qa.py` (por exemplo, `test_execution_role_covers_the_properties_the_app_uses` e a guarda de propriedades, `test_property_guard_catches_a_new_property` e `test_property_guard_accepts_the_boundary_the_pipeline_passes`).
 2. **Atualize a stack de CD** com o template desse PR (passo 4 de "Criar a stack de CD"). Espere `Modify` em `ExecutionComputePolicy` e em `Pipeline`, sem `Remove`.
 3. **Rode a esteira com o `main`.** No change set, espere `Modify` em cada papel `…FunctionRole`, só com `PermissionsBoundary` nos detalhes, e o parâmetro `FunctionPermissionsBoundary` vazio. É o único change set em que um papel perde o limite de propósito: o primeiro item de "Rejeite o change set se", em "Rodar escolhendo o commit", não vale aqui. Depois, confira o app (como no passo 5 de "Implantar o limite de permissões") e rode de novo o `list-entities-for-policy` do começo desta seção: a lista tem de vir vazia. Se o objetivo era só tirar o limite, dá para parar aqui.
 4. **Só então volte a stack de CD ao template anterior**, como em "Antes do passo 3". O `Remove` de `FunctionBoundaryPolicy` agora apaga uma política que nenhum papel usa. O `FunctionPermissionsBoundary` do app continua vazio, seja pelo padrão do template, seja pelo valor anterior (o vazio do passo 3 acima).

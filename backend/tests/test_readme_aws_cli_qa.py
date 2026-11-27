@@ -269,6 +269,67 @@ def test_readme_aws_cli_queries_name_fields_of_the_output(
     assert not problems, "consultas do README que não acham o que procuram:\n" + "\n".join(problems)
 
 
+def _enum_option_problems(tokens: list[str], session: Any) -> tuple[int, list[str]]:
+    """(values checked, problems) of the options of a command whose member is an enum, or
+    a list of an enum (``--capabilities``); placeholders (``<...>``) are skipped."""
+    model = session.get_service_model(tokens[1])
+    operations = {xform_name(name, "-"): name for name in model.operation_names}
+    if tokens[2] not in operations:
+        return 0, []  # reported by the first test of this file
+    shape = model.operation_model(operations[tokens[2]]).input_shape
+    members = {
+        xform_name(name, "-"): member for name, member in (shape.members if shape else {}).items()
+    }
+    checked, problems = 0, []
+    for index, token in enumerate(tokens):
+        member = members.get(token[2:]) if token.startswith("--") else None
+        if member is None:
+            continue
+        enum = getattr(member.member if member.type_name == "list" else member, "enum", None)
+        if not enum:
+            continue
+        for value in tokens[index + 1 :]:
+            if value.startswith("--"):
+                break
+            if value.startswith("<"):
+                continue
+            checked += 1
+            if value not in enum:
+                problems.append(f"--{token[2:]} {value} não é valor de {enum}")
+    return checked, problems
+
+
+def test_readme_aws_cli_enum_option_values_are_valid(
+    commands: list[tuple[int, list[str]]],
+) -> None:
+    """``--change-set-type``, ``--capabilities``, ``--template-stage`` and the
+    ``--policy-usage-filter`` of "Voltar a stack de CD para antes do #179" take only the
+    values of their enum; the CLI refuses any other before calling the AWS."""
+    session = botocore.session.get_session()
+    problems, checked = [], 0
+    for line, tokens in commands:
+        if tokens[2] == "wait":
+            continue
+        count, found = _enum_option_problems(tokens, session)
+        checked += count
+        problems.extend(f"linha {line} ({tokens[1]} {tokens[2]}): {p}" for p in found)
+
+    assert checked >= 5, checked  # the reader still finds the runbook's enum options
+    assert not problems, "opções do README com valor fora do enum:\n" + "\n".join(problems)
+
+
+def test_enum_option_check_catches_a_misspelt_value() -> None:
+    """The check above is not vacuous."""
+    tokens = shlex.split(
+        "aws iam list-entities-for-policy --policy-arn x --policy-usage-filter PermissionBoundary"
+    )
+
+    checked, problems = _enum_option_problems(tokens, botocore.session.get_session())
+
+    assert checked == 1
+    assert any("PermissionBoundary" in problem for problem in problems), problems
+
+
 @pytest.mark.parametrize(
     ("operation", "query", "expected"),
     [
