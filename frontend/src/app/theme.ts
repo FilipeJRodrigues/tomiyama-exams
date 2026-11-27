@@ -452,6 +452,13 @@ const VIRTUAL_LIGHT_VARIABLES = ['light', 'light-hover', 'light-color'] as const
  *   and dark.5 in the dark one (Mantine's dark hover is dark.6, the color of the menu itself).
  * - `--app-font-display`: font of the page titles and of the name "Tomiyama", the same in both
  *   schemes (see `DISPLAY_FONT_FAMILY`).
+ * - `--app-verdict-border`: the 2 px border of the filled green and red buttons of the exam
+ *   (Certo and Errado chosen, Aprovar, Reprovar and the confirm button of the decision;
+ *   `verdictButtonProps` in `features/exam/verdictButton.ts`). Transparent in the light scheme:
+ *   the fill paints under it and is the indicator itself, green 5.37:1 and red 5.13:1 on the
+ *   white card (7.74:1 and 7.46:1 on hover). In the dark scheme the green is 2.67:1 and the red
+ *   2.80:1 on the card, so the border is the main text color, dark.0 (`#C9C9C9`, 8.67:1 on the
+ *   card and 10.29:1 on the page).
  *
  * The brand blue of the entry screens (login, sign-up, password recovery: `AuthCard`), the same
  * in both schemes; on it there is only white, yellow and the light secondary text, never red
@@ -480,6 +487,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     '--app-nav-active': blue[FILLED_SHADE],
     '--app-nav-hover': current.colors.gray[0],
     '--app-brand-card-border': current.colors.gray[3],
+    '--app-verdict-border': 'transparent',
   };
   const dark: Record<string, string> = {
     '--mantine-color-dimmed': current.colors.dark[1],
@@ -492,6 +500,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (current) => {
     '--app-nav-active': yellow[FILLED_SHADE],
     '--app-nav-hover': current.colors.dark[5],
     '--app-brand-card-border': 'var(--app-control-border)',
+    '--app-verdict-border': current.colors.dark[0],
   };
   for (const [name, shades] of Object.entries(current.colors)) {
     if (isVirtualColor(shades)) {
