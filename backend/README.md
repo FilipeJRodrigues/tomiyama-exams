@@ -356,7 +356,7 @@ Os dois passos já rodaram no dev (o `c603913` e depois o `main`). Depois do #17
 Nada disto roda sem o ok do responsável. A ordem importa: primeiro a stack de CD, depois uma execução da esteira com o `main` que contém o #179.
 
 1. **Publique antes o que falta do `main` anterior ao #179.** Depois do passo 2, a esteira só aceita commits com o #179 (veja "Voltar para um commit anterior ao #179"). Se o `main` tiver mudança do backend ainda não publicada no dev, rode a esteira com ela primeiro. Assim o deploy do passo 4 só põe o limite.
-2. **Atualize a stack de CD** com o `infra/cd-pipeline.yaml` do #179 (passo 4 de "Criar a stack de CD": change set `atualizar`, com o mesmo arquivo de parâmetros). No change set, espere `Add` em `FunctionBoundaryPolicy`, `Modify` em `ExecutionComputePolicy` (as condições `iam:PermissionsBoundary`) e em `Pipeline` (o `ParameterOverrides` com `FunctionPermissionsBoundary`), e nenhum Replacement `True`. O `AllowedOrigin` passou a aceitar até 500 caracteres: o valor do arquivo de parâmetros tem de caber (o do dev tem cerca de 66). Desse momento em diante, o papel de execução só grava papel de função com o limite.
+2. **Atualize a stack de CD** com o `infra/cd-pipeline.yaml` do #179 (passo 4 de "Criar a stack de CD": change set `atualizar`, com o mesmo arquivo de parâmetros). No change set, espere `Add` em `FunctionBoundaryPolicy`, `Modify` em `ExecutionComputePolicy` (as condições `iam:PermissionsBoundary`) e em `Pipeline` (o `ParameterOverrides` com `FunctionPermissionsBoundary`), e nenhum Replacement `True`. O `AllowedOrigin` passou a aceitar até 500 caracteres: o valor do arquivo de parâmetros tem de caber (o do dev tem cerca de 66). Desse momento em diante, o papel de execução só grava papel de função com o limite. Para desfazer este passo, veja "Voltar a stack de CD para antes do #179".
 3. **Ponha o limite nos papéis atuais das funções**, com a sua credencial de administrador (a do `--profile tomiyama`). Os 48 papéis da `tomiyama-dev` ainda não têm limite, e o papel de execução só grava as políticas de um papel que já o tem. A documentação não diz em que ordem o handler do `AWS::IAM::Role` faz as chamadas num update: se ele regravar as políticas (`PutRolePolicy`) antes de pôr o limite (`PutRolePermissionsBoundary`), o deploy do passo 4 cai em AccessDenied. Com o limite já posto, a ordem não importa, e o passo 4 põe o mesmo valor pelo CloudFormation (nada fica fora do template). As funções já passam a rodar com o limite aqui: confira o app logo depois (como no passo 5).
 
    ```bash
@@ -368,13 +368,20 @@ Nada disto roda sem o ok do responsável. A ordem importa: primeiro a stack de C
      aws cloudformation list-stack-resources --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
        --query "StackResourceSummaries[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text
    )
+   BOUNDARY=${BOUNDARY//$'\r'/}; ROLES=${ROLES//$'\r'/}
    echo "$BOUNDARY"; echo "$ROLES" | wc -w
-   for ROLE in $ROLES; do
-     aws iam put-role-permissions-boundary --role-name "$ROLE" --permissions-boundary "$BOUNDARY" --profile tomiyama
-   done
+   if [[ ! $BOUNDARY =~ ^arn:aws:iam::[0-9]{12}:policy/cd/cd-tomiyama-dev-function-boundary$ ]]; then
+     echo "O ARN do limite veio \"$BOUNDARY\", e não arn:aws:iam::<conta>:policy/cd/cd-tomiyama-dev-function-boundary. Nenhum papel foi alterado."
+   elif [[ -z $ROLES || $ROLES == None ]]; then
+     echo "Não veio nenhum papel da tomiyama-dev (\"$ROLES\"). Nenhum papel foi alterado."
+   else
+     for ROLE in $ROLES; do
+       aws iam put-role-permissions-boundary --role-name "$ROLE" --permissions-boundary "$BOUNDARY" --profile tomiyama
+     done
+   fi
    ```
 
-   O `echo` mostra o ARN `arn:aws:iam::<conta>:policy/cd/cd-tomiyama-dev-function-boundary` e o número de papéis (48 hoje). Pare se o ARN vier vazio.
+   O bloco só põe o limite se o ARN tiver o formato `arn:aws:iam::<conta>:policy/cd/cd-tomiyama-dev-function-boundary` (12 dígitos na conta) e vier algum papel. Senão, ele diz o que deu errado e não altera nenhum papel. Com `--output text`, a AWS CLI devolve uma linha vazia quando o filtro não acha a saída (a stack de CD ainda sem o #179, por exemplo) e `None` quando a stack não tem `Outputs`; um ARN de outra política também é recusado. A lista de papéis é recusada vazia ou `None`. O bloco não usa `exit`, então pode ser colado num terminal aberto sem fechá-lo. A linha que tira o `\r` é para o Git Bash: a saída de um programa do Windows, como a AWS CLI, pode terminar as linhas com `\r\n`, o Git Bash só tira o `\r` do fim da saída, e, se a lista de papéis vier em mais de uma linha, o último papel de cada linha do meio ficaria com `\r` no nome; no Linux e no macOS a linha não muda nada. O `echo` mostra o ARN e o número de papéis (48 hoje).
 4. **Rode a esteira com o commit de merge do #179** (veja "Rodar escolhendo o commit"). No change set, espere `Modify` em cada papel `…FunctionRole` (Replacement `False`), só com `PermissionsBoundary` nos detalhes, sem mudança em `Policies`; o parâmetro `FunctionPermissionsBoundary` aparece com o ARN. Confira e aprove.
 5. **Confira:** a stack em `UPDATE_COMPLETE`, o limite num papel qualquer (`aws iam get-role --role-name <papel> --query Role.PermissionsBoundary --profile tomiyama` mostra o ARN) e o app funcionando: entrar, listar alunos, abrir uma ficha, marcar e desmarcar um item, abrir as configurações e uma assinatura. Um AccessDenied no log das funções (`/aws/lambda/tomiyama-dev`) aponta algo que o limite não cobre: amplie o limite na stack de CD.
 
@@ -396,7 +403,75 @@ Depois do passo 2 de "Implantar o limite de permissões", a esteira passa `Funct
 - **Para desfazer uma mudança do app,** reverta-a no `main` (um PR com `git revert`) e rode a esteira com o commit de merge desse PR: o template continua com o limite.
 - **O rollback automático** de um deploy que falhe depois do #179 não tem esse problema: os dois templates têm o limite, e o CloudFormation só regrava as políticas anteriores, o que o papel de execução pode fazer num papel com o limite.
 - **Um `sam deploy` manual de um commit anterior** chega ao CloudFormation (a SAM CLI só manda os parâmetros que o template declara), mas o update tenta tirar o limite dos papéis e cai em AccessDenied (`iam:DeleteRolePermissionsBoundary`). A stack deve voltar sozinha (`UPDATE_ROLLBACK_COMPLETE`): no rollback, o papel de execução repõe o mesmo limite e o código anterior. Se ela parar em `UPDATE_ROLLBACK_FAILED`, faça como em "Se o deploy do passo 4 falhar".
-- **Tirar o limite de vez** (voltar ao estado de antes do #179) não é um rollback: exige mudar antes a stack de CD, dando ao papel de execução `iam:DeleteRolePermissionsBoundary`, e é uma decisão do responsável.
+- **Tirar o limite de vez** (voltar ao estado de antes do #179) não é um rollback: exige mudar antes a stack de CD, dando ao papel de execução `iam:DeleteRolePermissionsBoundary`, e é uma decisão do responsável. A ordem segura (primeiro o app sem o limite, depois a stack de CD) está em "Voltar a stack de CD para antes do #179", no caso "Depois do passo 4".
+
+### Voltar a stack de CD para antes do #179
+
+A seção anterior trata da stack do app. Esta desfaz o passo 2 de "Implantar o limite de permissões": volta a `tomiyama-cd-dev` ao `infra/cd-pipeline.yaml` anterior ao #179. Nada disto roda sem o ok do responsável. Antes, veja se não basta ampliar o limite: um AccessDenied nas funções depois do passo 3 se resolve na própria stack de CD do #179 (passo 5 de "Implantar o limite de permissões"), sem voltar nada. Faça com a esteira parada, sem execução esperando aprovação.
+
+**Primeiro, veja em que ponto está.** O primeiro comando lista os papéis que usam a política como limite (o ARN é a saída `FunctionPermissionsBoundaryArn` da stack de CD). O segundo mostra o parâmetro `FunctionPermissionsBoundary` da stack do app: vazio enquanto o passo 4 não rodou, e o ARN depois dele.
+
+```bash
+aws iam list-entities-for-policy --policy-arn <saída FunctionPermissionsBoundaryArn> \
+  --policy-usage-filter PermissionsBoundary --query "PolicyRoles[].RoleName" --output text --profile tomiyama
+aws cloudformation describe-stacks --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
+  --query "Stacks[0].Parameters[?ParameterKey=='FunctionPermissionsBoundary'].ParameterValue" --output text
+```
+
+**Antes do passo 3 (a lista de papéis vem vazia).** É seguro voltar direto, porque nenhum papel depende da política. Pegue o template anterior pelo git, num arquivo fora do repositório, e rode o change set `atualizar` do passo 4 de "Criar a stack de CD" com ele e com o mesmo arquivo de parâmetros. `<merge do #179>` é o commit de merge do PR do #179 (`git log --first-parent --oneline origin/main`), e o `^1` é o `main` logo antes dele. Na raiz do repositório:
+
+```bash
+git fetch origin
+TEMPLATE_FILE="$(cygpath -m ~ 2>/dev/null || echo ~)/cd-pipeline-antes-179.yaml"
+PARAMS_FILE="$(cygpath -m ~ 2>/dev/null || echo ~)/tomiyama-cd-dev.json"
+git show <merge do #179>^1:infra/cd-pipeline.yaml > "$TEMPLATE_FILE"
+aws cloudformation create-change-set --stack-name tomiyama-cd-dev --change-set-name atualizar \
+  --change-set-type UPDATE --template-body "file://$TEMPLATE_FILE" \
+  --parameters "file://$PARAMS_FILE" \
+  --capabilities CAPABILITY_NAMED_IAM --region us-east-2 --profile tomiyama
+aws cloudformation wait change-set-create-complete --stack-name tomiyama-cd-dev \
+  --change-set-name atualizar --region us-east-2 --profile tomiyama
+aws cloudformation describe-change-set --stack-name tomiyama-cd-dev --change-set-name atualizar \
+  --region us-east-2 --profile tomiyama --output table \
+  --query "{Status: Status, StatusReason: StatusReason, Changes: Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement]}"
+```
+
+Espere `Remove` em `FunctionBoundaryPolicy`, `Modify` em `ExecutionComputePolicy` (saem as condições `iam:PermissionsBoundary`) e em `Pipeline` (o `ParameterOverrides` perde o `FunctionPermissionsBoundary`), e nenhum Replacement `True`. O `AllowedOrigin` volta a aceitar até 600 caracteres, então o valor do arquivo de parâmetros continua cabendo. Veja o antes e o depois de cada propriedade, execute e espere o update com os comandos do passo 4 de "Criar a stack de CD". Depois disso:
+
+- a saída `FunctionPermissionsBoundaryArn` some, e o laço do passo 3 de "Implantar o limite de permissões", se alguém o rodar, para sem alterar papel;
+- a esteira deixa de passar `FunctionPermissionsBoundary` e volta a aceitar commits anteriores ao #179 (o que diz "Voltar para um commit anterior ao #179" vale só com a stack de CD do #179). Um deploy do `main` com o #179 não põe o limite: o parâmetro não vem, a stack do app não tem outro valor nele (o segundo comando do começo desta seção veio vazio), e o padrão do template é vazio;
+- o `main` continua com o #179, e o próximo change set `atualizar` com o `infra/cd-pipeline.yaml` dele põe a política e as condições de volta. Para a volta durar, reverta o #179 no `main` (um PR com `git revert -m 1 <merge do #179>`) e use o arquivo desse `main`.
+
+**Depois do passo 3 e antes do passo 4 (papéis na lista; o parâmetro do app vazio).** É também o estado depois de "Se o deploy do passo 4 falhar", com papéis pulados no rollback. O limite foi posto à mão, e o template do app não o tem: tire-o à mão, com a mesma credencial de administrador (o inverso do passo 3), e rode de novo o `list-entities-for-policy` acima. Com a lista vazia, siga como em "Antes do passo 3".
+
+```bash
+ROLES=$(
+  aws cloudformation list-stack-resources --stack-name tomiyama-dev --region us-east-2 --profile tomiyama \
+    --query "StackResourceSummaries[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text
+)
+ROLES=${ROLES//$'\r'/}
+for ROLE in $ROLES; do
+  aws iam delete-role-permissions-boundary --role-name "$ROLE" --profile tomiyama
+done
+```
+
+**Depois do passo 4 (papéis na lista; o parâmetro do app com o ARN).** Não é um rollback, e o template anterior, aplicado direto, não serve:
+
+- os papéis têm o limite pelo template do app, e nenhum dos dois papéis de execução o tira. O do #179 não tem `iam:DeleteRolePermissionsBoundary`, de propósito, e o de antes do #179 não tem nenhuma ação de limite (nem `iam:PutRolePermissionsBoundary` nem `iam:DeleteRolePermissionsBoundary`). Tirar o limite à mão, como no caso anterior, deixaria o template do app dizendo que os papéis o têm;
+- com o template anterior, a esteira deixa de passar `FunctionPermissionsBoundary`. É preciso conferir o que a ação `CHANGE_SET_REPLACE` faz com um parâmetro que não vem no `ParameterOverrides`. Se ela usa o padrão do template (vazio), o próximo deploy do `main` tenta tirar o limite e cai em AccessDenied. Se mantém o valor anterior (o ARN), os papéis continuam apontando para a política que a volta da stack de CD apaga;
+- o `Remove` de `FunctionBoundaryPolicy` tentaria apagar uma política que os papéis usam como limite. Também é preciso conferir se o IAM recusa isso (e o update da stack de CD volta) ou se apaga a política e deixa os papéis com um limite que não existe mais.
+
+O caminho abaixo não depende dessas respostas. A ordem segura é **primeiro o app sem o limite, depois a stack de CD**. É o "Tirar o limite de vez" de "Voltar para um commit anterior ao #179", e é uma decisão do responsável:
+
+1. **Um PR no `infra/cd-pipeline.yaml`** que mantém a `FunctionBoundaryPolicy` (os papéis ainda a usam) e:
+   - dá ao papel de execução `iam:DeleteRolePermissionsBoundary` nos papéis `role/<AppStackName>-*`;
+   - tira a condição `iam:PermissionsBoundary` de `iam:CreateRole`, `iam:PutRolePolicy`, `iam:UpdateAssumeRolePolicy` e `iam:AttachRolePolicy` (este continua só com a `AWSLambdaBasicExecutionRole`), como antes do #179. Um papel sem limite não atende a condição, e a ordem em que o handler do `AWS::IAM::Role` faz as chamadas não está documentada. O `iam:PutRolePermissionsBoundary` fica com a condição: se o deploy do passo 3 abaixo falhar, o rollback consegue repor o limite;
+   - passa `"FunctionPermissionsBoundary": ""` no `ParameterOverrides` do pipeline, explícito, para não depender do que a ação faz com um parâmetro ausente.
+
+   Os testes do #179 em `tests/test_cd_function_boundary.py` recusam essas mudanças e precisam mudar no mesmo PR.
+2. **Atualize a stack de CD** com o template desse PR (passo 4 de "Criar a stack de CD"). Espere `Modify` em `ExecutionComputePolicy` e em `Pipeline`, sem `Remove`.
+3. **Rode a esteira com o `main`.** No change set, espere `Modify` em cada papel `…FunctionRole`, só com `PermissionsBoundary` nos detalhes, e o parâmetro `FunctionPermissionsBoundary` vazio. É o único change set em que um papel perde o limite de propósito: o primeiro item de "Rejeite o change set se", em "Rodar escolhendo o commit", não vale aqui. Depois, confira o app (como no passo 5 de "Implantar o limite de permissões") e rode de novo o `list-entities-for-policy` do começo desta seção: a lista tem de vir vazia. Se o objetivo era só tirar o limite, dá para parar aqui.
+4. **Só então volte a stack de CD ao template anterior**, como em "Antes do passo 3". O `Remove` de `FunctionBoundaryPolicy` agora apaga uma política que nenhum papel usa. O `FunctionPermissionsBoundary` do app continua vazio, seja pelo padrão do template, seja pelo valor anterior (o vazio do passo 3 acima).
 
 ### Papel guardado na stack e o `sam deploy` manual
 
