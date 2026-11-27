@@ -34,7 +34,7 @@ As cores citadas aqui estão em [colors.md](colors.md); a fonte, em [typography.
   Se um dia levarem a cor principal, defina a cor do texto do item escolhido explicitamente (veja `colors.md`: ele não trata cor virtual).
 - **Cartões** (`Paper`, `Card`), **diálogos** (`Modal`), **gavetas** (`Drawer`) e **painéis:** raio **`lg`** (16 px), os blocos grandes e arredondados das referências. **O lado preso à borda da tela fica reto:** a gaveta arredonda só os cantos do lado de fora (a de baixo, só os de cima; a da esquerda, só os da direita), como a barra fixa do resumo e o diálogo em tela cheia do celular, que ficam sem raio. Arredondados ali, os cantos mostram a camada escura de trás. No escuro, todos em `#2A2A2A`: só o `Card` e o `Popover` pegam isso da paleta; os outros precisam do fundo definido no tema (veja `colors.md`).
 - **Campos** (`TextInput`, `NativeSelect`, `Textarea`, `PasswordInput`...): raio **`md`**, como hoje. Uma caixa de texto em pílula ou muito arredondada fica estranha.
-- **Bordas e foco:** os de `a11y.css`, refeitos com a paleta nova: a borda de controle vira uma variável só (por exemplo, `--app-control-border`, que substitui a `--app-input-border`), usada por todos os controles da tabela de `colors.md` (inclusive a seta dos seletores, que o Mantine pinta no tom do placeholder, 2,61:1 no escuro) e no inline de `MarkButtons`, sem hex solto; `--app-focus-ring` vem da cor real de cada tema (veja `colors.md`).
+- **Bordas e foco:** os de `a11y.css`, refeitos com a paleta nova: a borda de controle vira uma variável só (por exemplo, `--app-control-border`, que substitui a `--app-input-border`), usada por todos os controles da tabela de `colors.md` (inclusive a seta dos seletores, que o Mantine pinta no tom do placeholder, 2,61:1 no escuro) e no não escolhido de Certo/Errado (`UNCHOSEN_MARK_PROPS` em `verdictButton.ts`), sem hex solto; `--app-focus-ring` vem da cor real de cada tema (veja `colors.md`).
 
 ### Links
 
@@ -104,17 +104,19 @@ Todas usam o `AuthCard`.
 
 ### Selo de faixa
 
-Ele substitui o `BeltSwatch` de `frontend/src/features/students/studentCells.tsx`. É uma **mini faixa**, sempre ao lado do nome da faixa escrito; ele é decorativo (`aria-hidden`).
+É o `MiniBelt` de `frontend/src/features/belts/BeltShape.tsx` (`NamedBelt` nas listas, `BeltInText` no cabeçalho do exame), que substituiu o antigo `BeltSwatch` no #166. É uma **mini faixa**, sempre ao lado do nome da faixa escrito; ele é decorativo (`aria-hidden`).
 
 - **Corpo:** na cor principal da faixa (`color_primary` da API).
-- **Faixas de duas cores:** as **pontas** ficam na cor secundária (`color_secondary`), como no certificado (§ 7, item 5), com a **mesma proporção do `BeltDrawing`** da tela Faixas (`frontend/src/features/belts/BeltFixedData.tsx`): 18% da largura de cada lado. O ideal é os dois saírem do mesmo código. A faixa de uma cor só não tem pontas.
-- **Contorno:** 1 px na cor do texto secundário (`var(--mantine-color-dimmed)`), como o `BeltSwatch` de hoje: `gray.7` no claro (8,2:1 sobre branco e 7,4:1 na linha em hover das tabelas) e por volta de `#B8B8B8` no escuro (8,6:1 no fundo, 7,2:1 no cartão, 5,65:1 no hover). Assim, a faixa branca aparece no claro e a preta no escuro, também nas linhas em hover. O `gray.6` não serve: dá 2,99:1 na linha em hover (`gray.1`).
-- **Tamanho:** 32×12 px nas listas e maior no cabeçalho do exame do aluno (por volta de 48×16 px). Cantos quase retos (2 a 3 px), porque é uma faixa, não um selo.
+- **Faixas de duas cores:** as **pontas** ficam na cor secundária (`color_secondary`), como no certificado (§ 7, item 5), com a **mesma proporção do `BeltDrawing`** da tela Faixas: 18% da largura de cada lado. Os dois saem do mesmo código (`BELT_TIP_PERCENT` e `beltBackground()` em `frontend/src/features/belts/beltGeometry.ts`). A faixa de uma cor só não tem pontas.
+- **Contorno:** 1 px na cor do texto secundário (`var(--mantine-color-dimmed)`, classe `.beltOutline` de `BeltShape.module.css`): `gray.7` no claro (8,2:1 sobre branco e 7,4:1 na linha em hover das tabelas) e por volta de `#B8B8B8` no escuro (8,6:1 no fundo, 7,2:1 no cartão, 5,65:1 no hover). Assim, a faixa branca aparece no claro e a preta no escuro, também nas linhas em hover. O `gray.6` não serve: dá 2,99:1 na linha em hover (`gray.1`).
+- **Tamanho:** 32×12 px com cantos de 2 px nas listas e 48×16 px com cantos de 3 px no cabeçalho do exame do aluno: quase retos, porque é uma faixa, não um selo. Centrado na primeira linha do nome, também quando ele quebra.
+- **Cabeçalho do exame:** o selo fica dentro da linha "idade · [selo] Faixa X" e nunca sozinho no fim de uma linha. É a faixa escrita depois de "faixa" (`examTitleBelt`): a faixa-alvo no exame de faixa e a faixa do grau no exame de grau (RN004); sem selo enquanto as faixas carregam.
 - **Cores inline:** as cores da faixa vêm da API, então é o único lugar com cor inline vinda de dado. Isso não abre exceção para hex fixo no código.
 
 ### Certo / Errado (§ 6.4)
 
-- **Não escolhido:** variante `default`, com contorno de 2 px na **borda de controle**. Hoje a cor do contorno está inline em `MarkButtons` (`ExamItems.tsx`, `borderColor: 'var(--mantine-color-default-border)'`) e vence o `Button.extend`: mude ali, para a borda de controle.
+- **Onde fica:** a aparência dos botões de veredito (Certo/Errado, Aprovar/Reprovar e o botão que confirma a decisão) fica num ponto só, `frontend/src/features/exam/verdictButton.ts` (`verdictButtonProps`, `UNCHOSEN_MARK_PROPS`), com a borda do escolhido em `--app-verdict-border` (`theme.ts`). Não repita essas cores nos componentes.
+- **Não escolhido:** variante `default`, com contorno de 2 px na **borda de controle**; com os mesmos 2 px do escolhido, o botão não muda de tamanho ao marcar.
 - **Escolhido:** **cheio**:
   - Certo em verde escuro (por volta de `#237A36`) com texto branco;
   - Errado no vermelho do logo `#D62211` com texto branco.
