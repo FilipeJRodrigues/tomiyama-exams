@@ -4,13 +4,21 @@ Erro observado (QA do #68, depois da decisão B): no `infra/cd-pipeline.yaml`, o
 do `Sid: NeverManageTheCdBuckets` diz "Belt and braces: even if this stack's name started
 with "<AppStackName>-", an app deploy could only read packages here." A negação vale só
 para o papel de execução. O próprio `backend/README.md` ("Risco aceito: os papéis das
-funções") e o topo do template dizem que uma função invocada no mesmo deploy (a
+funções", título da época) e o topo do template dizem que uma função invocada no mesmo deploy (a
 `SeedFunction`, pelo `Custom::InitialData`) pode apagar os buckets da esteira, se um commit
 der permissões amplas ao papel dela. Com a stack de CD num nome "<AppStackName>-...", nem
 `iam:*` é preciso: basta uma política inline com `s3:DeleteBucket` em
 `arn:aws:s3:::<AppStackName>-*`, que o papel de execução grava sem boundary (card #179).
 O docstring de `test_execution_role_cannot_manage_the_cd_buckets` recebeu a ressalva
 ("Direct reach only"), mas o comentário do template, não.
+
+Contexto atualizado no #179 (2026-11-26): o caminho indireto foi fechado pelo limite de
+permissões dos papéis das funções (`FunctionBoundaryPolicy`, na stack de CD), que nega
+explicitamente qualquer ação nos buckets da esteira, e a seção do README que descrevia o
+risco aceito passou a se chamar "Limite de permissões dos papéis das funções". O teste
+continua valendo, sem mudar as asserções: a negação `NeverManageTheCdBuckets` vale só
+para o papel de execução, e um comentário que diga o que um deploy do app pode fazer
+precisa apontar o caminho indireto ou o #179, onde está a outra metade da proteção.
 
 Esperado: nenhum comentário do template diz o que um deploy do app pode ou não pode fazer
 (só ler, nunca alterar) sem a ressalva no mesmo bloco de comentário ou no seguinte: o

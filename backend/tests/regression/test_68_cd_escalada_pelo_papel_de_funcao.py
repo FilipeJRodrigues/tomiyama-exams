@@ -16,21 +16,33 @@ só valem para o padrão do ARN.
 
 Reescrito em 2026-11-18 pela decisão B do responsável. A primeira versão deste teste
 exigia um permissions boundary nos papéis das funções. O responsável decidiu não criar
-o boundary agora: o risco fica aceito, porque é o mesmo do `sam deploy` manual com
-credencial de administrador, e a proteção é a revisão do PR e do change set. O boundary
-foi para o card #179, e a versão anterior deste arquivo (commit 3821d03) serve de ponto
-de partida para o teste de lá. O erro que continua é o repositório prometer um
-isolamento que não existe e não dizer a quem aprova o change set o que conferir.
+o boundary naquele momento: o risco ficou aceito, porque era o mesmo do `sam deploy`
+manual com credencial de administrador, e a proteção era a revisão do PR e do change
+set. O boundary foi para o card #179, e a versão anterior deste arquivo (commit 3821d03)
+serviu de ponto de partida para o teste de lá.
+
+Contexto atualizado no #179 (2026-11-26): o caminho indireto foi fechado. A stack de CD
+cria o `FunctionBoundaryPolicy`, o limite de permissões de todos os papéis das funções,
+e o papel de execução só cria um papel de função, grava as políticas dele ou muda a
+política de confiança quando o limite do papel é essa política (condição
+`iam:PermissionsBoundary`); nunca o tira. O que confere o limite e as condições é o
+`tests/test_cd_function_boundary.py`. Este teste continua valendo, sem mudar as
+asserções, para a documentação: o alcance direto é o padrão do ARN, o indireto é o
+limite, e o README precisa continuar dizendo os dois, sem prometer isolamento sem a
+ressalva. A seção do README que descrevia o risco aceito passou a se chamar "Limite de
+permissões dos papéis das funções" e conta o caminho indireto e como o limite o fecha.
 
 Esperado:
 - nenhuma frase do README e nenhuma do docstring promete que um deploy do app (ou o
   papel de execução) não alcança os papéis ou os buckets da esteira sem a ressalva logo
-  ali, no mesmo parágrafo ou no seguinte: o card #179 ou o caminho indireto;
-- a seção da esteira no README descreve o risco: o papel de execução grava políticas
-  nos papéis das funções (`role/<AppStackName>-*`), e uma função invocada no mesmo
-  deploy (o `Custom::InitialData`) ou depois poderia usá-las contra a esteira;
+  ali, no mesmo parágrafo ou no seguinte: o card #179 (o limite) ou o caminho indireto;
+- a seção da esteira no README descreve o caminho indireto: o papel de execução grava
+  políticas nos papéis das funções (`role/<AppStackName>-*`), e, sem o limite, uma
+  função invocada no mesmo deploy (o `Custom::InitialData`) ou depois poderia usá-las
+  contra a esteira;
 - a mesma seção orienta quem aprova o change set a conferir as mudanças de IAM (papéis
-  e políticas das funções) e cita o card #179.
+  e políticas das funções) e cita o card #179. Com o limite, essa revisão continua
+  sendo a proteção dos dados do app, que as funções alcançam dentro dele.
 
 As asserções procuram marcadores, não a redação exata: a promessa é uma frase que fala
 dos papéis ou dos buckets da esteira (ou do próprio papel de execução) e diz que não dá

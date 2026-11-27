@@ -10,12 +10,16 @@
   packages prefix is the one both roles use.
 - The properties of the app's resources that need extra permissions are covered by the
   execution role (CORS or lifecycle in the images bucket, Layers or VPC in a function...).
+  For PermissionsBoundary the guard also checks the value against the condition of the
+  execution role (#179): it creates a function role or sets its boundary only when the
+  boundary is the CD stack's FunctionBoundaryPolicy, so any other value fails the deploy.
 - Both roles that take part in the change set (pipeline and execution) pass the check of
   every transform of the app template, and the transform check is the only CloudFormation
   permission of the execution role.
 """
 
 import copy
+import fnmatch
 import itertools
 import json
 import os
@@ -497,13 +501,17 @@ PROPERTY_ACTIONS: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("AWS::Serverless::Function", "FileSystemConfigs"): [
         ("elasticfilesystem:DescribeMountTargets", "*")
     ],
-    # The function roles already exist: a boundary on them is an update of
-    # AWS::IAM::Role, and IAM sets it only with PutRolePermissionsBoundary (#179).
+    # A new function role gets its boundary in CreateRole; an existing one, as an
+    # update of AWS::IAM::Role, with PutRolePermissionsBoundary. The execution role
+    # allows both only with iam:PermissionsBoundary equal to FunctionBoundaryPolicy
+    # (#179), so the guard checks the value too (see CONDITION_KEYS).
     ("AWS::Serverless::Function", "PermissionsBoundary"): [
-        ("iam:PutRolePermissionsBoundary", cd_tests.FUNCTION_ROLE)
+        ("iam:CreateRole", cd_tests.FUNCTION_ROLE),
+        ("iam:PutRolePermissionsBoundary", cd_tests.FUNCTION_ROLE),
     ],
     ("AWS::IAM::Role", "PermissionsBoundary"): [
-        ("iam:PutRolePermissionsBoundary", cd_tests.FUNCTION_ROLE)
+        ("iam:CreateRole", cd_tests.FUNCTION_ROLE),
+        ("iam:PutRolePermissionsBoundary", cd_tests.FUNCTION_ROLE),
     ],
     ("AWS::Serverless::HttpApi", "AccessLogSettings"): [("logs:CreateLogDelivery", "*")],
     ("AWS::Logs::LogGroup", "DataProtectionPolicy"): [
@@ -512,6 +520,99 @@ PROPERTY_ACTIONS: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("AWS::Logs::LogGroup", "KmsKeyId"): [("logs:AssociateKmsKey", cd_tests.LOG_GROUP)],
     ("AWS::Logs::LogGroup", "ResourcePolicyDocument"): [("logs:PutResourcePolicy", "*")],
 }
+
+
+# Properties whose value is a condition key of the actions above: the execution role
+# grants them only for some values (#179: iam:PermissionsBoundary, the ARN of the
+# boundary the role gets). Other condition keys stay ignored, as in cd_tests._allows.
+CONDITION_KEYS: dict[tuple[str, str], str] = {
+    ("AWS::Serverless::Function", "PermissionsBoundary"): "iam:permissionsboundary",
+    ("AWS::IAM::Role", "PermissionsBoundary"): "iam:permissionsboundary",
+}
+UNRESOLVED = object()  # a value this guard cannot work out: never allowed
+
+
+def _pipeline_value(cd: dict[str, Any], app: dict[str, Any], node: Any) -> Any:
+    """The value a pipeline deploy gives a property: a Ref to a parameter of the app is
+    what ParameterOverrides passes (or the parameter's Default), Ref AWS::NoValue is
+    None (no value: CreateRole goes without it), Fn::If follows its condition."""
+    replace = cd_tests._flat_actions(cd)[2]
+    overrides = json.loads(
+        cd_tests.Resolver(cd).resolve(replace["Configuration"]["ParameterOverrides"])
+    )
+    parameters = {
+        name: str(overrides.get(name, parameter.get("Default", "")))
+        for name, parameter in app.get("Parameters", {}).items()
+    }
+
+    def value(item: Any) -> Any:
+        if isinstance(item, str):
+            return item
+        if isinstance(item, dict) and list(item) == ["Ref"]:
+            if item["Ref"] == "AWS::NoValue":
+                return None
+            return parameters.get(item["Ref"], UNRESOLVED)
+        if isinstance(item, dict) and list(item) == ["Fn::If"]:
+            name, when_true, when_false = item["Fn::If"]
+            holds = condition(app.get("Conditions", {}).get(name))
+            if holds is UNRESOLVED:
+                return UNRESOLVED
+            return value(when_true if holds else when_false)
+        return UNRESOLVED
+
+    def condition(item: Any) -> Any:
+        if isinstance(item, dict) and list(item) == ["Fn::Not"]:
+            inner = condition(item["Fn::Not"][0])
+            return UNRESOLVED if inner is UNRESOLVED else not inner
+        if isinstance(item, dict) and list(item) == ["Fn::Equals"]:
+            left, right = (value(side) for side in item["Fn::Equals"])
+            if UNRESOLVED in (left, right):
+                return UNRESOLVED
+            return left == right
+        if isinstance(item, dict) and list(item) == ["Condition"]:
+            return condition(app.get("Conditions", {}).get(item["Condition"]))
+        return UNRESOLVED
+
+    return value(node)
+
+
+def _condition_holds(statement: dict[str, Any], context: dict[str, Any]) -> bool:
+    """The conditions of the statement on the keys of ``context`` (lowercase), with
+    IAM's semantics for a missing key (None): only an ...IfExists operator passes."""
+    for operator, keys in statement.get("Condition", {}).items():
+        base = operator.removesuffix("IfExists")
+        for key, expected in keys.items():
+            if key.lower() not in context:
+                continue
+            actual = context[key.lower()]
+            if actual is UNRESOLVED:
+                return False
+            if actual is None:
+                if operator.endswith("IfExists"):
+                    continue
+                return False
+            patterns = [str(pattern) for pattern in cd_tests._as_list(expected)]
+            if base in ("ArnEquals", "ArnLike", "StringLike"):
+                ok = any(fnmatch.fnmatchcase(actual, pattern) for pattern in patterns)
+            elif base == "StringEquals":
+                ok = actual in patterns
+            else:
+                return False  # an operator this guard does not evaluate: not allowed
+            if not ok:
+                return False
+    return True
+
+
+def _allows_with(
+    statements: list[dict[str, Any]], action: str, resource: str, context: dict[str, Any]
+) -> bool:
+    """cd_tests._allows, with the conditions on the keys of ``context`` evaluated."""
+    allowed = [
+        s for s in statements if s["Effect"] == "Allow" and cd_tests._allows([s], action, resource)
+    ]
+    return any(_condition_holds(s, context) for s in allowed) and cd_tests._allows(
+        statements, action, resource
+    )
 
 
 def _uncovered_properties(cd: dict[str, Any], app: dict[str, Any]) -> list[tuple[str, str, str]]:
@@ -523,8 +624,10 @@ def _uncovered_properties(cd: dict[str, Any], app: dict[str, Any]) -> list[tuple
         section = {"AWS::Serverless::Function": "Function", "AWS::Serverless::HttpApi": "HttpApi"}
         used = {**globals_.get(section.get(kind, ""), {}), **resource.get("Properties", {})}
         for prop in used:
+            key = CONDITION_KEYS.get((kind, prop))
+            context = {key: _pipeline_value(cd, app, used[prop])} if key else {}
             for action, arn in PROPERTY_ACTIONS.get((kind, prop), []):
-                if not cd_tests._allows(statements, action, arn):
+                if not _allows_with(statements, action, arn, context):
                     missing.append((name, prop, action))
     return missing
 
@@ -547,12 +650,22 @@ def test_execution_role_covers_the_properties_the_app_uses(
         ("ImagesBucket", "CorsConfiguration", {"CorsRules": []}, "s3:PutBucketCORS"),
         ("ImagesBucket", "LifecycleConfiguration", {"Rules": []}, "s3:PutLifecycleConfiguration"),
         ("ListBeltsFunction", "Layers", [LAYER], "lambda:GetLayerVersion"),
+        ("ListBeltsFunction", "KmsKeyArn", KMS_KEY, "kms:CreateGrant"),
+        # Another boundary than the CD stack's: the execution role refuses it (#179).
         (
             "ListBeltsFunction",
             "PermissionsBoundary",
             f"arn:aws:iam::{ACCOUNT}:policy/limite",
             "iam:PutRolePermissionsBoundary",
         ),
+        (
+            "ListBeltsFunction",
+            "PermissionsBoundary",
+            f"arn:aws:iam::{ACCOUNT}:policy/limite",
+            "iam:CreateRole",
+        ),
+        # No boundary at all: CreateRole without it is refused too.
+        ("ListBeltsFunction", "PermissionsBoundary", {"Ref": "AWS::NoValue"}, "iam:CreateRole"),
         ("HttpApi", "AccessLogSettings", {"DestinationArn": "x"}, "logs:CreateLogDelivery"),
     ],
 )
@@ -564,6 +677,42 @@ def test_property_guard_catches_a_new_property(
     changed["Resources"][resource]["Properties"][prop] = value
 
     assert (resource, prop, action) in _uncovered_properties(cd, changed)
+
+
+def test_property_guard_accepts_the_boundary_the_pipeline_passes(
+    cd: dict[str, Any], app: dict[str, Any]
+) -> None:
+    """The app sets PermissionsBoundary in Globals from FunctionPermissionsBoundary, which
+    the pipeline fills with FunctionBoundaryPolicy (#179): the guard evaluates the !If
+    with that value and finds it covered, on a function and on an explicit role alike.
+    Without the value in ParameterOverrides the !If gives no boundary, and the guard
+    refuses it."""
+    boundary = cd_tests.Resolver(cd).ref("FunctionBoundaryPolicy")
+    globals_value = app["Globals"]["Function"]["PermissionsBoundary"]
+    role = {
+        "Type": "AWS::IAM::Role",
+        "Properties": {"AssumeRolePolicyDocument": {}, "PermissionsBoundary": globals_value},
+    }
+    with_role = copy.deepcopy(app)
+    with_role["Resources"]["QaRole"] = role
+    without_override = copy.deepcopy(cd)
+    # The same dict as in without_override (_flat_actions copies only the top level).
+    overrides = cd_tests._flat_actions(without_override)[2]["Configuration"]["ParameterOverrides"]
+    text = overrides["Fn::Sub"]
+    overrides["Fn::Sub"] = re.sub(
+        r',\s*"FunctionPermissionsBoundary": "\$\{FunctionBoundaryPolicy\}"', "", text
+    )
+    assert (
+        overrides["Fn::Sub"] != text and "FunctionPermissionsBoundary" not in overrides["Fn::Sub"]
+    )
+
+    assert _pipeline_value(cd, app, globals_value) == boundary
+    assert not [m for m in _uncovered_properties(cd, with_role) if m[1] == "PermissionsBoundary"]
+    assert _pipeline_value(without_override, app, globals_value) is None
+    refused = [
+        m for m in _uncovered_properties(without_override, app) if m[1] == "PermissionsBoundary"
+    ]
+    assert ("ListBeltsFunction", "PermissionsBoundary", "iam:CreateRole") in refused
 
 
 # ------------------------------------------------------------------ transforms of the app

@@ -9,7 +9,12 @@ waiter or an option shows up only then. Checked offline, against the botocore mo
   is a waiter of that service;
 - every ``--option`` is a member of the input of the operation (of the waiter's
   operation, for ``wait``) or a global option of the CLI;
-- every ``--query`` is valid JMESPath, and every ``--output`` is a format of the CLI.
+- every ``--query`` is valid JMESPath, and every ``--output`` is a format of the CLI;
+- every field a ``--query`` names exists in the output of its operation, and every
+  literal it compares with an enum field is a value of that enum (card #179: the
+  runbook reads the boundary ARN from the outputs of the CD stack and the roles of the
+  app from its resources; a misspelt field gives an empty list, not an error, and the
+  loop of the runbook would then set no boundary).
 
 Commands of the high-level CLI customizations (``aws s3 ...``, ``aws cloudformation
 deploy`` and the like) are not in the model and are skipped.
@@ -18,6 +23,7 @@ deploy`` and the like) are not in the model and are skipped.
 import re
 import shlex
 from pathlib import Path
+from typing import Any
 
 import botocore.session
 import jmespath
@@ -161,3 +167,198 @@ def test_readme_aws_cli_queries_and_output_formats_are_valid(
                 problems.append(f"linha {line}: --output {value} não é um formato da AWS CLI")
 
     assert not problems, "consultas e formatos inválidos no README:\n" + "\n".join(problems)
+
+
+# ------------------------------------------------------------------ fields of --query
+class _ListOf:
+    """The list a projection yields, of the shape its right side gives each item."""
+
+    type_name = "list"
+
+    def __init__(self, member: Any) -> None:
+        self.member = member
+
+
+def _query_problems(node: dict[str, Any], shape: Any, problems: list[str]) -> Any:
+    """Walks the JMESPath AST over the botocore output shape; returns the shape of the
+    result (None when unknown) and appends each field that is not in its structure and
+    each literal compared with an enum field that is not one of its values."""
+    kind, children = node["type"], node.get("children", [])
+
+    def walk(child: dict[str, Any], current: Any) -> Any:
+        return _query_problems(child, current, problems)
+
+    def item(current: Any) -> Any:
+        return current.member if getattr(current, "type_name", None) == "list" else None
+
+    if kind == "field":
+        if shape is None:
+            return None
+        if shape.type_name != "structure" or node["value"] not in shape.members:
+            names = sorted(shape.members) if shape.type_name == "structure" else shape.type_name
+            problems.append(f"{node['value']} não existe em {shape.name} ({names})")
+            return None
+        return shape.members[node["value"]]
+    if kind == "subexpression":
+        for child in children:
+            shape = walk(child, shape)
+        return shape
+    if kind == "index_expression":
+        return item(walk(children[0], shape))
+    if kind in ("index", "slice", "identity", "current"):
+        return shape
+    if kind == "flatten":
+        return walk(children[0], shape)
+    if kind == "projection":
+        return _ListOf(walk(children[1], item(walk(children[0], shape))))
+    if kind == "filter_projection":
+        element = item(walk(children[0], shape))
+        walk(children[2], element)
+        return _ListOf(walk(children[1], element))
+    if kind == "comparator":
+        shapes = [walk(child, shape) for child in children]
+        literals = [child["value"] for child in children if child["type"] == "literal"]
+        for found in shapes:
+            for literal in literals:
+                if getattr(found, "enum", None) and literal not in found.enum:
+                    problems.append(f"{literal!r} não é valor de {found.name} ({found.enum})")
+        return None
+    if kind == "pipe":
+        return walk(children[1], walk(children[0], shape))
+    if kind in ("multi_select_hash", "multi_select_dict"):
+        for pair in children:
+            walk(pair["children"][0], shape)
+        return None
+    if kind in (
+        "multi_select_list",
+        "function_expression",
+        "and_expression",
+        "or_expression",
+        "not_expression",
+    ):
+        for child in children:
+            walk(child, shape)
+        return None
+    if kind == "literal":
+        return None
+    problems.append(f"nó {kind} da consulta que este teste não sabe conferir")
+    return None
+
+
+def test_readme_aws_cli_queries_name_fields_of_the_output(
+    commands: list[tuple[int, list[str]]],
+) -> None:
+    """A query with a misspelt field (or an enum value that does not exist) is valid
+    JMESPath and runs: it prints nothing. The runbook of #179 feeds such outputs to a
+    loop ("for ROLE in $ROLES"), which would then do nothing without an error."""
+    session = botocore.session.get_session()
+    problems, checked = [], 0
+    for line, tokens in commands:
+        if "--query" not in tokens or tokens[2] == "wait":
+            continue
+        model = session.get_service_model(tokens[1])
+        operations = {xform_name(name, "-"): name for name in model.operation_names}
+        output = model.operation_model(operations[tokens[2]]).output_shape
+        query = tokens[tokens.index("--query") + 1]
+        found: list[str] = []
+        _query_problems(jmespath.compile(query).parsed, output, found)
+        problems.extend(f"linha {line} ({tokens[1]} {tokens[2]}): {p}" for p in found)
+        checked += 1
+
+    assert checked >= 10, checked  # the reader still finds the runbook's queries
+    assert not problems, "consultas do README que não acham o que procuram:\n" + "\n".join(problems)
+
+
+def _enum_option_problems(tokens: list[str], session: Any) -> tuple[int, list[str]]:
+    """(values checked, problems) of the options of a command whose member is an enum, or
+    a list of an enum (``--capabilities``); placeholders (``<...>``) are skipped."""
+    model = session.get_service_model(tokens[1])
+    operations = {xform_name(name, "-"): name for name in model.operation_names}
+    if tokens[2] not in operations:
+        return 0, []  # reported by the first test of this file
+    shape = model.operation_model(operations[tokens[2]]).input_shape
+    members = {
+        xform_name(name, "-"): member for name, member in (shape.members if shape else {}).items()
+    }
+    checked, problems = 0, []
+    for index, token in enumerate(tokens):
+        member = members.get(token[2:]) if token.startswith("--") else None
+        if member is None:
+            continue
+        enum = getattr(member.member if member.type_name == "list" else member, "enum", None)
+        if not enum:
+            continue
+        for value in tokens[index + 1 :]:
+            if value.startswith("--"):
+                break
+            if value.startswith("<"):
+                continue
+            checked += 1
+            if value not in enum:
+                problems.append(f"--{token[2:]} {value} não é valor de {enum}")
+    return checked, problems
+
+
+def test_readme_aws_cli_enum_option_values_are_valid(
+    commands: list[tuple[int, list[str]]],
+) -> None:
+    """``--change-set-type``, ``--capabilities``, ``--template-stage`` and the
+    ``--policy-usage-filter`` of "Voltar a stack de CD para antes do #179" take only the
+    values of their enum; the CLI refuses any other before calling the AWS."""
+    session = botocore.session.get_session()
+    problems, checked = [], 0
+    for line, tokens in commands:
+        if tokens[2] == "wait":
+            continue
+        count, found = _enum_option_problems(tokens, session)
+        checked += count
+        problems.extend(f"linha {line} ({tokens[1]} {tokens[2]}): {p}" for p in found)
+
+    assert checked >= 5, checked  # the reader still finds the runbook's enum options
+    assert not problems, "opções do README com valor fora do enum:\n" + "\n".join(problems)
+
+
+def test_enum_option_check_catches_a_misspelt_value() -> None:
+    """The check above is not vacuous."""
+    tokens = shlex.split(
+        "aws iam list-entities-for-policy --policy-arn x --policy-usage-filter PermissionBoundary"
+    )
+
+    checked, problems = _enum_option_problems(tokens, botocore.session.get_session())
+
+    assert checked == 1
+    assert any("PermissionBoundary" in problem for problem in problems), problems
+
+
+@pytest.mark.parametrize(
+    ("operation", "query", "expected"),
+    [
+        (
+            ("cloudformation", "ListStackResources"),
+            "StackResourceSummaries[?ResourceType=='AWS::IAM::Role'].PhysicalResourceIds",
+            "PhysicalResourceIds não existe",
+        ),
+        (
+            ("cloudformation", "DescribeStacks"),
+            "Stacks[0].Output[?OutputKey=='FunctionPermissionsBoundaryArn'].OutputValue",
+            "Output não existe",
+        ),
+        (
+            ("cloudformation", "ListStackResources"),
+            "StackResourceSummaries[?ResourceStatus=='UPDATE_FAIL'].LogicalResourceId",
+            "'UPDATE_FAIL' não é valor",
+        ),
+    ],
+    ids=["campo-do-item", "campo-da-stack", "enum"],
+)
+def test_query_field_check_catches_a_misspelt_query(
+    operation: tuple[str, str], query: str, expected: str
+) -> None:
+    """The check above is not vacuous."""
+    model = botocore.session.get_session().get_service_model(operation[0])
+    found: list[str] = []
+    _query_problems(
+        jmespath.compile(query).parsed, model.operation_model(operation[1]).output_shape, found
+    )
+
+    assert any(expected in problem for problem in found), found
