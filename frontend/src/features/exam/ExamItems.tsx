@@ -33,6 +33,7 @@ import {
 } from './examModel';
 import { preventMarkKeyRepeat, type AcceptMarkClick, type MarkChoice } from './markClickGuard';
 import { TOUCH_TARGET } from './touch';
+import { UNCHOSEN_MARK_PROPS, verdictButtonProps, type Verdict } from './verdictButton';
 
 const MARK_ICONS = {
   correct: IconCircleCheck,
@@ -70,8 +71,8 @@ export function MarkText({ state }: { state: MarkState }) {
 
 const CHOICES: readonly MarkChoice[] = ['correct', 'wrong'];
 
-/** Mantine color of the pressed button; its text uses the contrast-checked light color. */
-const CHOICE_COLORS: Record<MarkChoice, string> = { correct: 'green', wrong: 'red' };
+/** The pressed button is filled: Certo in green, Errado in the red of the logo. */
+const CHOICE_VERDICTS: Record<MarkChoice, Verdict> = { correct: 'positive', wrong: 'negative' };
 
 const CHOICE_ICONS = {
   correct: { off: IconCircleCheck, on: IconCircleCheckFilled },
@@ -95,13 +96,15 @@ interface MarkButtonsProps {
 }
 
 /**
- * Certo / Errado of one item (§ 6.4, RN006), at least 44 px tall. The pressed one has
- * `aria-pressed`, a filled icon, a border and a tinted background, so the state never
- * depends on color alone (§ 6.7); clicking it again takes the mark off. The accessible
- * name starts with the visible text and names the item ("Certo: Osoto gari"). A double tap
- * or the Enter key held down counts as one click (`markClickGuard`); a tap on an item that
- * just changed place is ignored (`settling`), a key press on it is not: the keyboard acts on
- * the focused button, which the examiner sees and hears.
+ * Certo / Errado of one item (§ 6.4, RN006), at least 44 px tall and 104 px wide. The pressed
+ * one has `aria-pressed`, a filled icon and a filled background (Certo green, Errado red, white
+ * text; a light border in the dark scheme: `verdictButtonProps`), so the state never depends on
+ * color alone (§ 6.7); the other one is `default`, with the control border. Both borders are
+ * 2 px, so a button keeps its size when it is chosen. Clicking the pressed one again takes the
+ * mark off. The accessible name starts with the visible text and names the item ("Certo: Osoto
+ * gari"). A double tap or the Enter key held down counts as one click (`markClickGuard`); a tap
+ * on an item that just changed place is ignored (`settling`), a key press on it is not: the
+ * keyboard acts on the focused button, which the examiner sees and hears.
  */
 export function MarkButtons({ item, onMark, acceptClick, settling }: MarkButtonsProps) {
   const state = markState(item);
@@ -110,12 +113,10 @@ export function MarkButtons({ item, onMark, acceptClick, settling }: MarkButtons
       {CHOICES.map((choice) => {
         const pressed = state === choice;
         const Icon = CHOICE_ICONS[choice][pressed ? 'on' : 'off'];
-        const color = CHOICE_COLORS[choice];
         return (
           <Button
             key={choice}
-            variant={pressed ? 'light' : 'default'}
-            color={pressed ? color : undefined}
+            {...(pressed ? verdictButtonProps(CHOICE_VERDICTS[choice]) : UNCHOSEN_MARK_PROPS)}
             aria-pressed={pressed}
             aria-label={`${MARK_LABELS[choice]}: ${item.description}`}
             data-choice={choice}
@@ -128,15 +129,7 @@ export function MarkButtons({ item, onMark, acceptClick, settling }: MarkButtons
               if (!acceptClick(item.id, choice, state, next, event.timeStamp)) return;
               onMark(item, next, !tapped);
             }}
-            style={{
-              ...TOUCH_TARGET,
-              minWidth: 104,
-              borderWidth: 2,
-              borderStyle: 'solid',
-              borderColor: pressed
-                ? `var(--mantine-color-${color}-light-color)`
-                : 'var(--mantine-color-default-border)',
-            }}
+            style={{ ...TOUCH_TARGET, minWidth: 104 }}
           >
             {MARK_LABELS[choice]}
           </Button>

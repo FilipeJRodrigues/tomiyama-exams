@@ -64,6 +64,7 @@ import {
 import { REQUIREMENT_KINDS, percentLabel } from './examModel';
 import { TOUCH_TARGET } from './touch';
 import type { DecisionFlow, DecisionLayout } from './useDecisionFlow';
+import { verdictButtonProps } from './verdictButton';
 
 export type { DecisionLayout } from './useDecisionFlow';
 
@@ -103,12 +104,16 @@ function Decided({ exam, examiners, flow, takesFocus }: DecidedProps) {
   );
 }
 
+/**
+ * Aprovar and Reprovar side by side, both filled (green and the red of the logo, with a light
+ * border in the dark scheme: `verdictButtonProps`): two actions of the same weight, though they
+ * only open the confirmation (skill `tomiyama-design`, "Decisão").
+ */
 function DecideButtons({ flow }: { flow: DecisionFlow }) {
   return (
     <Group gap="sm" grow role="group" aria-label="Decisão do sensei">
       <Button
-        variant="light"
-        color="green"
+        {...verdictButtonProps('positive')}
         leftSection={<IconCircleCheck size={18} aria-hidden />}
         style={TOUCH_TARGET}
         data-decision-action
@@ -120,8 +125,7 @@ function DecideButtons({ flow }: { flow: DecisionFlow }) {
         Aprovar
       </Button>
       <Button
-        variant="light"
-        color="red"
+        {...verdictButtonProps('negative')}
         leftSection={<IconCircleX size={18} aria-hidden />}
         style={TOUCH_TARGET}
         data-decision-result="FAILED"
@@ -386,10 +390,10 @@ export function DecisionDialog({ flow, sheet, belts, settled }: DecisionDialogPr
           >
             Cancelar
           </Button>
-          {/* Primary (white on the blue, blue on the yellow) and red.9 (white): text at 4.5:1
-              or more (§ 6.7). */}
+          {/* The colors of Aprovar / Reprovar (`verdictButtonProps`): green or the red of the
+              logo, filled, white text at 5.13:1 or more, also on hover (§ 6.7). */}
           <Button
-            color={approve ? undefined : 'red.9'}
+            {...verdictButtonProps(approve ? 'positive' : 'negative')}
             style={TOUCH_TARGET}
             loading={flow.sending}
             disabled={!settled || notesTooLong}

@@ -12,9 +12,10 @@ import { useAuth } from '../../auth/useAuth';
 import { useSendLock } from '../../lib/sendLock';
 import { focusIfLost } from '../exam/focus';
 import { LoadError, LoadingState } from '../students/screenStates';
-import { BeltSwatch, Field } from '../students/studentCells';
+import { Field } from '../students/studentCells';
 import { useRetryFocus } from '../students/useRetryFocus';
 import { BeltForm } from './BeltForm';
+import { NamedBelt } from './BeltShape';
 import {
   colorsLabel,
   kyuLabel,
@@ -64,12 +65,7 @@ function EditButton({ belt, onEdit }: EditButtonProps) {
 }
 
 function BeltName({ belt }: { belt: Belt }) {
-  return (
-    <Group gap={8} wrap="nowrap">
-      <BeltSwatch belt={belt} />
-      <span>{belt.name}</span>
-    </Group>
-  );
+  return <NamedBelt belt={belt}>{belt.name}</NamedBelt>;
 }
 
 interface ListProps {

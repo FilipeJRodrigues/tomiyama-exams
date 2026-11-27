@@ -73,7 +73,7 @@ O `frontend` confere antes de entregar; o `qa-frontend` confere na revisão e tr
 - [ ] Item ativo do menu com cor principal, negrito e barra vertical (não só cor); sem fundo próprio (no hover, o mesmo dos outros itens).
 - [ ] No escuro, `Paper`, `Modal`, `Drawer` e o cabeçalho e o menu do `AppShell` em `#2A2A2A`, não no fundo da página.
 - [ ] Texto e ícones sobre o amarelo em azul, não branco nem preto: botão cheio (`--mantine-color-primary-contrast`), hover, polegar do `Switch` ligado (desligado continua claro), ponto do `Radio`, ícone do `Checkbox`.
-- [ ] Borda de controle única (`#737B83` / `#8F8F8F`) em campos, seta dos seletores, botões e `ActionIcon` `default`, `Checkbox` e `Radio` desmarcados, trilho do `Switch` desligado e Certo/Errado não escolhido, inclusive onde a cor está inline (`MarkButtons`).
+- [ ] Borda de controle única (`#737B83` / `#8F8F8F`) em campos, seta dos seletores, botões e `ActionIcon` `default`, `Checkbox` e `Radio` desmarcados, trilho do `Switch` desligado e Certo/Errado não escolhido (`UNCHOSEN_MARK_PROPS` em `verdictButton.ts`).
 - [ ] Links (`Anchor`) sempre sublinhados.
 - [ ] Marcações somente leitura como texto com ícone, nunca como Certo/Errado desabilitados (§ 6.4); outro controle desabilitado só nos casos aceitos em `components.md` (envio, ação indisponível com motivo, pontas da navegação, campo que só outro perfil altera com motivo e valor legível).
 - [ ] Item escolhido do `SegmentedControl` com indicador ≥ 3:1 contra o trilho e rótulo em negrito.

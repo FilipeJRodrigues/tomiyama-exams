@@ -47,12 +47,24 @@ export function examDayPath(eventId?: string): string {
  * `Grau (rumo à Marrom)` as in the students list.
  */
 export function examTitle(sheet: Pick<ExamSheet, 'exam' | 'target_belt'>, belts?: Belt[]) {
+  const current = sheet.exam.kind === 'STRIPE' ? examTitleBelt(sheet, belts) : undefined;
+  return examTitleText(sheet.exam.kind, sheet.target_belt?.name, current?.name);
+}
+
+/**
+ * The belt written right after "faixa" in `examTitle`, the one the mini belt of the header
+ * draws: the target of a belt exam (`Faixa Marrom`), the belt of the stripe in a stripe exam
+ * (`Grau na faixa Roxa (rumo à Marrom)`). Undefined when the title names none: no target
+ * (`Faixa —`, `Grau`) or a stripe exam while the belts load (`Grau (rumo à Marrom)`).
+ */
+export function examTitleBelt(
+  sheet: Pick<ExamSheet, 'exam' | 'target_belt'>,
+  belts?: readonly Belt[],
+): Belt | undefined {
   const target = sheet.target_belt;
-  const current =
-    target && sheet.exam.kind === 'STRIPE' && belts
-      ? stripeBelt(sheet.exam.source_belt_id, target, belts)
-      : undefined;
-  return examTitleText(sheet.exam.kind, target?.name, current?.name);
+  if (!target) return undefined;
+  if (sheet.exam.kind === 'BELT') return target;
+  return belts ? stripeBelt(sheet.exam.source_belt_id, target, belts) : undefined;
 }
 
 /**

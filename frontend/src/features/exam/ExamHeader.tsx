@@ -8,8 +8,16 @@ import type { Belt, ExamSheet, ExamStatus, ExamView } from '../../api/types';
 import { PageTitle } from '../../app/PageTitle';
 import { examPath } from '../../app/navigation';
 import { EVENT_STATUS_LABELS, EXAM_STATUS_LABELS } from '../../lib/labels';
+import { BeltInText } from '../belts/BeltShape';
 import { dateLabel } from '../students/studentText';
-import { DELETED_STUDENT, examAgeLabel, examDayPath, examTitle, neighbors } from './examModel';
+import {
+  DELETED_STUDENT,
+  examAgeLabel,
+  examDayPath,
+  examTitle,
+  examTitleBelt,
+  neighbors,
+} from './examModel';
 import { TOUCH_TARGET } from './touch';
 
 interface ExamNavProps {
@@ -109,7 +117,12 @@ interface ExamHeaderProps {
   titleRef?: Ref<HTMLHeadingElement>;
 }
 
-/** Student name and result, then age, exam (`Faixa X` / `Grau na faixa X (rumo à Y)`) and event. */
+/**
+ * Student name and result, then age, exam (`Faixa X` / `Grau na faixa X (rumo à Y)`) and event.
+ * A 48×16 px mini belt of the belt X (`examTitleBelt`) comes right before the exam, inside the
+ * same line of text: the line reads and wraps as before, and the belt goes with the exam's first
+ * word.
+ */
 export function ExamHeader({ sheet, belts, titleRef }: ExamHeaderProps) {
   const name = sheet.student?.full_name ?? sheet.exam.student_name ?? DELETED_STUDENT;
   const age = examAgeLabel(sheet.student, sheet.event);
@@ -123,7 +136,8 @@ export function ExamHeader({ sheet, belts, titleRef }: ExamHeaderProps) {
         <ResultBadge status={sheet.exam.status} />
       </Group>
       <Text data-testid="exam-meta">
-        {[age, examTitle(sheet, belts)].filter(Boolean).join(' · ')}
+        {age && `${age} · `}
+        <BeltInText belt={examTitleBelt(sheet, belts)} text={examTitle(sheet, belts)} />
       </Text>
       <Text size="sm" c="dimmed">
         {`${event.name} · ${dateLabel(event.exam_date)} · ${EVENT_STATUS_LABELS[event.status]}`}

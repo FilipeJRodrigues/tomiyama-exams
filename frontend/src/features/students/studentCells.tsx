@@ -1,48 +1,18 @@
 /**
  * Cells shared by the students list (§ 6.2) and the exam day list (§ 6.3): the belt with
- * its color sample, the eligibility status and the label/value pair of the cards.
+ * its mini belt, the eligibility status and the label/value pair of the cards.
  */
-import { Box, Group, Text } from '@mantine/core';
+import { Group, Text } from '@mantine/core';
 import { IconAlertTriangle, IconCircleCheck, IconCircleMinus } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
 
 import type { Belt, StudentView } from '../../api/types';
+import { NamedBelt } from '../belts/BeltShape';
 import { beltLabel, type StudentStatus } from './studentText';
 
-/**
- * Belt color sample, decorative only (the name is always written next to it). The border
- * keeps the white belt visible on a white page.
- */
-export function BeltSwatch({ belt }: { belt: Belt | undefined }) {
-  if (!belt) return null;
-  const background = belt.color_secondary
-    ? `linear-gradient(to right, ${belt.color_primary} 50%, ${belt.color_secondary} 50%)`
-    : belt.color_primary;
-  return (
-    <Box
-      component="span"
-      aria-hidden
-      data-testid="belt-swatch"
-      style={{
-        display: 'inline-block',
-        flex: 'none',
-        width: 28,
-        height: 12,
-        borderRadius: 3,
-        border: '1px solid var(--mantine-color-dimmed)',
-        background,
-      }}
-    />
-  );
-}
-
+/** The current belt (and stripes) of the student, with the mini belt before the name. */
 export function BeltCell({ student, belt }: { student: StudentView; belt: Belt | undefined }) {
-  return (
-    <Group gap={8} wrap="nowrap">
-      <BeltSwatch belt={belt} />
-      <span>{beltLabel(student.current_belt_name, student.stripes)}</span>
-    </Group>
-  );
+  return <NamedBelt belt={belt}>{beltLabel(student.current_belt_name, student.stripes)}</NamedBelt>;
 }
 
 const STATUS_ICONS = {

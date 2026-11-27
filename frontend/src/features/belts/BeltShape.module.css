@@ -1,0 +1,78 @@
+/*
+ * The belt drawn in its colors (skill tomiyama-design, "Selo de faixa"). The colors come from
+ * the API, inline (`beltBackground` in `beltGeometry.ts`); everything else is here.
+ */
+
+/*
+ * 1 px outline in the secondary text color, so the white belt shows in the light scheme and the
+ * black one in the dark scheme, also on a hovered table row: gray.7 is 8.2:1 on white and 7.4:1
+ * on the hovered row (gray.1); dark.1 is 8.6:1 on the page, 7.2:1 on the card and 5.65:1 on the
+ * hovered row (dark.5). Not gray.6: 2.99:1 on the hovered row.
+ */
+.beltOutline {
+  border: 1px solid var(--mantine-color-dimmed);
+}
+
+/*
+ * The mini belt, always next to the written name: 32×12 px in the lists and 48×16 px in the
+ * header of the exam, with almost square corners (a belt, not a badge).
+ *
+ * Centered on the first line of the text next to it, also when the name wraps: the belt starts
+ * at the top of the line (`vertical-align: top` in a line of text; `.namedBelt` aligns the row
+ * to the top) and goes down half of what the line has over it, so it never makes the line
+ * taller. Where `lh` is unknown, the line height of the theme stands in for it.
+ */
+.miniBelt {
+  display: inline-block;
+  flex: none;
+  vertical-align: top;
+  width: var(--mini-belt-width);
+  height: var(--mini-belt-height);
+  border-radius: var(--mini-belt-radius);
+  margin-top: calc((var(--mantine-line-height) * 1em - var(--mini-belt-height)) / 2);
+  margin-top: calc((1lh - var(--mini-belt-height)) / 2);
+}
+
+.miniBelt[data-size='list'] {
+  --mini-belt-width: 32px;
+  --mini-belt-height: 12px;
+  --mini-belt-radius: 2px;
+}
+
+.miniBelt[data-size='header'] {
+  --mini-belt-width: 48px;
+  --mini-belt-height: 16px;
+  --mini-belt-radius: 3px;
+}
+
+/* The mini belt and the name side by side; a long name wraps beside the belt. */
+.namedBelt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/*
+ * Inside a line of text (the header of the exam): no line break between the belt and the text
+ * after it (the wrapper is the nearest common ancestor of the two, so its `nowrap` rules that
+ * boundary), while the text itself wraps as usual.
+ */
+.beltInText {
+  white-space: nowrap;
+}
+
+.beltInText > .miniBelt {
+  margin-inline-end: 8px;
+}
+
+.textAfterBelt {
+  white-space: normal;
+}
+
+/* The belt in the read-only data of the edit dialog (Belts screen). */
+.beltDrawing {
+  width: 100%;
+  max-width: 240px;
+  height: 20px;
+  border-radius: 4px;
+}

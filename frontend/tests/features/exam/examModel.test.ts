@@ -7,6 +7,7 @@ import {
   examAgeLabel,
   examDayPath,
   examTitle,
+  examTitleBelt,
   examinerName,
   groupByCategory,
   isTransientMarkError,
@@ -85,6 +86,34 @@ describe('exam model (§ 6.4)', () => {
     it('shows the short stripe label while the belts load', () => {
       const stripe = { ...exam('a'), kind: 'STRIPE' as const };
       expect(examTitle({ exam: stripe, target_belt: belt('Roxa') })).toBe('Grau (rumo à Roxa)');
+    });
+  });
+
+  describe('examTitleBelt (mini faixa do cabeçalho, #166)', () => {
+    it('exame de faixa: a faixa-alvo, a do "Faixa X"', () => {
+      expect(examTitleBelt({ exam: exam('a'), target_belt: belt('Cinza/Azul') }, mockBelts)).toBe(
+        belt('Cinza/Azul'),
+      );
+    });
+
+    it('rn004 exame de grau: a faixa do grau, a do "Grau na faixa X"', () => {
+      const stripe = { ...exam('a'), kind: 'STRIPE' as const };
+      expect(examTitleBelt({ exam: stripe, target_belt: belt('Roxa') }, mockBelts)).toBe(
+        belt('Verde'),
+      );
+      const fromSource = { ...stripe, source_belt_id: belt('Amarela').id };
+      expect(examTitleBelt({ exam: fromSource, target_belt: belt('Roxa') }, mockBelts)).toBe(
+        belt('Amarela'),
+      );
+    });
+
+    it('nenhuma enquanto o título não nomeia a faixa: grau sem as faixas e exame sem alvo', () => {
+      const stripe = { ...exam('a'), kind: 'STRIPE' as const };
+      expect(examTitleBelt({ exam: stripe, target_belt: belt('Roxa') })).toBeUndefined();
+      expect(examTitleBelt({ exam: exam('a'), target_belt: null }, mockBelts)).toBeUndefined();
+      expect(examTitleBelt({ exam: stripe, target_belt: null }, mockBelts)).toBeUndefined();
+      const lowest = belt('Branca');
+      expect(examTitleBelt({ exam: stripe, target_belt: lowest }, mockBelts)).toBeUndefined();
     });
   });
 
